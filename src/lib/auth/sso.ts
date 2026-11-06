@@ -108,6 +108,60 @@ function profileOrgCodes(p: Claims): string[] {
   return codes;
 }
 
+/** Text claim; arrays of strings (e.g. several positions) are joined. */
+function text(v: unknown): string {
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => str(x))
+      .filter((x): x is string => x !== null)
+      .join(", ");
+  }
+  return str(v) ?? "";
+}
+
+/** Profile fields kept in the user store (no citizen ID / email). */
+export interface SsoUserInfo {
+  fname: string;
+  /** prename + fname + lname. */
+  name: string;
+  orgCode: string;
+  orgName: string;
+  jobPosition: string;
+}
+
+/**
+ * Userinfo claims for the user store. Org: the organizations[] entry that
+ * is in the allow-list when present, else the flat org_code / org_name.
+ */
+export function ssoUserInfo(p: Claims): SsoUserInfo {
+  const fname = str(p?.fname) ?? "";
+  const name = `${str(p?.prename) ?? ""}${fname} ${str(p?.lname) ?? ""}`.trim();
+  const allowed = allowedOrgs();
+  let org: Claims = p;
+  if (Array.isArray(p?.organizations)) {
+    const entries = p.organizations as Claims[];
+    org =
+      entries.find((o) => {
+        const c = str(o?.org_code ?? o?.hcode);
+        return c !== null && allowed.includes(c);
+      }) ?? (str(p?.org_code ?? p?.hcode) ? p : (entries[0] ?? p));
+  }
+  return {
+    fname,
+    name: name || (str(p?.name) ?? ""),
+    orgCode: str(org?.org_code ?? org?.hcode) ?? "",
+    orgName: text(org?.org_name ?? org?.hname ?? p?.org_name),
+    jobPosition: text(org?.job_position ?? org?.position ?? p?.job_position),
+  };
+}
+
+function allowedOrgs(): string[] {
+  return (process.env.AUTH_PLKHEALTH_ALLOWED_ORGS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export type OrgCheck = "allowed" | "not_allowed" | "not_configured";
 
 /**
@@ -116,10 +170,7 @@ export type OrgCheck = "allowed" | "not_allowed" | "not_configured";
  * carry one of the listed org codes.
  */
 export function checkOrg(p: Claims): OrgCheck {
-  const allowed = (process.env.AUTH_PLKHEALTH_ALLOWED_ORGS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const allowed = allowedOrgs();
   if (allowed.length === 0) return "not_configured";
   if (allowed.includes("*")) return "allowed";
   return profileOrgCodes(p).some((c) => allowed.includes(c))

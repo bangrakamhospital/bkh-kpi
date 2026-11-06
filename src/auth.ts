@@ -25,9 +25,20 @@ import {
   checkOrg,
   SSO_PROVIDER_ID,
   ssoProvider,
+  ssoUserInfo,
   warnOnRedirectOriginMismatch,
 } from "@/lib/auth/sso";
 import type { AuthUser } from "@/lib/auth/types";
+import {
+  isBootstrapAdminName,
+  isEnvAdmin,
+  logStoreError,
+  passwordLoginEnabled,
+  resolveAccess,
+  type SessionProvider,
+} from "@/lib/users/policy";
+import { recordSsoLogin } from "@/lib/users/store";
+import type { UserRole } from "@/lib/users/types";
 
 /**
  * Auth.js (next-auth v5) configuration.
@@ -36,8 +47,13 @@ import type { AuthUser } from "@/lib/auth/types";
  *    session username = OIDC `sub`, org allow-list AUTH_PLKHEALTH_ALLOWED_ORGS.
  *  - Credentials provider (`AUTH_PROVIDER` local|hosxp, in-memory rate limit)
  *    is registered ONLY when AUTH_PASSWORD_LOGIN=true (emergency, API only).
+ *  - User management (src/lib/users): after the org allow-list, the SSO
+ *    user is upserted in data/users.json; only status "approved" may sign
+ *    in (new users are "pending"). AUTH_ADMIN_SUBS / AUTH_BOOTSTRAP_ADMIN_FNAMES
+ *    create admins. The emergency Credentials account counts as admin.
  *  - Stateless JWT session (encrypted cookie, AUTH_SECRET), absolute
- *    lifetime 8 h from login; contains only { username, name }.
+ *    lifetime 8 h from login; contains only { username, name, provider, role }.
+ *    Every session read re-checks the user store (revocation is immediate).
  *  - Routes: /api/auth/* (src/app/api/auth/[...nextauth]/route.ts),
  *    custom sign-in page /login.
  *
@@ -99,10 +115,17 @@ function requestOrigin(headers: Headers | null | undefined): string | null {
   }
 }
 
-/** Session user exposed by `auth()` / `useSession()`. */
+/** Session user exposed by `auth()` / `useSession()` (`session.user`). */
 export interface SessionUser {
   username: string;
   name: string;
+  /**
+   * Role at the last session read (refreshed from the user store by the
+   * jwt callback). UI hint only: route handlers re-check the store.
+   */
+  role: UserRole;
+  /** "sso" = Provider ID, "password" = emergency Credentials (admin). */
+  provider: SessionProvider;
 }
 
 /** Narrow, validated user from an Auth.js session (null = not logged in). */
@@ -110,14 +133,67 @@ export function sessionUser(
   session: { user?: unknown } | null | undefined,
 ): SessionUser | null {
   const user = session?.user as Partial<SessionUser> | undefined;
-  if (!user || typeof user.username !== "string" || user.username === "") {
+  if (
+    !user ||
+    typeof user.username !== "string" ||
+    user.username === "" ||
+    (user.provider !== "sso" && user.provider !== "password")
+  ) {
     return null;
   }
   return {
     username: user.username,
     name:
       typeof user.name === "string" && user.name ? user.name : user.username,
+    role: user.role === "admin" ? "admin" : "user",
+    provider: user.provider,
   };
+}
+
+/**
+ * SSO sign-in after the org allow-list: upsert the user in the store and
+ * allow only approved accounts. Returns the signIn callback result.
+ */
+async function ssoAdmission(
+  sub: string,
+  profile: Record<string, unknown> | undefined,
+  ip: string,
+): Promise<true | string> {
+  const info = ssoUserInfo(profile);
+  let result;
+  try {
+    result = await recordSsoLogin(
+      {
+        sub,
+        name: info.name,
+        orgCode: info.orgCode,
+        orgName: info.orgName,
+        jobPosition: info.jobPosition,
+      },
+      {
+        envAdmin: isEnvAdmin(sub),
+        bootstrapCandidate: isBootstrapAdminName(info.fname),
+      },
+    );
+  } catch (err) {
+    logStoreError(err);
+    auditAuth("login_store_error", sub, ip);
+    return `/login?error=AccessDenied&code=${SSO_CODE.userStoreUnavailable}`;
+  }
+  const { user, created, promoted } = result;
+  if (created) auditAuth("user_created", sub, ip);
+  if (promoted === "bootstrap") auditAuth("user_bootstrap_admin", sub, ip);
+  if (promoted === "env") auditAuth("user_env_admin", sub, ip);
+  if (user.status === "approved") {
+    auditAuth("login_success", sub, ip);
+    return true;
+  }
+  if (user.status === "rejected") {
+    auditAuth("login_rejected", sub, ip);
+    return `/login?error=AccessDenied&code=${SSO_CODE.rejected}`;
+  }
+  auditAuth("login_pending", sub, ip);
+  return `/login?error=AccessDenied&code=${SSO_CODE.pending}`;
 }
 
 function buildConfig(ip: string): NextAuthConfig {
@@ -131,14 +207,15 @@ function buildConfig(ip: string): NextAuthConfig {
     providers: [
       // Username/password login is OFF: sign-in is Provider ID (SSO) only.
       // AUTH_PASSWORD_LOGIN=true re-enables it (API only, no form) for emergencies.
-      ...(process.env.AUTH_PASSWORD_LOGIN?.trim().toLowerCase() === "true"
+      // The emergency account counts as an ADMIN (break-glass).
+      ...(passwordLoginEnabled()
         ? [credentialsProvider(ip)]
         : []),
       // SSO (Provider ID) — only when AUTH_PLKHEALTH_* is configured.
       ...(sso ? [sso] : []),
     ],
     callbacks: {
-      signIn({ account, profile }) {
+      async signIn({ account, profile }) {
         if (account?.provider !== SSO_PROVIDER_ID) return true;
         // Stable identity = OIDC `sub` (user.id is a random UUID per sign-in).
         const who = ssoSubject(account);
@@ -155,23 +232,31 @@ function buildConfig(ip: string): NextAuthConfig {
               : SSO_CODE.orgNotAllowed
           }`;
         }
-        auditAuth("login_success", who, ip);
-        return true;
+        // Second gate: the user store (pending / rejected / approved).
+        return ssoAdmission(
+          who,
+          profile as Record<string, unknown> | undefined,
+          ip,
+        );
       },
-      jwt({ token, user, account }) {
+      async jwt({ token, user, account }) {
         const now = Math.floor(Date.now() / 1000);
         if (user) {
           // Sign-in: fresh minimal token (drops email/picture defaults).
           // SSO: OIDC sub; Credentials: the HOSxP / local loginname.
+          const provider: SessionProvider =
+            account?.provider === SSO_PROVIDER_ID ? "sso" : "password";
           const username =
-            account?.provider === SSO_PROVIDER_ID
-              ? ssoSubject(account)
-              : (user.id ?? "");
+            provider === "sso" ? ssoSubject(account) : (user.id ?? "");
           if (!username) return null;
+          const access = await resolveAccess(username, provider);
+          if (!access.ok) return null;
           return {
             sub: username,
             username,
             name: user.name ?? username,
+            provider,
+            role: access.role,
             loginAt: now,
           };
         }
@@ -186,18 +271,25 @@ function buildConfig(ip: string): NextAuthConfig {
         ) {
           return null;
         }
-        return token;
+        // Revocation: every session read re-checks the user store, so a
+        // rejected / reset user is logged out and role changes show up.
+        const access = await resolveAccess(token.username, token.provider);
+        if (!access.ok) return null;
+        return { ...token, role: access.role };
       },
       session({ token }) {
         const username =
           typeof token.username === "string" ? token.username : "";
         const name = typeof token.name === "string" ? token.name : username;
         const loginAt = typeof token.loginAt === "number" ? token.loginAt : 0;
+        const role: UserRole = token.role === "admin" ? "admin" : "user";
+        const provider: SessionProvider =
+          token.provider === "password" ? "password" : "sso";
         return {
           expires: new Date(
             (loginAt + SESSION_MAX_AGE_SECONDS) * 1000,
           ).toISOString(),
-          user: { username, name },
+          user: { username, name, role, provider },
         } as unknown as Session;
       },
     },

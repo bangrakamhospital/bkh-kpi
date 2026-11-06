@@ -1,11 +1,15 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, SearchX, X } from "lucide-react";
+import { Building2, Search, SearchX, Users, X } from "lucide-react";
+import type { ScreeningCode } from "@/lib/kpi/types";
+import { toneFor, type Department } from "./department-theme";
 
 export interface SearchableRow {
   no: number;
+  /** ScreeningCode ของแถว (ใช้กรองตามแผนก) */
+  code?: ScreeningCode;
   /** ข้อความที่ใช้ค้นหา (เลขข้อ ชื่อ กลุ่มเป้าหมาย code คำพ้อง) */
   keywords: string;
   /** แถว <tr> ที่ server เตรียมไว้แล้ว */
@@ -30,6 +34,39 @@ export function IndicatorSearch({
 }) {
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
+  const [deptId, setDeptId] = useState(searchParams.get("dept") ?? "");
+  const [departments, setDepartments] = useState<Department[]>([]);
+
+  // โหลดแผนกหลัง hydrate ถ้าล้มเหลว/ไม่มี จะซ่อนแถว chip เงียบๆ
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/departments")
+      .then(async (res) => {
+        if (!res.ok) return [];
+        const json = (await res.json()) as { departments?: Department[] };
+        return Array.isArray(json.departments) ? json.departments : [];
+      })
+      .catch((): Department[] => [])
+      .then((list) => {
+        if (!cancelled) setDepartments(list);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function selectDept(next: string) {
+    setDeptId(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next) params.set("dept", next);
+    else params.delete("dept");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      qs ? `?${qs}` : window.location.pathname,
+    );
+  }
 
   function update(next: string) {
     setQuery(next);
@@ -45,9 +82,12 @@ export function IndicatorSearch({
   }
 
   const q = normalize(query);
-  const visible = q
-    ? rows.filter((r) => normalize(r.keywords).includes(q))
-    : rows;
+  const activeDept = departments.find((d) => d.id === deptId);
+  const visible = rows.filter(
+    (r) =>
+      (!activeDept || (r.code !== undefined && activeDept.codes.includes(r.code))) &&
+      (!q || normalize(r.keywords).includes(q)),
+  );
 
   return (
     <div className="space-y-2">
@@ -88,6 +128,46 @@ export function IndicatorSearch({
         </p>
       </div>
 
+      {departments.length > 0 && (
+        <div
+          role="group"
+          aria-label="กรองตามแผนก"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <button
+            type="button"
+            aria-pressed={!activeDept}
+            onClick={() => selectDept("")}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+              !activeDept
+                ? "border-brand-700 bg-brand-700 text-white"
+                : "border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-100"
+            }`}
+          >
+            <Users aria-hidden="true" size={14} />
+            ทั้งหมด
+          </button>
+          {departments.map((d, i) => {
+            const tone = toneFor(d.color, i);
+            const active = activeDept?.id === d.id;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => selectDept(active ? "" : d.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                  active ? tone.chipActive : tone.chip
+                }`}
+              >
+                <Building2 aria-hidden="true" size={14} />
+                {d.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
         <table className="w-full min-w-[52rem] text-xs">
           <caption className="sr-only">
@@ -115,15 +195,22 @@ export function IndicatorSearch({
                     className="mx-auto text-zinc-500"
                   />
                   <p className="mt-2 text-xs text-zinc-700 dark:text-zinc-300">
-                    ไม่พบตัวชี้วัดที่ตรงกับ “{query.trim()}”
+                    {activeDept && !q
+                      ? "ยังไม่มีตัวชี้วัดของแผนกนี้"
+                      : q
+                        ? `ไม่พบตัวชี้วัดที่ตรงกับ “${query.trim()}”${activeDept ? ` ในแผนก ${activeDept.name}` : ""}`
+                        : "ไม่พบตัวชี้วัด"}
                   </p>
                   <button
                     type="button"
-                    onClick={() => update("")}
+                    onClick={() => {
+                      update("");
+                      selectDept("");
+                    }}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-brand-600 dark:border-zinc-700 dark:hover:bg-brand-900/40"
                   >
                     <X aria-hidden="true" size={16} />
-                    ล้างการค้นหา
+                    {activeDept ? "ล้างตัวกรอง" : "ล้างการค้นหา"}
                   </button>
                 </td>
               </tr>

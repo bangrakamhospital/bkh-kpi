@@ -34,3 +34,29 @@ export function clientIp(headers: Headers | null | undefined): string {
 export function logSafe(value: string, max = 64): string {
   return value.replace(/[\u0000-\u001f\u007f\s]+/g, "_").slice(0, max);
 }
+
+/**
+ * CSRF check for state-changing route handlers outside /api/auth: the
+ * browser's Origin must be this host (nginx forwards Host: $http_host),
+ * and Sec-Fetch-Site, when sent, must be "same-origin". Requests without
+ * an Origin header are refused (browsers always send it on PATCH/POST
+ * fetches).
+ */
+export function isSameOriginRequest(headers: Headers): boolean {
+  const site = headers.get("sec-fetch-site");
+  if (site && site !== "same-origin") return false;
+  const origin = headers.get("origin");
+  if (!origin || origin === "null") return false;
+  const host = (headers.get("x-forwarded-host") ?? headers.get("host"))
+    ?.split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  if (!host) return false;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    return url.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+}

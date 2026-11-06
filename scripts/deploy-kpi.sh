@@ -52,6 +52,13 @@ for k in HIS_HOST HIS_USER HIS_PASSWORD HIS_DATABASE AUTH_SECRET; do
   if ! grep -Eq "^$k=.+" .env; then echo "Missing $k in $APP_DIR/.env"; exit 1; fi
 done
 
+# Local user store (data/users.json: approved users / admins). It is an
+# ignored untracked dir, so `git reset --hard` above keeps it. NEVER run
+# `git clean -x` here. Owned by $USER (the pm2 user), mode 0700.
+# (If KPI_DATA_DIR is set in .env, create that directory the same way.)
+mkdir -p "$APP_DIR/data"
+chmod 700 "$APP_DIR/data"
+
 echo "==> 4/6 install + build"
 npm ci --no-audit --no-fund
 npm run build

@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, LogIn, LogOut, UserCircle2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Loader2, LogIn, LogOut, Settings, UserCircle2 } from "lucide-react";
 import { useAuth } from "./AuthProvider";
 
 const pillClass =
@@ -13,6 +15,9 @@ const iconCls = "h-4 w-4 shrink-0";
 export function HeaderAuth() {
   const { status, displayName, logout } = useAuth();
   const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin =
+    (session?.user as { role?: unknown } | undefined)?.role === "admin";
   const [busy, setBusy] = useState(false);
 
   if (status === "loading") {
@@ -48,6 +53,12 @@ export function HeaderAuth() {
           {displayName}
         </span>
       </span>
+      {isAdmin && (
+        <Link href="/admin/users" className={pillClass}>
+          <Settings aria-hidden="true" className={iconCls} />
+          จัดการระบบ
+        </Link>
+      )}
       <button
         type="button"
         disabled={busy}

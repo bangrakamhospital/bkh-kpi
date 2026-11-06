@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local app data: user store (data/users.json, staff accounts) — never commit
+/data/
+
 # deploy credentials (contains SSH password — never commit)
 DEPLOY_GUIDE*.md
 

@@ -29,12 +29,27 @@ export const SSO_CODE = {
   orgNotAllowed: "org_not_allowed",
   /** AUTH_PLKHEALTH_ALLOWED_ORGS is empty: SSO is fail-closed. */
   orgNotConfigured: "org_not_configured",
+  /** Account waits for admin approval (src/lib/users). */
+  pending: "pending",
+  /** Account was rejected by an admin. */
+  rejected: "rejected",
+  /** User store (users.json) unreadable / unwritable: fail closed. */
+  userStoreUnavailable: "user_store_unavailable",
 } as const;
 
 export const ORG_NOT_ALLOWED_MESSAGE =
   "บัญชี Provider ID นี้ไม่ได้สังกัดหน่วยงานที่ได้รับอนุญาต";
 export const ORG_NOT_CONFIGURED_MESSAGE =
   "ยังไม่ได้กำหนดหน่วยงานที่อนุญาตให้เข้าสู่ระบบ กรุณาติดต่อผู้ดูแลระบบ";
+
+export const ACCOUNT_PENDING_MESSAGE =
+  "บัญชีของคุณอยู่ระหว่างรอผู้ดูแลระบบอนุมัติ";
+export const ACCOUNT_REJECTED_MESSAGE =
+  "บัญชีของคุณไม่ได้รับอนุมัติให้ใช้งาน กรุณาติดต่อผู้ดูแลระบบ";
+export const USER_STORE_UNAVAILABLE_MESSAGE =
+  "ไม่สามารถตรวจสอบสิทธิ์ผู้ใช้ได้ในขณะนี้ กรุณาลองใหม่ หากยังไม่ได้ให้ติดต่อผู้ดูแลระบบ";
+/** 403 of /api/admin/* for signed-in users who are not admins. */
+export const ADMIN_ONLY_MESSAGE = "เฉพาะผู้ดูแลระบบเท่านั้น";
 
 export function rateLimitedCode(retryAfterSeconds: number): string {
   return `${LOGIN_CODE.rateLimited}_${Math.max(1, Math.ceil(retryAfterSeconds / 60))}`;
@@ -52,6 +67,11 @@ export function loginErrorMessage(
     case "AccessDenied":
       if (code === SSO_CODE.orgNotAllowed) return ORG_NOT_ALLOWED_MESSAGE;
       if (code === SSO_CODE.orgNotConfigured) return ORG_NOT_CONFIGURED_MESSAGE;
+      if (code === SSO_CODE.pending) return ACCOUNT_PENDING_MESSAGE;
+      if (code === SSO_CODE.rejected) return ACCOUNT_REJECTED_MESSAGE;
+      if (code === SSO_CODE.userStoreUnavailable) {
+        return USER_STORE_UNAVAILABLE_MESSAGE;
+      }
       return "ไม่ได้รับอนุญาตให้เข้าสู่ระบบ";
     // Server-side problem: misconfiguration, or a stale/missing state/PKCE
     // cookie (e.g. reached the app on another origin / an old tab).

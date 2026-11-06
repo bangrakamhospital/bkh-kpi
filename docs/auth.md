@@ -9,8 +9,10 @@
 | --- | --- |
 | `/` หน้าแรก, ตารางตัวชี้วัด | สาธารณะ |
 | `GET /api/kpi/screening/villages` (ตัวเลขรายหมู่) | สาธารณะ |
-| `GET /api/kpi/screening/persons` (รายชื่อ) | ต้องล็อกอิน |
-| `GET /api/kpi/screening/export` (Excel มีชีตรายชื่อ) | ต้องล็อกอิน |
+| `GET /api/kpi/screening/persons` (รายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
+| `GET /api/kpi/screening/export` (Excel มีชีตรายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
+| `GET /api/departments` (รายการแผนกสำหรับกรองหน้าแรก) | สาธารณะ |
+| `GET /api/admin/users`, `PATCH /api/admin/users/{sub}`, `POST/PATCH/DELETE /api/admin/departments[/{id}]` | ผู้ดูแลระบบ (`role=admin`) |
 | `/api/auth/*` ของ Auth.js (`session`, `csrf`, `providers`, `signin/plkhealth`, `callback/plkhealth`, `signout`) | สาธารณะ (POST ต้องมี CSRF token ของ Auth.js) |
 | `/auth/callback` redirect URI ที่ลงทะเบียนกับ IdP: 307 ส่งต่อ query เดิมไป `/api/auth/callback/plkhealth` | สาธารณะ |
 | `/login` หน้าเข้าสู่ระบบ | สาธารณะ |
@@ -33,10 +35,48 @@ Flow: ปุ่ม "เข้าสู่ระบบด้วย Provider ID" (
 | --- | --- |
 | `AccessDenied&code=org_not_allowed` | หน่วยงานของบัญชีไม่อยู่ใน `AUTH_PLKHEALTH_ALLOWED_ORGS` |
 | `AccessDenied&code=org_not_configured` | ยังไม่ได้ตั้ง `AUTH_PLKHEALTH_ALLOWED_ORGS` |
+| `AccessDenied&code=pending` | บัญชีอยู่ระหว่างรอผู้ดูแลระบบอนุมัติ (ดู "การจัดการผู้ใช้") |
+| `AccessDenied&code=rejected` | บัญชีไม่ได้รับอนุมัติ |
+| `AccessDenied&code=user_store_unavailable` | อ่าน/เขียน `data/users.json` ไม่ได้ (ปฏิเสธไว้ก่อน) |
 | `AccessDenied` | ไม่มี `sub` ใน profile หรือถูกปฏิเสธด้วยเหตุอื่น |
 | `OAuthCallbackError` | IdP ตอบ error เช่นผู้ใช้กดยกเลิก |
 | `OAuthSignInError` | เริ่มการล็อกอินไม่ได้ เช่นเรียก discovery ของ IdP ไม่ได้ |
 | `Configuration` | ตั้งค่าผิด หรือ cookie state/PKCE หาย/หมดอายุ (เปิดผิด origin, ค้างที่ IdP เกิน 15 นาที) |
+
+## การจัดการผู้ใช้ (อนุมัติโดยผู้ดูแลระบบ)
+
+ด่านที่ 1 คือ allow-list หน่วยงาน (`AUTH_PLKHEALTH_ALLOWED_ORGS`) ด่านที่ 2 คือการอนุมัติบัญชีโดยผู้ดูแลระบบ เพื่อไม่ให้ทุกคนในหน่วยงานเห็นรายชื่อผู้ป่วยได้
+
+- **ที่เก็บ:** ฐาน HIS เป็น read-only จึงเก็บผู้ใช้ในไฟล์ `${KPI_DATA_DIR || <cwd>/data}/users.json` (โฟลเดอร์ 0700, ไฟล์ 0600, สร้างเมื่อมีการล็อกอิน SSO ครั้งแรก) โค้ดอยู่ที่ `src/lib/users/store.ts` เขียนแบบ atomic (ไฟล์ tmp + fsync + rename) และมี mutex ภายใน process สำหรับ read-modify-write ถ้าไฟล์เสีย/อ่านไม่ได้ ระบบจะ**ไม่เขียนทับ**และปฏิเสธการเข้าถึงทั้งหมด (fail closed) จนกว่าจะแก้ไฟล์ ใช้ได้กับ process เดียวเท่านั้น (pm2 fork 1 instance) ห้ามรันหลาย instance บนไฟล์เดียวกัน
+- **ข้อมูลที่เก็บ:** `sub`, `name` (prename+fname+lname), `orgCode`, `orgName`, `jobPosition`, `status`, `role`, `createdAt`, `lastLoginAt`, `loginCount`, `decidedBy` (sub + ชื่อผู้อนุมัติ), `decidedAt` ไม่เก็บเลขบัตรประชาชน/email และไม่มีข้อมูลผู้ป่วย
+- **ล็อกอิน SSO:** หลังผ่าน allow-list หน่วยงาน callback `signIn` จะ upsert ผู้ใช้ (อัปเดตชื่อ/หน่วยงาน/ตำแหน่ง, `lastLoginAt`, `loginCount`) ผู้ใช้ใหม่ได้ `status=pending`, `role=user` เข้าได้เฉพาะ `approved` ส่วน `pending` -> `/login?error=AccessDenied&code=pending`, `rejected` -> `code=rejected`
+- **ยกเลิกสิทธิ์มีผลทันที:** callback `jwt` (ทุกครั้งที่อ่าน session) และ `requireSession()` / `requireAdmin()` ใน `src/lib/auth/guard.ts` ตรวจไฟล์ผู้ใช้ทุก request (ต้องมีบัญชีและเป็น `approved`, route admin ต้องเป็น `admin`) ถ้าไม่ผ่านจะได้ 401 (หน้าเว็บจะ logout ให้) อ่านไฟล์ไม่ได้ -> 503 role ใน session (`session.user.role`) ใช้แสดงลิงก์ในหน้าเว็บเท่านั้น
+- session ที่ออกก่อนมีระบบนี้ (ไม่มี `provider` ใน JWT) จะถูกตัดทิ้ง ผู้ใช้ต้องล็อกอินใหม่หนึ่งครั้งหลัง deploy
+- **บัญชีฉุกเฉิน** (`AUTH_PASSWORD_LOGIN=true`, Credentials) นับเป็น **admin** (break-glass) ไม่อยู่ในไฟล์ผู้ใช้ ปิด `AUTH_PASSWORD_LOGIN` แล้ว session ของบัญชีนี้ใช้ไม่ได้ทันที
+
+### ผู้ดูแลระบบ
+
+| ตัวแปร | ความหมาย |
+| --- | --- |
+| `AUTH_ADMIN_SUBS` | `sub` ของ Provider ID คั่นด้วย comma เป็น admin ที่อนุมัติแล้ว**เสมอ** (แก้จากหน้าเว็บไม่ได้ ได้ 409) **วิธีที่แนะนำ** |
+| `AUTH_BOOTSTRAP_ADMIN_FNAMES` | ชื่อจริง (fname) คั่นด้วย comma ตรงทุกตัวอักษร เช่น `ปริยศักดิ์` ผู้ที่ชื่อตรงและผ่าน allow-list หน่วยงานจะถูกตั้งเป็น admin อัตโนมัติ (audit `user_bootstrap_admin`) **เฉพาะเมื่อยังไม่มี admin ที่อนุมัติแล้วในไฟล์** และไม่ทำงานเมื่อ `AUTH_PLKHEALTH_ALLOWED_ORGS=*` |
+| `KPI_DATA_DIR` | โฟลเดอร์ของ `users.json` (ค่าเริ่มต้น `<โฟลเดอร์แอป>/data`) |
+
+ขั้นตอนตั้งค่าครั้งแรก: ตั้ง `AUTH_BOOTSTRAP_ADMIN_FNAMES=ปริยศักดิ์` -> รีสตาร์ต -> คุณปริยศักดิ์ล็อกอิน -> เปิด `/admin/users` คัดลอก `sub` ของตนเอง -> ตั้ง `AUTH_ADMIN_SUBS=<sub>` และลบ `AUTH_BOOTSTRAP_ADMIN_FNAMES` -> รีสตาร์ต (ชื่อจริงซ้ำกันได้ จึงไม่ควรใช้ fname ถาวร)
+
+### API (หน้า `/admin/users` ใช้ตาม contract นี้)
+
+type อยู่ที่ `src/lib/users/types.ts` (import ได้จากฝั่ง client) ทุก response มี `Cache-Control: private, no-store` error เป็น `{ "error": "<ข้อความภาษาไทย>" }`
+
+- `GET /api/admin/users` -> 200 `{ "users": AdminUser[], "me": { "sub" } }` เรียง `pending` ก่อน แล้วตาม `lastLoginAt` ใหม่ไปเก่า
+  - `AdminUser` = `{ sub, name, orgCode, orgName, jobPosition, status: "pending"|"approved"|"rejected", role: "admin"|"user", createdAt, lastLoginAt, loginCount, decidedBy: { sub, name } | null, decidedAt: string | null }` (บัญชีใน `AUTH_ADMIN_SUBS` แสดงเป็น approved/admin, `decidedBy.sub = "system"` เมื่อตั้งอัตโนมัติ)
+- `PATCH /api/admin/users/{encodeURIComponent(sub)}` body `{ "status"?: "approved"|"rejected"|"pending", "role"?: "admin"|"user" }` (`Content-Type: application/json`, อย่างน้อย 1 key, ห้ามมี key อื่น, ไม่เกิน 1 KB) -> 200 `{ "user": AdminUser }` (ค่าเดิม = ไม่เปลี่ยน ไม่บันทึก)
+  - 400 body ไม่ถูกต้อง, 403 Origin ไม่ตรงกับ Host (CSRF) หรือ `Sec-Fetch-Site` ไม่ใช่ `same-origin`, 404 ไม่พบ `sub`, 409 แก้บัญชีตนเอง / บัญชีใน `AUTH_ADMIN_SUBS` / ทำให้ไม่เหลือ admin ที่อนุมัติแล้ว
+- ทั้งสอง route: 401 ไม่ได้ล็อกอินหรือบัญชีไม่ approved แล้ว, 403 ไม่ใช่ admin, 429 เกิน 120 ครั้ง/นาทีต่อ admin (มี `Retry-After`), 503 auth ยังไม่ตั้งค่าหรืออ่านไฟล์ผู้ใช้ไม่ได้
+
+### Deploy
+
+`scripts/deploy-kpi.sh` ใช้ `git reset --hard` ซึ่ง**ไม่ลบ** `data/` (เป็นโฟลเดอร์ untracked ที่อยู่ใน `.gitignore`) script สร้าง `data/` (0700) ให้เป็นของผู้ใช้ที่รัน pm2 ห้ามใช้ `git clean -x` บน server ถ้าตั้ง `KPI_DATA_DIR` ต้องสร้างโฟลเดอร์นั้นเองและให้ผู้ใช้ pm2 เขียนได้ ควรสำรอง `users.json` ไว้ด้วย (ถ้าหาย ทุกคนจะกลับเป็น pending ยกเว้น `AUTH_ADMIN_SUBS`)
 
 ## สถาปัตยกรรม (Auth.js / next-auth v5)
 
@@ -46,7 +86,7 @@ Flow: ปุ่ม "เข้าสู่ระบบด้วย Provider ID" (
   - **SSO provider** จาก `ssoProvider()` (เปิดเมื่อตั้ง `AUTH_PLKHEALTH_*` ครบ) callback `signIn` ตรวจ `sub` และหน่วยงาน แล้วเขียน audit `login_success` / `login_failed`
   - **Credentials provider** (เฉพาะ `AUTH_PASSWORD_LOGIN=true`) เรียก provider เดิมผ่าน `getAuthProvider()` (`AUTH_PROVIDER` = `local` | `hosxp`) ใน `authorize()` จะตรวจ rate limit, เขียน audit log (`login_success` / `login_failed` / `login_rate_limited`) และโยน `CredentialsSignin` พร้อม `code`
   - `events.signOut` เขียน audit `logout`
-  - session แบบ **JWT** (cookie เข้ารหัสด้วย `AUTH_SECRET`) เก็บแค่ `{ username, name }` อายุ **8 ชม. นับจากเวลาล็อกอิน** โดย callback `jwt` เก็บ `loginAt` และตัด session ที่เกิน 8 ชม. ทิ้ง เพราะ Auth.js ต่ออายุ cookie ทุกครั้งที่อ่าน session
+  - session แบบ **JWT** (cookie เข้ารหัสด้วย `AUTH_SECRET`) เก็บแค่ `{ username, name, provider, role }` (role อัปเดตจากไฟล์ผู้ใช้ทุกครั้งที่อ่าน session) อายุ **8 ชม. นับจากเวลาล็อกอิน** โดย callback `jwt` เก็บ `loginAt` และตัด session ที่เกิน 8 ชม. ทิ้ง เพราะ Auth.js ต่ออายุ cookie ทุกครั้งที่อ่าน session
   - `trustHost: true` (อยู่หลัง nginx) และ `pages.signIn` = `pages.error` = `/login`
   - สร้าง config ต่อ request (lazy init) เพื่อให้ได้ IP ของ client สำหรับ rate limit/audit และให้อ่าน env ตอน runtime
   - เปลี่ยน logger ของ Auth.js ให้พิมพ์แค่ชนิดของ error บรรทัดเดียว (ไม่มี stack, token, profile หรือรายละเอียดฐานข้อมูล)
@@ -55,6 +95,9 @@ Flow: ปุ่ม "เข้าสู่ระบบด้วย Provider ID" (
 - `src/lib/auth/sso.ts`: provider OIDC, ตรวจ env/redirect URI, `checkOrg()` (allow-list หน่วยงาน), warning เมื่อ origin ไม่ตรง
 - `src/lib/auth/sso-id.ts`: ค่าคงที่ `SSO_PROVIDER_ID` / `SSO_REDIRECT_PATH` ใช้ร่วมกันทั้ง server และ client
 - `src/lib/auth/guard.ts`: `requireSession(route)` เรียก `connection()` ก่อน (ให้ทำงานทุก request และไม่ถูก prerender) จากนั้นตรวจ `AUTH_SECRET` (ไม่มีหรือสั้นกว่า 32 ตัว -> 503) และ `auth()` (ไม่มี session -> 401)
+  และตรวจไฟล์ผู้ใช้ซ้ำทุก request (`resolveAccess()`) ส่วน `requireAdmin(route)` ต้องเป็น admin ด้วย (403)
+- `src/lib/users/`: `store.ts` (ไฟล์ `users.json`), `policy.ts` (`AUTH_ADMIN_SUBS`, `AUTH_BOOTSTRAP_ADMIN_FNAMES`, `resolveAccess()`), `types.ts` (contract ของ API ใช้ได้ทั้ง client/server), `admin-api.ts` (`toAdminUser`) ไฟล์ JSON ใช้ helper กลาง `src/lib/data/json-store.ts` (mutex, atomic write, cache) ร่วมกับ `src/lib/departments/` (ดู `docs/departments.md`)
+- `src/lib/auth/admin-gate.ts`: `adminGate()` (requireAdmin + rate limit 120 ครั้ง/นาทีต่อ admin), `adminMutationGate()` (+ ตรวจ Origin), `readJsonBody()` ใช้กับทุก route ใต้ `/api/admin/*`
 - `src/lib/auth/settings.ts`: อายุ session, `isAuthConfigured()`, `secureCookiesEnabled()`
 - `src/lib/auth/messages.ts`: ข้อความภาษาไทยและ code ของ error การล็อกอิน (ใช้ทั้ง server และ client)
 - `src/lib/auth/types.ts`, `provider.ts`, `providers/{hosxp,local}.ts`, `rate-limit.ts`: ใช้เฉพาะเมื่อ `AUTH_PASSWORD_LOGIN=true`
@@ -150,6 +193,13 @@ SELECT account_disable, COUNT(*) FROM opduser GROUP BY account_disable;
 [audit] 2026-11-06T02:58:00.000Z action=login_failed user=<sub> ip=10.0.0.5
 [audit] 2026-11-06T02:58:30.000Z action=login_rate_limited user=nurse01 ip=10.0.0.5
 [audit] 2026-11-06T05:00:00.000Z action=logout user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T02:57:00.000Z action=user_created user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T02:57:00.000Z action=login_pending user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T02:57:00.000Z action=login_rejected user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T02:57:00.000Z action=login_store_error user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T02:57:00.000Z action=user_bootstrap_admin user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T02:57:00.000Z action=user_env_admin user=<sub> ip=10.0.0.5
+[audit] 2026-11-06T03:10:00.000Z action=user_update user=<admin sub> target=<sub> status=pending->approved role=user->user ip=10.0.0.5
 ```
 
 `user` คือ OIDC `sub` ของ Provider ID (หรือ loginname เมื่อใช้ Credentials) `login_failed` ของ SSO ที่ไม่มี `sub` จะเป็น `user=-` ส่วน `login_rate_limited` มีเฉพาะ Credentials
@@ -157,7 +207,7 @@ log ไม่มีรหัสผ่าน, hash, cookie, token หรือข
 
 ## ข้อจำกัด
 
-- session เป็นแบบ stateless (JWT) logout จึงทำได้แค่ลบ cookie ในเบราว์เซอร์นั้น (ไม่ได้ logout ที่ IdP) ถ้า cookie ถูกคัดลอกไป จะยังใช้ได้จนครบ 8 ชม. นับจากล็อกอิน ถ้าต้องการยกเลิกทุก session ทันที ให้เปลี่ยน `AUTH_SECRET`
+- session เป็นแบบ stateless (JWT) logout จึงทำได้แค่ลบ cookie ในเบราว์เซอร์นั้น (ไม่ได้ logout ที่ IdP) ถ้า cookie ถูกคัดลอกไป จะยังใช้ได้จนครบ 8 ชม. นับจากล็อกอิน เว้นแต่ผู้ดูแลระบบเปลี่ยนสถานะบัญชีเป็น `rejected`/`pending` (มีผลทันที) ถ้าต้องการยกเลิกทุก session ทันที ให้เปลี่ยน `AUTH_SECRET`
 - หน่วยงานถูกตรวจตอนล็อกอินเท่านั้น ถ้าเปลี่ยน `AUTH_PLKHEALTH_ALLOWED_ORGS` session เดิมยังใช้ได้จนหมดอายุ
 - rate limit (Credentials) อยู่ในหน่วยความจำของ process เดียว รีสตาร์ตแล้วค่าจะหายไป
 - IP อ่านจาก `X-Forwarded-For` ซึ่งเชื่อถือได้เฉพาะเมื่ออยู่หลัง reverse proxy ที่ตั้ง header นี้เอง

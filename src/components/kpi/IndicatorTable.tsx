@@ -10,44 +10,19 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
-import type { ScreeningCode, ScreeningIndicator } from "@/lib/kpi/types";
+import type { ScreeningIndicator } from "@/lib/kpi/types";
 import {
   meetsTarget,
   SCREENING_INDICATORS,
   targetOperatorSign,
 } from "@/lib/kpi/screening-indicators";
-import { ACCENTS, type AccentKey } from "./indicator-theme";
+import { ACCENTS } from "./indicator-theme";
+import { INDICATOR_ROWS, type IndicatorRowConfig } from "./indicator-rows";
 import { InfoPopover, type InfoItem } from "./InfoPopover";
 import { IndicatorSearch, type SearchableRow } from "./IndicatorSearch";
 import { ProgressBar } from "./ProgressBar";
 import { VillageDetailButton } from "./VillageDetailButton";
 import { formatNumber, formatPercent } from "./format";
-
-interface IndicatorRowConfig {
-  no: number;
-  /** ชื่อหลัก (บรรทัดรองมาจากข้อมูลของ indicator) */
-  title: string;
-  /** กลุ่มเป้าหมาย + อายุ แบบสั้น (บรรทัดรอง) */
-  subtitle: string;
-  /** คำพ้อง/คำค้นเพิ่มเติม */
-  keywords: string[];
-  accent: AccentKey;
-  /** undefined = ยังไม่มีข้อมูล/นิยาม */
-  code?: ScreeningCode;
-}
-
-/** เพิ่มตัวชี้วัดใหม่ที่นี่ (ไม่ใส่ code = แสดงเป็นรอกำหนดนิยาม) */
-const INDICATOR_ROWS: IndicatorRowConfig[] = [
-  { no: 1, code: "DM", accent: "dm", title: "คัดกรองเบาหวาน", subtitle: "ประชาชนอายุ 35 ปีขึ้นไป", keywords: ["เบาหวาน","DM","diabetes"] },
-  { no: 2, code: "HT", accent: "ht", title: "คัดกรองความดันโลหิตสูง", subtitle: "ประชาชนอายุ 35 ปีขึ้นไป", keywords: ["ความดัน","HT","ความดันโลหิตสูง"] },
-  { no: 3, code: "CX", accent: "cervix", title: "คัดกรองมะเร็งปากมดลูก", subtitle: "หญิงไทย 30–60 ปี", keywords: ["ปากมดลูก","HPV","Pap","มะเร็ง","CA cervix"] },
-  { no: 4, code: "BR", accent: "breast", title: "คัดกรองมะเร็งเต้านม", subtitle: "หญิง 40–70 ปี", keywords: ["เต้านม","CBE","มะเร็ง","breast"] },
-  { no: 5, code: "DMC", accent: "confirmDm", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยเบาหวาน", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["เบาหวาน","ยืนยัน","สงสัยป่วย","FPG","DM","HDC","diabetes"] },
-  { no: 6, code: "HTC", accent: "confirmHt", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยความดันโลหิตสูง", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["ความดัน","ความดันโลหิตสูง","ยืนยัน","สงสัยป่วย","OBPM","HT","HDC"] },
-  { no: 7, code: "RLU_HBA1C", accent: "hba1c", title: "ผู้ป่วยเบาหวานได้รับการตรวจ HbA1c", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["HbA1c","เบาหวาน","lab","RLU","HDC","diabetes"] },
-  { no: 8, code: "RLU_LDL", accent: "ldl", title: "ผู้ป่วยเบาหวานได้รับการตรวจ LDL", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["LDL","ไขมัน","เบาหวาน","lab","RLU","HDC"] },
-  { no: 9, code: "RLU_CR", accent: "creatinine", title: "ผู้ป่วยเบาหวานได้รับการตรวจ Creatinine", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["Creatinine","ครีเอตินีน","ไต","เบาหวาน","lab","RLU","HDC"] },
-];
 
 const disabledButtonClass =
   "inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500";
@@ -297,6 +272,7 @@ export function IndicatorTable({
 
   const rows: SearchableRow[] = INDICATOR_ROWS.map((row) => ({
     no: row.no,
+    code: row.code,
     keywords: [
       `ข้อ ${row.no}`,
       row.title,
