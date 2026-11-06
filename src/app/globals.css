@@ -1,26 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eef6f5;
+  --foreground: #14232b;
+  --surface: #ffffff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --font-sans: var(--font-sarabun);
+}
+
+/* Design tokens: ธีมสาธารณสุข teal/emerald (white on 600+ passes AA) */
+@theme {
+  --color-brand-50: #effaf8;
+  --color-brand-100: #d5f2ed;
+  --color-brand-200: #aae5db;
+  --color-brand-300: #74d0c3;
+  --color-brand-400: #3fb5a8;
+  --color-brand-500: #1f9a8f;
+  --color-brand-600: #157c75;
+  --color-brand-700: #14635f;
+  --color-brand-800: #134e4c;
+  --color-brand-900: #123f3e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0a1514;
+    --foreground: #e6f0ee;
+    --surface: #111f1e;
   }
 }
 
 body {
+  font-size: 0.75rem; /* 12px: Content (Header 16px = text-base, SubHeader 14px = text-sm) */
+  line-height: 1.5;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sarabun), sans-serif;
 }
