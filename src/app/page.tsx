@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { HeartPulse } from "lucide-react";
 import { ScreeningDashboard } from "@/components/kpi/ScreeningDashboard";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
+import { HeaderAuth } from "@/components/auth/HeaderAuth";
 
 export default function Home(props: PageProps<"/">) {
   return (
@@ -11,7 +12,7 @@ export default function Home(props: PageProps<"/">) {
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/15">
             <HeartPulse aria-hidden="true" className="h-5 w-5" />
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-base font-bold tracking-wide text-brand-100">
               BKH KPI
             </p>
@@ -22,6 +23,8 @@ export default function Home(props: PageProps<"/">) {
               ตัวชี้วัดการคัดกรองเบาหวาน ความดันโลหิตสูง และมะเร็ง
             </p>
           </div>
+          {/* Client-side (/api/auth/me): keeps "/" a Partial Prerender. */}
+          <HeaderAuth />
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">

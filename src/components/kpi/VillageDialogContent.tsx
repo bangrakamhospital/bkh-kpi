@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -13,6 +13,8 @@ import {
   Inbox,
   Info,
   ListFilter,
+  Loader2,
+  Lock,
   MapPin,
   Percent,
   RotateCcw,
@@ -34,6 +36,8 @@ import { InfoPopover } from "./InfoPopover";
 import { ProgressBar } from "./ProgressBar";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 import { useApiList } from "./useApi";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { LoginForm } from "@/components/auth/LoginForm";
 
 interface Props {
   code: ScreeningCode;
@@ -56,7 +60,7 @@ interface StatusLabels {
 const btnClass =
   "inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-surface px-3 py-1.5 text-sm font-medium hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:border-zinc-700 dark:hover:bg-brand-900/40";
 const excelClass =
-  "inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-green-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700 dark:bg-green-600 dark:hover:bg-green-500";
+  "inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-green-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700 disabled:opacity-60 dark:bg-green-600 dark:hover:bg-green-500";
 const th = "px-3 py-2 text-sm font-semibold";
 const td = "px-3 py-2";
 const iconCls = "h-4 w-4 shrink-0";
@@ -261,9 +265,145 @@ export function VillageDialogContent({
   titleId,
   onClose,
 }: Props) {
+  const { status, markLoggedOut } = useAuth();
   const [village, setVillage] = useState<VillageBreakdown | null>(null);
+  const [loginFor, setLoginFor] = useState<LoginRequest | null>(null);
+  const [exportState, setExportState] = useState<ExportState>({
+    busy: null,
+    error: null,
+  });
   const base = `code=${code}&fy=${fiscalYear}`;
   const theme = ACCENTS[accent];
+  // "loading" = optimistic: the API re-checks and answers 401 if needed.
+  const locked = status === "out";
+
+  const requireLogin = useCallback(
+    (pending: Pending, reason: LoginRequest["reason"]) => {
+      if (reason === "expired") markLoggedOut();
+      setLoginFor({ pending, reason });
+    },
+    [markLoggedOut],
+  );
+
+  const downloadExport = useCallback(
+    async (villageId: number | null) => {
+      const key = exportKey(villageId);
+      setExportState({ busy: key, error: null });
+      const url = `/api/kpi/screening/export?${base}${
+        villageId !== null ? `&village=${villageId}` : ""
+      }`;
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (res.status === 401) {
+          setExportState({ busy: null, error: null });
+          requireLogin({ kind: "export", villageId }, "expired");
+          return;
+        }
+        if (!res.ok) {
+          const json = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          setExportState({
+            busy: null,
+            error: json?.error ?? "ไม่สามารถดาวน์โหลดไฟล์ได้",
+          });
+          return;
+        }
+        const blob = await res.blob();
+        saveBlob(blob, filenameFrom(res.headers.get("Content-Disposition")));
+        setExportState({ busy: null, error: null });
+      } catch {
+        setExportState({ busy: null, error: "ไม่สามารถดาวน์โหลดไฟล์ได้" });
+      }
+    },
+    [base, requireLogin],
+  );
+
+  const onExport = useCallback(
+    (villageId: number | null) => {
+      if (locked) requireLogin({ kind: "export", villageId }, "required");
+      else void downloadExport(villageId);
+    },
+    [locked, requireLogin, downloadExport],
+  );
+
+  const onSelectVillage = useCallback(
+    (v: VillageBreakdown) => {
+      if (locked) requireLogin({ kind: "persons", village: v }, "required");
+      else setVillage(v);
+    },
+    [locked, requireLogin],
+  );
+
+  const onPersonsUnauthorized = useCallback(
+    (v: VillageBreakdown) => {
+      requireLogin({ kind: "persons", village: v }, "expired");
+    },
+    [requireLogin],
+  );
+
+  function onLoginSuccess() {
+    const pending = loginFor?.pending;
+    setLoginFor(null);
+    if (!pending) return;
+    if (pending.kind === "persons") {
+      setVillage(pending.village);
+    } else {
+      void downloadExport(pending.villageId);
+    }
+  }
+
+  function onLoginCancel() {
+    setLoginFor(null);
+    // Not logged in -> person list is not reachable; back to villages.
+    if (status !== "in") setVillage(null);
+  }
+
+  const exportProps = {
+    locked,
+    busyKey: exportState.busy,
+    error: exportState.error,
+    onExport,
+  };
+
+  let body: React.ReactNode;
+  if (loginFor) {
+    body = (
+      <LoginPanel
+        request={loginFor}
+        accent={accent}
+        onSuccess={onLoginSuccess}
+        onCancel={onLoginCancel}
+      />
+    );
+  } else if (village && !locked) {
+    body = (
+      <PersonsView
+        key={village.villageId}
+        base={base}
+        accent={accent}
+        title={title}
+        statusLabels={statusLabels}
+        denominatorFactor={denominatorFactor}
+        village={village}
+        exportProps={exportProps}
+        onUnauthorized={onPersonsUnauthorized}
+        onBack={() => setVillage(null)}
+      />
+    );
+  } else {
+    body = (
+      <VillagesView
+        base={base}
+        accent={accent}
+        targetPercent={targetPercent}
+        denominatorFactor={denominatorFactor}
+        locked={locked}
+        exportProps={exportProps}
+        onSelect={onSelectVillage}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-0 w-full flex-col">
@@ -292,27 +432,132 @@ export function VillageDialogContent({
           <X aria-hidden="true" className="h-4 w-4" />
         </button>
       </header>
-      {village ? (
-        <PersonsView
-          key={village.villageId}
-          base={base}
-          accent={accent}
-          title={title}
-          statusLabels={statusLabels}
-          denominatorFactor={denominatorFactor}
-          village={village}
-          onBack={() => setVillage(null)}
-        />
-      ) : (
-        <VillagesView
-          base={base}
-          accent={accent}
-          targetPercent={targetPercent}
-          denominatorFactor={denominatorFactor}
-          onSelect={setVillage}
-        />
-      )}
+      {body}
     </div>
+  );
+}
+
+/* ----------------------------- login / export ---------------------------- */
+
+type Pending =
+  | { kind: "persons"; village: VillageBreakdown }
+  | { kind: "export"; villageId: number | null };
+
+interface LoginRequest {
+  pending: Pending;
+  /** "expired" = a protected API answered 401. */
+  reason: "required" | "expired";
+}
+
+interface ExportState {
+  /** exportKey() of the download in progress. */
+  busy: string | null;
+  error: string | null;
+}
+
+interface ExportProps {
+  locked: boolean;
+  busyKey: string | null;
+  error: string | null;
+  onExport: (villageId: number | null) => void;
+}
+
+function exportKey(villageId: number | null): string {
+  return villageId === null ? "all" : String(villageId);
+}
+
+/** ASCII filename from the server's Content-Disposition, else a default. */
+function filenameFrom(header: string | null): string {
+  const m = header?.match(/filename="([A-Za-z0-9._-]{1,100})"/);
+  return m ? m[1] : "kpi-export.xlsx";
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+function ExportButton({
+  villageId,
+  locked,
+  busyKey,
+  error,
+  onExport,
+}: ExportProps & { villageId: number | null }) {
+  const busy = busyKey === exportKey(villageId);
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => onExport(villageId)}
+        disabled={busyKey !== null}
+        aria-label={locked ? "Export Excel (ต้องเข้าสู่ระบบ)" : undefined}
+        title={locked ? "ต้องเข้าสู่ระบบก่อนดาวน์โหลด (ไฟล์มีรายชื่อ)" : undefined}
+        className={excelClass}
+      >
+        {locked ? (
+          <Lock aria-hidden="true" className={iconCls} />
+        ) : (
+          <FileSpreadsheet aria-hidden="true" className={iconCls} />
+        )}
+        Export Excel
+        {busy ? (
+          <Loader2 aria-hidden="true" className={`${iconCls} animate-spin`} />
+        ) : (
+          !locked && <Download aria-hidden="true" className={iconCls} />
+        )}
+      </button>
+      {error && !busy && (
+        <span role="alert" className="text-xs text-red-800 dark:text-red-300">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function LoginPanel({
+  request,
+  accent,
+  onSuccess,
+  onCancel,
+}: {
+  request: LoginRequest;
+  accent: AccentKey;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const theme = ACCENTS[accent];
+  const { pending, reason } = request;
+  const what =
+    pending.kind === "persons"
+      ? `ดูรายชื่อ หมู่ ${pending.village.moo} ${pending.village.villageName}`
+      : "ดาวน์โหลด Excel (มีรายชื่อผู้รับบริการ)";
+  const description =
+    reason === "expired"
+      ? `การเข้าสู่ระบบหมดอายุ กรุณาเข้าสู่ระบบอีกครั้งเพื่อ${what}`
+      : `ต้องเข้าสู่ระบบด้วยบัญชี HOSxP ก่อน${what}`;
+  return (
+    <>
+      <div
+        className={`flex items-center gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800 ${theme.soft}`}
+      >
+        <button type="button" onClick={onCancel} className={btnClass}>
+          <ArrowLeft aria-hidden="true" className={iconCls} />
+          กลับ
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 justify-center overflow-auto p-6">
+        <LoginForm description={description} onSuccess={onSuccess} />
+      </div>
+    </>
   );
 }
 
@@ -321,12 +566,16 @@ function VillagesView({
   accent,
   targetPercent,
   denominatorFactor,
+  locked,
+  exportProps,
   onSelect,
 }: {
   base: string;
   accent: AccentKey;
   targetPercent: number;
   denominatorFactor: number;
+  locked: boolean;
+  exportProps: ExportProps;
   onSelect: (v: VillageBreakdown) => void;
 }) {
   const { loading, error, data, retry } = useApiList<VillageBreakdown>(
@@ -359,15 +608,7 @@ function VillagesView({
           <Info aria-hidden="true" className={iconCls} />
           เกณฑ์ ≥ {formatNumber(targetPercent)}%
         </p>
-        <a
-          href={`/api/kpi/screening/export?${base}`}
-          download
-          className={excelClass}
-        >
-          <FileSpreadsheet aria-hidden="true" className={iconCls} />
-          Export Excel
-          <Download aria-hidden="true" className={iconCls} />
-        </a>
+        <ExportButton villageId={null} {...exportProps} />
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <Status
@@ -466,9 +707,19 @@ function VillagesView({
                         <button
                           type="button"
                           onClick={() => onSelect(r)}
+                          aria-label={
+                            locked
+                              ? `รายชื่อ หมู่ ${r.moo} (ต้องเข้าสู่ระบบ)`
+                              : `รายชื่อ หมู่ ${r.moo}`
+                          }
+                          title={locked ? "ต้องเข้าสู่ระบบก่อนดูรายชื่อ" : undefined}
                           className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 ${theme.pill}`}
                         >
-                          <Users aria-hidden="true" className={iconCls} />
+                          {locked ? (
+                            <Lock aria-hidden="true" className={iconCls} />
+                          ) : (
+                            <Users aria-hidden="true" className={iconCls} />
+                          )}
                           รายชื่อ
                           <ChevronRight aria-hidden="true" className={iconCls} />
                         </button>
@@ -586,6 +837,8 @@ function PersonsView({
   statusLabels,
   denominatorFactor,
   village,
+  exportProps,
+  onUnauthorized,
   onBack,
 }: {
   base: string;
@@ -594,13 +847,20 @@ function PersonsView({
   statusLabels: StatusLabels;
   denominatorFactor: number;
   village: VillageBreakdown;
+  exportProps: ExportProps;
+  onUnauthorized: (v: VillageBreakdown) => void;
   onBack: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const { loading, error, truncated, data, retry } = useApiList<ScreeningPerson>(
-    `/api/kpi/screening/persons?${base}&village=${village.villageId}`,
-  );
+  const { loading, error, truncated, unauthorized, data, retry } =
+    useApiList<ScreeningPerson>(
+      `/api/kpi/screening/persons?${base}&village=${village.villageId}`,
+    );
+  // Session expired / logged out elsewhere -> back to the login form.
+  useEffect(() => {
+    if (unauthorized) onUnauthorized(village);
+  }, [unauthorized, onUnauthorized, village]);
   const theme = ACCENTS[accent];
 
   const all = data ?? [];
@@ -708,15 +968,7 @@ function PersonsView({
             );
           })}
         </div>
-        <a
-          href={`/api/kpi/screening/export?${base}&village=${village.villageId}`}
-          download
-          className={excelClass}
-        >
-          <FileSpreadsheet aria-hidden="true" className={iconCls} />
-          Export Excel
-          <Download aria-hidden="true" className={iconCls} />
-        </a>
+        <ExportButton villageId={village.villageId} {...exportProps} />
       </div>
       {truncated && (
         <p
@@ -731,7 +983,7 @@ function PersonsView({
         <Status
           loading={loading}
           error={error}
-          empty={!loading && !error && rows.length === 0}
+          empty={!loading && !error && !unauthorized && rows.length === 0}
           onRetry={retry}
         />
         {rows.length > 0 && (

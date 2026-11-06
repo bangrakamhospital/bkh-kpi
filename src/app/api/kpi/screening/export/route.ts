@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 
+import { auditDataAccess } from "@/lib/auth/audit";
+import { requireSession } from "@/lib/auth/guard";
 import {
   jsonError,
   parseScreeningQuery,
@@ -15,11 +17,18 @@ import { buildScreeningWorkbook } from "@/lib/kpi/screening-excel";
  *
  * Contains patient-identifiable data (HN, name): never cached
  * (`Cache-Control: private, no-store`).
+ *
+ * Requires login: 401 { error: "กรุณาเข้าสู่ระบบ" } without a valid session,
+ * 503 when auth is not configured. Each success is audit-logged.
  */
 const XLSX_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export async function GET(request: NextRequest): Promise<Response> {
+  // Login required (patient-identifiable data). Checked here, not only in UI.
+  const auth = requireSession(request, "api/kpi/screening/export");
+  if (!auth.ok) return auth.response;
+
   const parsed = parseScreeningQuery(
     request.nextUrl.searchParams,
     "optional",
@@ -39,6 +48,14 @@ export async function GET(request: NextRequest): Promise<Response> {
       const moo = data.villages[0]?.moo ?? "";
       suffix = /^\d{1,4}$/.test(moo) ? `-moo${moo}` : `-village${villageId}`;
     }
+    auditDataAccess({
+      action: "export",
+      loginname: auth.session.loginname,
+      code,
+      fiscalYear,
+      villageId,
+      rows: data.persons.length,
+    });
     const filename = `kpi-${code}-${fiscalYear}${suffix}.xlsx`;
 
     return new Response(new Uint8Array(buffer), {

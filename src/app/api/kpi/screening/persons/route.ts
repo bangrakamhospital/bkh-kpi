@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 
+import { auditDataAccess } from "@/lib/auth/audit";
+import { requireSession } from "@/lib/auth/guard";
 import {
   jsonError,
   parseScreeningQuery,
@@ -18,8 +20,15 @@ import type { ScreeningPerson } from "@/lib/kpi/types";
  * Contains patient-identifiable data (HN, name): never cached anywhere
  * (no "use cache" in the data layer, `Cache-Control: private, no-store`).
  * Do not log the response body.
+ *
+ * Requires login: 401 { error: "กรุณาเข้าสู่ระบบ" } without a valid session,
+ * 503 when auth is not configured. Each success is audit-logged.
  */
 export async function GET(request: NextRequest): Promise<Response> {
+  // Login required (patient-identifiable data). Checked here, not only in UI.
+  const auth = requireSession(request, "api/kpi/screening/persons");
+  if (!auth.ok) return auth.response;
+
   const parsed = parseScreeningQuery(
     request.nextUrl.searchParams,
     "required",
@@ -34,6 +43,14 @@ export async function GET(request: NextRequest): Promise<Response> {
       fiscalYear,
       villageId as number,
     );
+    auditDataAccess({
+      action: "persons",
+      loginname: auth.session.loginname,
+      code,
+      fiscalYear,
+      villageId,
+      rows: persons.length,
+    });
     const body: ScreeningPerson[] = persons;
     const headers: Record<string, string> = {
       "Cache-Control": "private, no-store",
