@@ -11,6 +11,8 @@ import {
 } from "@/lib/kpi/fiscal-year";
 import {
   applyTargetShare,
+  CKD5_INDICATOR,
+  reductionPercentOf,
   SCREENING_CODES,
   SCREENING_INDICATORS,
   screeningCountWindow,
@@ -19,10 +21,14 @@ import {
 } from "@/lib/kpi/screening-indicators";
 import type {
   KpiDataSource,
-  ScreeningCode,
+  RatioCode,
+  ReductionIndicator,
   ScreeningIndicator,
   ScreeningKpiResult,
 } from "@/lib/kpi/types";
+import type { Ckd5Raw, Ckd5SourceQuery } from "./sources/ckd5-contract";
+import { hisCkd5Source } from "./sources/ckd5-his";
+import { mockCkd5Source } from "./sources/ckd5-mock";
 import type {
   ScreeningRawIndicator,
   ScreeningSource,
@@ -117,7 +123,7 @@ export function resolveScreeningPeriod(
 
 /** Source query for one indicator (the counting window depends on the indicator). */
 export function buildSourceQuery(
-  code: ScreeningCode,
+  code: RatioCode,
   period: ScreeningPeriod,
 ): ScreeningSourceQuery {
   return {
@@ -134,7 +140,7 @@ export function toPercent(numerator: number, denominator: number): number {
 }
 
 /** Fields that depend only on the indicator and the fiscal year. */
-function describeIndicator(code: ScreeningCode, fy: number) {
+function describeIndicator(code: RatioCode, fy: number) {
   const meta = SCREENING_INDICATORS[code];
   const window = screeningCountWindow(code, fy);
   const note = screeningIndicatorNote(code, fy);
@@ -178,7 +184,7 @@ function deriveIndicator(
   };
 }
 
-function failedIndicator(code: ScreeningCode, fy: number): ScreeningIndicator {
+function failedIndicator(code: RatioCode, fy: number): ScreeningIndicator {
   return {
     ...describeIndicator(code, fy),
     denominator: 0,
@@ -192,12 +198,59 @@ function failedIndicator(code: ScreeningCode, fy: number): ScreeningIndicator {
 }
 
 /** Logs class + driver code only (no SQL, parameters, credentials, patient data). */
-function logIndicatorError(code: ScreeningCode, err: unknown): void {
+function logIndicatorError(code: string, err: unknown): void {
   const name = err instanceof Error ? err.name : "UnknownError";
   const driverCode = err instanceof HisQueryError ? (err.code ?? "") : "";
   console.error(
     `[kpi/screening] indicator ${code} failed: ${name}${driverCode ? ` (${driverCode})` : ""}`,
   );
+}
+
+/* ------------------------------ CKD5 (KPI 10) ---------------------------- */
+
+export function buildCkd5Query(period: ScreeningPeriod): Ckd5SourceQuery {
+  return {
+    periodStart: period.range.start,
+    dataAsOf: period.dataAsOf,
+    months: period.months,
+  };
+}
+
+function describeCkd5(fy: number) {
+  const meta = CKD5_INDICATOR;
+  return {
+    code: meta.code,
+    no: meta.no,
+    name: meta.name,
+    targetPercent: meta.targetPercent,
+    targetOperator: meta.targetOperator,
+    periodLabel: `ปีงบประมาณ ${fy} เทียบปีงบประมาณ ${fy - 1}`,
+    population: meta.population,
+    note: meta.note,
+  } as const;
+}
+
+function deriveCkd5(raw: Ckd5Raw, fy: number): ReductionIndicator {
+  return {
+    ...describeCkd5(fy),
+    currentCases: raw.currentCases,
+    previousCases: raw.previousCases,
+    previousSamePeriod: raw.previousSamePeriod,
+    reductionPercent: reductionPercentOf(raw.currentCases, raw.previousCases),
+    monthly: raw.monthly,
+  };
+}
+
+function failedCkd5(fy: number): ReductionIndicator {
+  return {
+    ...describeCkd5(fy),
+    currentCases: 0,
+    previousCases: 0,
+    previousSamePeriod: 0,
+    reductionPercent: null,
+    monthly: [],
+    error: INDICATOR_LOAD_ERROR,
+  };
 }
 
 /**
@@ -243,9 +296,16 @@ async function loadScreeningKpi(
   const period = resolveScreeningPeriod(fiscalYear, now);
   const { kind, source } = resolveSource();
 
-  const settled = await Promise.allSettled(
-    SCREENING_CODES.map((code) => source(code, buildSourceQuery(code, period))),
-  );
+  const ckd5Source = kind === "mock" ? mockCkd5Source : hisCkd5Source;
+  const [settled, ckd5Settled] = await Promise.all([
+    Promise.allSettled(
+      SCREENING_CODES.map((code) =>
+        source(code, buildSourceQuery(code, period)),
+      ),
+    ),
+    // KPI 10 is isolated: its failure only sets its own error.
+    Promise.allSettled([ckd5Source(buildCkd5Query(period))]),
+  ]);
 
   const failureCount = settled.filter((s) => s.status === "rejected").length;
   if (failureCount === settled.length) {
@@ -260,8 +320,15 @@ async function loadScreeningKpi(
     return failedIndicator(code, period.fy);
   });
 
+  const reduction = ckd5Settled.map((s): ReductionIndicator => {
+    if (s.status === "fulfilled") return deriveCkd5(s.value, period.fy);
+    logIndicatorError("CKD5", s.reason);
+    return failedCkd5(period.fy);
+  });
+  const reductionFailed = reduction.some((r) => r.error !== undefined);
+
   // Exactly one cacheLife call per invocation (see cacheLife docs).
-  if (failureCount > 0) {
+  if (failureCount > 0 || reductionFailed) {
     cacheLife("minutes");
   } else {
     cacheLife("hours");
@@ -275,5 +342,6 @@ async function loadScreeningKpi(
     updatedAt: now.toISOString(),
     source: kind,
     indicators,
+    reduction,
   };
 }

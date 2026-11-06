@@ -2,6 +2,7 @@ import {
   Beaker,
   ClipboardCheck,
   Droplet,
+  Droplets,
   FlaskConical,
   HeartPulse,
   Ribbon,
@@ -20,7 +21,8 @@ export type AccentKey =
   | "confirmHt"
   | "hba1c"
   | "ldl"
-  | "creatinine";
+  | "creatinine"
+  | "ckd5";
 
 interface AccentTheme {
   Icon: LucideIcon;
@@ -178,5 +180,19 @@ export const ACCENTS: Record<AccentKey, AccentTheme> = {
     pill: "bg-teal-700 text-white hover:bg-teal-800 focus-visible:outline-teal-600 dark:bg-teal-400 dark:text-teal-950 dark:hover:bg-teal-300",
     focus: "focus:border-teal-600 focus:outline-2 focus:outline-teal-600",
     text: "text-teal-800 dark:text-teal-300",
+  },
+  ckd5: {
+    Icon: Droplets,
+    iconBg: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300",
+    bar: "bg-cyan-600 dark:bg-cyan-400",
+    band: "from-cyan-700 to-cyan-900",
+    soft: "bg-cyan-50 dark:bg-cyan-950/40",
+    thead: "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200",
+    footer: "bg-cyan-200 text-cyan-950 dark:bg-cyan-900 dark:text-cyan-50",
+    rowHover: "hover:bg-cyan-50 dark:hover:bg-cyan-950/50",
+    badge: "bg-cyan-700 text-white dark:bg-cyan-400 dark:text-cyan-950",
+    pill: "bg-cyan-700 text-white hover:bg-cyan-800 focus-visible:outline-cyan-600 dark:bg-cyan-400 dark:text-cyan-950 dark:hover:bg-cyan-300",
+    focus: "focus:border-cyan-600 focus:outline-2 focus:outline-cyan-600",
+    text: "text-cyan-800 dark:text-cyan-300",
   },
 };

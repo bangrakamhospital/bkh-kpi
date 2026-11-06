@@ -6,7 +6,7 @@ import {
   fiscalYearRange,
 } from "@/lib/kpi/fiscal-year";
 import { SCREENING_INDICATORS } from "@/lib/kpi/screening-indicators";
-import type { ScreeningCode } from "@/lib/kpi/types";
+import type { RatioCode } from "@/lib/kpi/types";
 import type {
   ScreeningDetailSource,
   ScreeningPersonRaw,
@@ -35,7 +35,7 @@ interface MockBase {
   rateJitter: [number, number];
 }
 
-const BASE: Record<ScreeningCode, MockBase> = {
+const BASE: Record<RatioCode, MockBase> = {
   // People aged >= 35 not yet diagnosed with DM / HT in the catchment area.
   DM: { eligible: 18_420, yearRate: 0.915, rateJitter: [0.04, 0.03] },
   HT: { eligible: 16_870, yearRate: 0.902, rateJitter: [0.04, 0.03] },
@@ -79,7 +79,7 @@ function prng(seed: number): () => number {
  * of a phase) are capped at eligible and reduce what can still be screened.
  */
 function buildYear(
-  code: ScreeningCode,
+  code: RatioCode,
   fiscalYear: number,
   months: string[],
   dataAsOf: string,
@@ -121,7 +121,7 @@ function buildYear(
 
 /** Headline raw numbers, incl. earlier years of the phase for CX. */
 function buildIndicator(
-  code: ScreeningCode,
+  code: RatioCode,
   q: ScreeningSourceQuery,
 ): ScreeningRawIndicator {
   let prior = 0;
@@ -199,7 +199,7 @@ function apportion(total: number, weights: number[], caps?: number[]): number[] 
 }
 
 function mockVillageCounts(
-  code: ScreeningCode,
+  code: RatioCode,
   q: ScreeningSourceQuery,
 ): ScreeningVillageRaw[] {
   const headline = buildIndicator(code, q);
@@ -238,7 +238,7 @@ function isoToUtcMs(iso: string): number {
 }
 
 function mockPersonsOfVillage(
-  code: ScreeningCode,
+  code: RatioCode,
   q: ScreeningSourceQuery,
   village: ScreeningVillageRaw,
 ): ScreeningPersonRaw[] {

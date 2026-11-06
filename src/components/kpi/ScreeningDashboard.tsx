@@ -90,6 +90,7 @@ export async function ScreeningDashboard({
 
       <IndicatorTable
         indicators={result.indicators}
+        reduction={result.reduction}
         fiscalYear={result.fiscalYear}
       />
     </div>

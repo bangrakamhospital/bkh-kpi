@@ -14,7 +14,7 @@
  * confirmation test after the suspect screening.
  * Display order: SCREENING_CODES in `@/lib/kpi/screening-indicators`.
  */
-export type ScreeningCode =
+export type RatioCode =
   | "DM"
   | "HT"
   | "CX"
@@ -24,6 +24,15 @@ export type ScreeningCode =
   | "RLU_CR"
   | "DMC"
   | "HTC";
+
+/**
+ * CKD5 = KPI 10: % reduction of new CKD stage 5 patients vs the previous
+ * fiscal year (lower is better, no A/B population). See ReductionIndicator.
+ */
+export type ReductionCode = "CKD5";
+
+/** Every indicator code (home table rows, department filter, detail APIs). */
+export type ScreeningCode = RatioCode | ReductionCode;
 
 export type TargetOperator = ">=" | ">";
 
@@ -45,7 +54,7 @@ export interface ScreeningMonthly {
 }
 
 export interface ScreeningIndicator {
-  code: ScreeningCode;
+  code: RatioCode;
   /** Thai display name of the indicator. */
   name: string;
   /** Target in percent for the selected fiscal year (e.g. 90 means >= 90%). */
@@ -115,6 +124,45 @@ export interface ScreeningKpiResult {
   source: KpiDataSource;
   /** One per SCREENING_CODES entry, in that order (failed ones carry `error`). */
   indicators: ScreeningIndicator[];
+  /** Indicators of the "reduction" kind (KPI 10 CKD5); a failed one carries `error`. */
+  reduction: ReductionIndicator[];
+}
+
+export interface ReductionMonthly {
+  /** Calendar month "YYYY-MM" of the selected fiscal year. */
+  month: string;
+  /** New cases in this month of the selected fiscal year. */
+  currentCases: number;
+  /** New cases in the same fiscal month of the previous fiscal year. */
+  previousCases: number;
+}
+
+/**
+ * "Lower is better" indicator: reduction% = (B - A) / B x 100 with A = new
+ * cases this fiscal year, B = new cases in the whole previous fiscal year.
+ */
+export interface ReductionIndicator {
+  code: ReductionCode;
+  /** KPI number on the dashboard (10). */
+  no: number;
+  name: string;
+  /** A: new cases in the selected fiscal year (up to dataAsOf). */
+  currentCases: number;
+  /** B: new cases in the whole previous fiscal year. */
+  previousCases: number;
+  /** New cases of the previous fiscal year up to the same day (year-to-date comparison). */
+  previousSamePeriod: number;
+  /** (B - A) / B x 100 (2 decimals); null when B is 0. Negative = increased. */
+  reductionPercent: number | null;
+  targetPercent: number;
+  targetOperator: TargetOperator;
+  /** Ordered by fiscal year (Oct -> Sep), only months up to dataAsOf. */
+  monthly: ReductionMonthly[];
+  periodLabel: string;
+  population: string;
+  note?: string;
+  /** Set only when this indicator could not be loaded (generic Thai message). */
+  error?: string;
 }
 
 /**
@@ -142,6 +190,12 @@ export interface VillageBreakdown {
   numerator: number;
   /** A / B * 100 (2 decimals). 0 when denominator is 0. */
   percent: number;
+  /**
+   * CKD5 only: new cases of the previous fiscal year in this village.
+   * Then numerator = new cases of the selected fiscal year; eligible,
+   * denominator and percent are 0 (no percentage per village).
+   */
+  previousCases?: number;
 }
 
 /**

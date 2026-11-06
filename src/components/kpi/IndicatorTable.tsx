@@ -10,8 +10,13 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
-import type { ScreeningIndicator } from "@/lib/kpi/types";
+import type {
+  ReductionIndicator,
+  ScreeningIndicator,
+} from "@/lib/kpi/types";
 import {
+  CKD5_INDICATOR,
+  isReductionCode,
   meetsTarget,
   SCREENING_INDICATORS,
   targetOperatorSign,
@@ -23,6 +28,18 @@ import { IndicatorSearch, type SearchableRow } from "./IndicatorSearch";
 import { ProgressBar } from "./ProgressBar";
 import { VillageDetailButton } from "./VillageDetailButton";
 import { formatNumber, formatPercent } from "./format";
+
+/** Status labels of the CKD5 village dialog / person list (KPI 10). */
+const CKD5_STATUS_LABELS = {
+  screened: "รายใหม่",
+  notScreened: "-",
+  summary: { done: "รายใหม่", pending: "-" },
+  dateHeader: "วันที่เป็นรายใหม่",
+};
+
+/** Definition summary shown in the (i) popover of KPI 10. */
+const CKD5_DEFINITION =
+  "รายใหม่ = ผู้ป่วย CKD ระยะ 5 (eGFR < 15) ที่ยืนยันความเรื้อรังอย่างน้อย 3 เดือน ไม่ใช่ AKI ไม่อยู่ระหว่างนอน รพ. และไม่ได้ฟอกไต · ร้อยละที่ลดลง = (B − A) / B × 100 เมื่อ A = รายใหม่ปีงบนี้ B = รายใหม่ปีงบก่อนหน้า (ทั้งปี)";
 
 const disabledButtonClass =
   "inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500";
@@ -60,9 +77,11 @@ function SummaryCard({
 
 export function IndicatorTable({
   indicators,
+  reduction,
   fiscalYear,
 }: {
   indicators: ScreeningIndicator[];
+  reduction: ReductionIndicator[];
   fiscalYear: number;
 }) {
   // ตัวที่มีข้อมูลและโหลดสำเร็จเท่านั้น (ข้ามตัวที่ error)
@@ -73,13 +92,27 @@ export function IndicatorTable({
     // ไม่มีกลุ่มเป้าหมาย (B = 0) ไม่นับเป็นผ่าน/ไม่ผ่าน
     return ind && !ind.error && ind.denominator > 0 ? [ind] : [];
   });
+  // ข้อ 10 (ลดลงจากปีก่อน): นับผ่าน/ไม่ผ่านเมื่อมีปีก่อนเทียบ แต่ไม่รวมในร้อยละเฉลี่ย
+  const measuredReduction = reduction.filter(
+    (r) => !r.error && r.reductionPercent !== null,
+  );
+  const reductionPassed = measuredReduction.filter((r) =>
+    meetsTarget(r.reductionPercent ?? 0, r.targetPercent, r.targetOperator),
+  ).length;
   const pendingCount = INDICATOR_ROWS.filter(
-    (row) => !row.code || !indicators.some((i) => i.code === row.code),
+    (row) =>
+      !row.code ||
+      !(
+        indicators.some((i) => i.code === row.code) ||
+        reduction.some((r) => r.code === row.code)
+      ),
   ).length;
-  const passedCount = measured.filter((i) =>
-    meetsTarget(i.percent, i.targetPercent, i.targetOperator),
-  ).length;
-  const belowCount = measured.length - passedCount;
+  const measuredCount = measured.length + measuredReduction.length;
+  const passedCount =
+    measured.filter((i) =>
+      meetsTarget(i.percent, i.targetPercent, i.targetOperator),
+    ).length + reductionPassed;
+  const belowCount = measuredCount - passedCount;
   const avg =
     measured.length > 0
       ? measured.reduce((s, i) => s + Math.min(100, i.percent), 0) /
@@ -87,6 +120,12 @@ export function IndicatorTable({
       : 0;
 
   function renderRow(row: IndicatorRowConfig) {
+              if (row.code && isReductionCode(row.code)) {
+                return renderReductionRow(
+                  row,
+                  reduction.find((r) => r.code === row.code),
+                );
+              }
               const accent = ACCENTS[row.accent];
               const ind = row.code
                 ? indicators.find((i) => i.code === row.code)
@@ -270,6 +309,177 @@ export function IndicatorTable({
               );
   }
 
+  /** ข้อ 10: ร้อยละที่ลดลงจากปีงบก่อนหน้า (ยิ่งสูงยิ่งดี ไม่มีแถบ progress) */
+  function renderReductionRow(
+    row: IndicatorRowConfig,
+    red: ReductionIndicator | undefined,
+  ) {
+    const accent = ACCENTS[row.accent];
+    const rowClass =
+      "border-t border-zinc-200 odd:bg-surface even:bg-brand-50/60 hover:bg-brand-100/70 dark:border-zinc-800 dark:even:bg-brand-900/20 dark:hover:bg-brand-900/50";
+    const details: InfoItem[] = [];
+    if (red && !red.error) {
+      details.push({
+        icon: <CalendarDays size={14} />,
+        label: "ช่วงเวลา",
+        value: red.periodLabel,
+      });
+      details.push({
+        icon: <Target size={14} />,
+        label: "เกณฑ์",
+        value: `ร้อยละที่ลดลงจากปีก่อน ${targetOperatorSign(red.targetOperator)} ${formatNumber(red.targetPercent)}`,
+      });
+    }
+    details.push({
+      icon: <Info size={14} />,
+      label: "นิยามโดยสรุป",
+      value: CKD5_DEFINITION,
+    });
+    details.push({
+      icon: <FileText size={14} />,
+      label: "หมายเหตุ",
+      value: red?.note ?? CKD5_INDICATOR.note,
+    });
+    const titleCell = (
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-3">
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${accent.iconBg}`}
+          >
+            <accent.Icon aria-hidden="true" className="h-4 w-4" />
+          </span>
+          <span className="text-sm">
+            <span className="block">{row.title}</span>
+            <span className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+              {row.subtitle}
+              <InfoPopover
+                label={`รายละเอียดเพิ่มเติม ข้อ ${row.no}`}
+                title={row.title}
+                items={details}
+              />
+            </span>
+          </span>
+        </div>
+      </td>
+    );
+    const disabledButton = (
+      <button
+        type="button"
+        disabled
+        aria-label={`ดูรายละเอียดรายหมู่บ้าน ข้อ ${row.no}`}
+        className={disabledButtonClass}
+      >
+        <Search aria-hidden="true" size={16} />
+      </button>
+    );
+
+    if (!red) {
+      return (
+        <tr key={row.no} className={`${rowClass} opacity-70`}>
+          <td className="px-3 py-2.5 tabular-nums">{row.no}</td>
+          {titleCell}
+          <td className="px-3 py-2.5 text-right">—</td>
+          <td className="px-3 py-2.5 text-right">—</td>
+          <td className="px-3 py-2.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-300">
+              <Clock aria-hidden="true" className="h-3.5 w-3.5" />
+              รอกำหนดนิยาม
+            </span>
+          </td>
+          <td className="px-3 py-2.5 text-center">{disabledButton}</td>
+        </tr>
+      );
+    }
+
+    if (red.error) {
+      return (
+        <tr key={row.no} className={rowClass}>
+          <td className="px-3 py-2.5 tabular-nums">{row.no}</td>
+          {titleCell}
+          <td colSpan={3} className="px-3 py-2.5">
+            <span
+              role="alert"
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-300"
+            >
+              <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
+              ไม่สามารถดึงข้อมูลได้
+            </span>
+          </td>
+          <td className="px-3 py-2.5 text-center">{disabledButton}</td>
+        </tr>
+      );
+    }
+
+    const percent = red.reductionPercent;
+    const hasBase = percent !== null;
+    const passed =
+      hasBase && meetsTarget(percent, red.targetPercent, red.targetOperator);
+    const increased = hasBase && percent < 0;
+    const StatusIcon = passed ? CheckCircle2 : XCircle;
+    return (
+      <tr key={row.no} className={rowClass}>
+        <td className="px-3 py-2.5 tabular-nums">{row.no}</td>
+        {titleCell}
+        <td className="px-3 py-2.5 text-right tabular-nums">
+          {targetOperatorSign(red.targetOperator)} {formatNumber(red.targetPercent)}% (ลดลง)
+        </td>
+        <td className="px-3 py-2.5 text-right tabular-nums">
+          <span className="block">
+            รายใหม่ปีนี้ {formatNumber(red.currentCases)} คน / ปีก่อน{" "}
+            {formatNumber(red.previousCases)} คน
+          </span>
+          <span className="block text-xs text-zinc-600 dark:text-zinc-400">
+            ช่วงเดียวกันปีก่อน {formatNumber(red.previousSamePeriod)} คน
+          </span>
+        </td>
+        <td className="px-3 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="min-w-16 text-right text-sm font-bold tabular-nums">
+              {!hasBase
+                ? "—"
+                : increased
+                  ? `เพิ่มขึ้น ${formatPercent(Math.abs(percent))}%`
+                  : `${formatPercent(percent)}%`}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                !hasBase
+                  ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300"
+                  : passed
+                    ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                    : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+              }`}
+            >
+              {hasBase ? (
+                <StatusIcon aria-hidden="true" className="h-3.5 w-3.5" />
+              ) : (
+                <Info aria-hidden="true" className="h-3.5 w-3.5" />
+              )}
+              {!hasBase ? "ไม่มีปีก่อนเทียบ" : passed ? "ผ่าน" : "ไม่ผ่าน"}
+            </span>
+          </div>
+          <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-400">
+            เกณฑ์ {targetOperatorSign(red.targetOperator)} {formatNumber(red.targetPercent)}% (ลดลงจากปีงบก่อน)
+          </span>
+        </td>
+        <td className="px-3 py-2.5 text-center">
+          <VillageDetailButton
+            no={row.no}
+            code={red.code}
+            accent={row.accent}
+            title={row.title}
+            fiscalYear={fiscalYear}
+            targetPercent={red.targetPercent}
+            targetOperator={red.targetOperator}
+            periodLabel={red.periodLabel}
+            denominatorFactor={1}
+            statusLabels={CKD5_STATUS_LABELS}
+          />
+        </td>
+      </tr>
+    );
+  }
+
   const rows: SearchableRow[] = INDICATOR_ROWS.map((row) => ({
     no: row.no,
     code: row.code,
@@ -290,7 +500,7 @@ export function IndicatorTable({
           icon={<CheckCircle2 aria-hidden="true" className="h-4 w-4" />}
           tone="bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
           label="ผ่านเกณฑ์"
-          value={`${formatNumber(passedCount)} / ${formatNumber(measured.length)}`}
+          value={`${formatNumber(passedCount)} / ${formatNumber(measuredCount)}`}
           hint="ตัวชี้วัดที่มีข้อมูล"
         />
         <SummaryCard
@@ -313,7 +523,7 @@ export function IndicatorTable({
             icon={<XCircle aria-hidden="true" className="h-4 w-4" />}
             tone="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
             label="ต่ำกว่าเกณฑ์"
-            value={`${formatNumber(belowCount)} / ${formatNumber(measured.length)}`}
+            value={`${formatNumber(belowCount)} / ${formatNumber(measuredCount)}`}
             hint="ตัวชี้วัดที่ยังไม่ถึงเกณฑ์"
           />
         )}

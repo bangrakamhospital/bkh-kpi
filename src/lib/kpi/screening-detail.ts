@@ -4,6 +4,7 @@ import { cacheLife, cacheTag, io } from "next/cache";
 import { connection } from "next/server";
 
 import {
+  buildCkd5Query,
   buildSourceQuery,
   resolveDataSourceKind,
   resolveScreeningPeriod,
@@ -13,6 +14,8 @@ import {
 } from "@/lib/kpi/screening";
 import {
   apportionTargetShare,
+  CKD5_INDICATOR,
+  isReductionCode,
   SCREENING_INDICATORS,
   screeningCountWindow,
   screeningIndicatorNote,
@@ -22,10 +25,14 @@ import {
   PERSONS_PER_VILLAGE_LIMIT,
 } from "@/lib/kpi/sql/screening-common";
 import type {
+  RatioCode,
   ScreeningCode,
   ScreeningPerson,
   VillageBreakdown,
 } from "@/lib/kpi/types";
+import type { Ckd5DetailSource } from "./sources/ckd5-contract";
+import { hisCkd5DetailSource } from "./sources/ckd5-his";
+import { mockCkd5DetailSource } from "./sources/ckd5-mock";
 import type {
   ScreeningDetailSource,
   ScreeningPersonFilter,
@@ -58,6 +65,12 @@ function detailSource(): ScreeningDetailSource {
     : hisScreeningDetailSource;
 }
 
+function ckd5DetailSource(): Ckd5DetailSource {
+  return resolveDataSourceKind() === "mock"
+    ? mockCkd5DetailSource
+    : hisCkd5DetailSource;
+}
+
 const UNKNOWN_VILLAGE_NAME = "ไม่ระบุหมู่บ้าน";
 
 function mooSortKey(v: VillageBreakdown): number {
@@ -74,7 +87,7 @@ function compareVillages(a: VillageBreakdown, b: VillageBreakdown): number {
 }
 
 function toVillageBreakdown(
-  code: ScreeningCode,
+  code: RatioCode,
   raw: ScreeningVillageRaw,
   denominator: number,
 ): VillageBreakdown {
@@ -94,10 +107,39 @@ function toVillageBreakdown(
   };
 }
 
+/**
+ * CKD5: numerator = new cases of the selected FY, previousCases = previous
+ * FY; no B / percent per village (counts per village are too small).
+ */
+async function computeCkd5Villages(
+  period: ScreeningPeriod,
+): Promise<VillageBreakdown[]> {
+  const raw = await ckd5DetailSource().villages(buildCkd5Query(period));
+  return raw
+    .map(
+      (r): VillageBreakdown => ({
+        villageId: r.villageId,
+        moo: r.moo ?? "-",
+        villageName:
+          r.villageName ??
+          (r.villageId === 0
+            ? CKD5_INDICATOR.unknownVillageName
+            : `หมู่บ้านรหัส ${r.villageId}`),
+        eligible: 0,
+        denominator: 0,
+        numerator: r.currentCases,
+        percent: 0,
+        previousCases: r.previousCases,
+      }),
+    )
+    .sort(compareVillages);
+}
+
 async function computeVillages(
   code: ScreeningCode,
   period: ScreeningPeriod,
 ): Promise<VillageBreakdown[]> {
+  if (isReductionCode(code)) return computeCkd5Villages(period);
   const raw = await detailSource().villages(
     code,
     buildSourceQuery(code, period),
@@ -182,12 +224,14 @@ async function loadPersonsRaw(
   filter: ScreeningPersonFilter,
   limit: number,
 ): Promise<{ rows: ScreeningPersonRaw[]; truncated: boolean }> {
-  const rows = await detailSource().persons(
-    code,
-    buildSourceQuery(code, period),
-    filter,
-    limit,
-  );
+  const rows = isReductionCode(code)
+    ? await ckd5DetailSource().persons(buildCkd5Query(period), filter, limit)
+    : await detailSource().persons(
+        code,
+        buildSourceQuery(code, period),
+        filter,
+        limit,
+      );
   const truncated = rows.length > limit;
   return { rows: truncated ? rows.slice(0, limit) : rows, truncated };
 }
@@ -286,9 +330,17 @@ export async function getScreeningExport(
     code,
     fiscalYear: period.fy,
     dataAsOf: period.dataAsOf,
-    periodLabel: screeningCountWindow(code, period.fy).periodLabel,
-    countFrom: screeningCountWindow(code, period.fy).countFrom,
-    note: screeningIndicatorNote(code, period.fy),
+    ...(isReductionCode(code)
+      ? {
+          periodLabel: `ปีงบประมาณ ${period.fy} เทียบปีงบประมาณ ${period.fy - 1}`,
+          countFrom: period.range.start,
+          note: CKD5_INDICATOR.note,
+        }
+      : {
+          periodLabel: screeningCountWindow(code, period.fy).periodLabel,
+          countFrom: screeningCountWindow(code, period.fy).countFrom,
+          note: screeningIndicatorNote(code, period.fy),
+        }),
     generatedAt: now.toISOString(),
     villages,
     persons: rows.map((r) => ({

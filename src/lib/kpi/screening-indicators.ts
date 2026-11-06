@@ -8,7 +8,12 @@
  */
 
 import { BE_OFFSET } from "@/lib/kpi/fiscal-year";
-import type { ScreeningCode, TargetOperator } from "@/lib/kpi/types";
+import type {
+  RatioCode,
+  ReductionCode,
+  ScreeningCode,
+  TargetOperator,
+} from "@/lib/kpi/types";
 
 /** Display / processing order of the indicators. */
 export const SCREENING_CODES = [
@@ -21,12 +26,69 @@ export const SCREENING_CODES = [
   "RLU_HBA1C",
   "RLU_LDL",
   "RLU_CR",
-] as const satisfies readonly ScreeningCode[];
+] as const satisfies readonly RatioCode[];
 
-export function isScreeningCode(value: unknown): value is ScreeningCode {
+/** Reduction-kind indicators (lower is better), processed separately. */
+export const REDUCTION_CODES = [
+  "CKD5",
+] as const satisfies readonly ReductionCode[];
+
+/** The 9 A/B-of-population indicators. */
+export function isRatioCode(value: unknown): value is RatioCode {
   return (
     typeof value === "string" &&
     (SCREENING_CODES as readonly string[]).includes(value)
+  );
+}
+
+export function isReductionCode(value: unknown): value is ReductionCode {
+  return (
+    typeof value === "string" &&
+    (REDUCTION_CODES as readonly string[]).includes(value)
+  );
+}
+
+/** Any indicator code of the dashboard (ratio or reduction). */
+export function isScreeningCode(value: unknown): value is ScreeningCode {
+  return isRatioCode(value) || isReductionCode(value);
+}
+
+/**
+ * KPI 10 CKD5 — new CKD stage 5 patients vs the previous fiscal year.
+ * KPI Template 2569 no. 20; docs/kpi/ckd-stage5.md. Target > 10% in
+ * FY2569 and FY2570.
+ */
+export const CKD5_INDICATOR = {
+  code: "CKD5",
+  no: 10,
+  name: "ร้อยละผู้ป่วยไตเรื้อรัง stage 5 รายใหม่ ที่ลดลงจากปีงบประมาณก่อนหน้า",
+  shortName: "ผู้ป่วยไตเรื้อรัง stage 5 รายใหม่ ลดลงจากปีก่อน",
+  targetPercent: 10,
+  targetOperator: ">",
+  population: "ผู้ป่วยที่มารับบริการที่ รพ. (ระดับโรงพยาบาล)",
+  note: "ตีความจาก KPI Template 2569 ข้อ 20 / นับจากผล eGFR ใน HOSxP",
+  /** Name of village id 0 in the village dialog / Excel. */
+  unknownVillageName: "นอกเขต/ไม่ระบุหมู่บ้าน",
+} as const satisfies {
+  code: ReductionCode;
+  no: number;
+  name: string;
+  shortName: string;
+  targetPercent: number;
+  targetOperator: TargetOperator;
+  population: string;
+  note: string;
+  unknownVillageName: string;
+};
+
+/** Reduction percent ((B - A) / B x 100, 2 decimals); null when B is 0. */
+export function reductionPercentOf(
+  currentCases: number,
+  previousCases: number,
+): number | null {
+  if (previousCases <= 0) return null;
+  return (
+    Math.round(((previousCases - currentCases) / previousCases) * 10000) / 100
   );
 }
 
@@ -56,7 +118,7 @@ export type ScreeningPeriodRule =
   | { kind: "phase"; lengthYears: number; anchorFiscalYear: number };
 
 export interface ScreeningIndicatorMeta {
-  code: ScreeningCode;
+  code: RatioCode;
   /** KPI number on the dashboard (1–9, one sequential list). */
   no: number;
   /** Full Thai name. */
@@ -114,7 +176,7 @@ export interface ScreeningStatusLabels {
 
 /** Target (percent) of `code` in the fiscal year `fiscalYear` (BE). */
 export function screeningTargetPercent(
-  code: ScreeningCode,
+  code: RatioCode,
   fiscalYear: number,
 ): number {
   const meta = SCREENING_INDICATORS[code];
@@ -147,7 +209,7 @@ export function targetOperatorSign(operator: TargetOperator): string {
  * (FY2570+). Definitions: docs/kpi/hdc-phase1-definitions.md section 11.3–11.5.
  */
 function rluMeta(
-  code: ScreeningCode,
+  code: RatioCode,
   no: number,
   test: string,
   shortName: string,
@@ -186,7 +248,7 @@ function rluMeta(
  * B = suspected group, A = confirmed after the suspect screening.
  */
 function confirmMeta(
-  code: ScreeningCode,
+  code: RatioCode,
   no: number,
   disease: string,
   targetPercent: number,
@@ -220,7 +282,7 @@ function confirmMeta(
   };
 }
 
-export const SCREENING_INDICATORS: Record<ScreeningCode, ScreeningIndicatorMeta> =
+export const SCREENING_INDICATORS: Record<RatioCode, ScreeningIndicatorMeta> =
   {
     DM: {
       code: "DM",
@@ -354,7 +416,7 @@ export interface ScreeningCountWindow {
 
 /** Counting window for A of `code` in the selected fiscal year. */
 export function screeningCountWindow(
-  code: ScreeningCode,
+  code: RatioCode,
   fiscalYear: number,
 ): ScreeningCountWindow {
   const rule = SCREENING_INDICATORS[code].period;
@@ -384,7 +446,7 @@ export function screeningCountWindow(
 
 /** Display remarks for the indicator in the selected fiscal year. */
 export function screeningIndicatorNote(
-  code: ScreeningCode,
+  code: RatioCode,
   fiscalYear: number,
 ): string | undefined {
   const meta = SCREENING_INDICATORS[code];

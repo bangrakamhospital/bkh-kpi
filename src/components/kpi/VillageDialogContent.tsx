@@ -267,6 +267,157 @@ function StatRow({
   );
 }
 
+/** CKD5 (KPI 10): counts of new cases only, no percentage / target group. */
+function Ckd5StatRow({
+  accent,
+  fiscalYear,
+  current,
+  previous,
+}: {
+  accent: AccentKey;
+  fiscalYear: number;
+  current: number;
+  previous?: number;
+}) {
+  const theme = ACCENTS[accent];
+  return (
+    <div
+      className={`grid grid-cols-2 gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800 ${theme.soft}`}
+    >
+      <StatCard
+        Icon={Users}
+        tone={theme.iconBg}
+        label={`รายใหม่ ปีงบ ${fiscalYear}`}
+        value={`${formatNumber(current)} คน`}
+      />
+      {previous !== undefined && (
+        <StatCard
+          Icon={CalendarCheck}
+          tone="bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+          label={`รายใหม่ ปีงบ ${fiscalYear - 1}`}
+          value={`${formatNumber(previous)} คน`}
+        />
+      )}
+    </div>
+  );
+}
+
+function Ckd5VillageTable({
+  rows,
+  accent,
+  fiscalYear,
+  locked,
+  onSelect,
+}: {
+  rows: VillageBreakdown[];
+  accent: AccentKey;
+  fiscalYear: number;
+  locked: boolean;
+  onSelect: (v: VillageBreakdown) => void;
+}) {
+  const theme = ACCENTS[accent];
+  const totalCurrent = rows.reduce((s, r) => s + r.numerator, 0);
+  const totalPrevious = rows.reduce((s, r) => s + (r.previousCases ?? 0), 0);
+  return (
+    <table className="w-full min-w-[40rem] text-xs">
+      <thead className={`sticky top-0 z-10 text-left ${theme.thead}`}>
+        <tr>
+          <th scope="col" className={th}>หมู่</th>
+          <th scope="col" className={th}>ชื่อหมู่บ้าน</th>
+          <th scope="col" className={`${th} text-right`}>
+            รายใหม่ ปีงบ {fiscalYear}
+          </th>
+          <th scope="col" className={`${th} text-right`}>
+            รายใหม่ ปีงบ {fiscalYear - 1}
+          </th>
+          <th scope="col" className={`${th} text-center`}>รายชื่อ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr
+            key={r.villageId}
+            className={`border-t border-zinc-200 odd:bg-surface even:bg-zinc-50 dark:border-zinc-800 dark:even:bg-zinc-900/60 ${theme.rowHover}`}
+          >
+            <td className={td}>
+              <span
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${theme.badge}`}
+              >
+                {r.moo}
+              </span>
+            </td>
+            <td className={td}>
+              <span className="inline-flex items-center gap-1.5">
+                {r.villageId > 0 ? (
+                  <Home aria-hidden="true" className={`${iconCls} ${theme.text}`} />
+                ) : (
+                  <MapPin aria-hidden="true" className={`${iconCls} text-zinc-500`} />
+                )}
+                {r.villageName}
+              </span>
+            </td>
+            <td className={`${td} text-right font-semibold tabular-nums`}>
+              {formatNumber(r.numerator)}
+            </td>
+            <td className={`${td} text-right tabular-nums`}>
+              {formatNumber(r.previousCases ?? 0)}
+            </td>
+            <td className={`${td} text-center`}>
+              {r.villageId > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(r)}
+                  aria-label={
+                    locked
+                      ? `รายชื่อ หมู่ ${r.moo} (ต้องเข้าสู่ระบบ)`
+                      : `รายชื่อ หมู่ ${r.moo}`
+                  }
+                  title={locked ? "ต้องเข้าสู่ระบบก่อนดูรายชื่อ" : undefined}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 ${theme.pill}`}
+                >
+                  {locked ? (
+                    <Lock aria-hidden="true" className={iconCls} />
+                  ) : (
+                    <Users aria-hidden="true" className={iconCls} />
+                  )}
+                  รายชื่อ
+                  <ChevronRight aria-hidden="true" className={iconCls} />
+                </button>
+              ) : (
+                <InfoPopover
+                  label={`รายละเอียดเพิ่มเติม ${r.villageName}`}
+                  title={r.villageName}
+                  items={[
+                    {
+                      icon: <FileSpreadsheet size={14} />,
+                      label: "ดูรายชื่อ",
+                      value: "ดูได้ในไฟล์ Excel ทั้งปีงบฯ",
+                    },
+                  ]}
+                />
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot className={`font-bold ${theme.footer}`}>
+        <tr>
+          <td className={td} colSpan={2}>
+            รวม
+          </td>
+          <td className={`${td} text-right tabular-nums`}>
+            {formatNumber(totalCurrent)}
+          </td>
+          <td className={`${td} text-right tabular-nums`}>
+            {formatNumber(totalPrevious)}
+          </td>
+          <td className={td} />
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
 function pct(n: number, d: number): number {
   return d > 0 ? Math.round((n / d) * 10000) / 100 : 0;
 }
@@ -416,6 +567,8 @@ export function VillageDialogContent({
         title={title}
         statusLabels={statusLabels}
         denominatorFactor={denominatorFactor}
+        ckd5={code === "CKD5"}
+        fiscalYear={fiscalYear}
         village={village}
         exportProps={exportProps}
         onUnauthorized={onPersonsUnauthorized}
@@ -431,6 +584,8 @@ export function VillageDialogContent({
         targetOperator={targetOperator}
         statusLabels={statusLabels}
         denominatorFactor={denominatorFactor}
+        ckd5={code === "CKD5"}
+        fiscalYear={fiscalYear}
         locked={locked}
         exportProps={exportProps}
         onSelect={onSelectVillage}
@@ -602,6 +757,8 @@ function VillagesView({
   targetOperator,
   statusLabels,
   denominatorFactor,
+  ckd5,
+  fiscalYear,
   locked,
   exportProps,
   onSelect,
@@ -612,6 +769,9 @@ function VillagesView({
   targetOperator: TargetOperator;
   statusLabels: StatusLabels;
   denominatorFactor: number;
+  /** CKD5 (KPI 10): counts only, no percentage per village. */
+  ckd5: boolean;
+  fiscalYear: number;
   locked: boolean;
   exportProps: ExportProps;
   onSelect: (v: VillageBreakdown) => void;
@@ -629,7 +789,15 @@ function VillagesView({
 
   return (
     <>
-      {rows.length > 0 && (
+      {rows.length > 0 && ckd5 && (
+        <Ckd5StatRow
+          accent={accent}
+          fiscalYear={fiscalYear}
+          current={totalN}
+          previous={rows.reduce((s, r) => s + (r.previousCases ?? 0), 0)}
+        />
+      )}
+      {rows.length > 0 && !ckd5 && (
         <StatRow
           accent={accent}
           target={totalD}
@@ -650,7 +818,9 @@ function VillagesView({
       >
         <p className="inline-flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
           <Info aria-hidden="true" className={iconCls} />
-          เกณฑ์ {targetOperatorSign(targetOperator)} {formatNumber(targetPercent)}%
+          {ckd5
+            ? `เกณฑ์ลดลง ${targetOperatorSign(targetOperator)} ${formatNumber(targetPercent)}% (ระดับโรงพยาบาล ไม่คำนวณร้อยละรายหมู่)`
+            : `เกณฑ์ ${targetOperatorSign(targetOperator)} ${formatNumber(targetPercent)}%`}
         </p>
         <ExportButton villageId={null} {...exportProps} />
       </div>
@@ -661,7 +831,16 @@ function VillagesView({
           empty={!loading && !error && rows.length === 0}
           onRetry={retry}
         />
-        {rows.length > 0 && (
+        {rows.length > 0 && ckd5 && (
+          <Ckd5VillageTable
+            rows={rows}
+            accent={accent}
+            fiscalYear={fiscalYear}
+            locked={locked}
+            onSelect={onSelect}
+          />
+        )}
+        {rows.length > 0 && !ckd5 && (
           <table className="w-full min-w-[46rem] text-xs">
             <thead className={`sticky top-0 z-10 text-left ${theme.thead}`}>
               <tr>
@@ -880,6 +1059,8 @@ function PersonsView({
   title,
   statusLabels,
   denominatorFactor,
+  ckd5,
+  fiscalYear,
   village,
   exportProps,
   onUnauthorized,
@@ -890,6 +1071,9 @@ function PersonsView({
   title: string;
   statusLabels: StatusLabels;
   denominatorFactor: number;
+  /** CKD5 (KPI 10): list of new cases only, no status / filter. */
+  ckd5: boolean;
+  fiscalYear: number;
   village: VillageBreakdown;
   exportProps: ExportProps;
   onUnauthorized: (v: VillageBreakdown) => void;
@@ -952,7 +1136,14 @@ function PersonsView({
           หมู่ {village.moo} {village.villageName}
         </span>
       </nav>
-      {!loading && !error && all.length > 0 && (
+      {!loading && !error && all.length > 0 && ckd5 && (
+        <Ckd5StatRow
+          accent={accent}
+          fiscalYear={fiscalYear}
+          current={all.length}
+        />
+      )}
+      {!loading && !error && all.length > 0 && !ckd5 && (
         <StatRow
           accent={accent}
           target={all.length}
@@ -988,6 +1179,7 @@ function PersonsView({
             className={`w-full rounded-lg border border-zinc-300 bg-surface py-1.5 pl-8 pr-3 text-sm dark:border-zinc-700 ${theme.focus}`}
           />
         </div>
+        {!ckd5 && (
         <div
           role="group"
           aria-label="กรองสถานะการคัดกรอง"
@@ -1014,6 +1206,7 @@ function PersonsView({
             );
           })}
         </div>
+        )}
         <ExportButton villageId={village.villageId} {...exportProps} />
       </div>
       {truncated && (
@@ -1041,7 +1234,7 @@ function PersonsView({
                 <th scope="col" className={th}>ชื่อ-สกุล</th>
                 <th scope="col" className={th}>เพศ</th>
                 <th scope="col" className={`${th} text-right`}>อายุ</th>
-                <th scope="col" className={th}>สถานะ</th>
+                {!ckd5 && <th scope="col" className={th}>สถานะ</th>}
                 <th scope="col" className={th}>
                   {denominatorFactor !== 1
                     ? "วันที่คัดกรอง (ใน Phase)"
@@ -1084,6 +1277,7 @@ function PersonsView({
                     <td className={`${td} text-right tabular-nums`}>
                       {formatNumber(p.age)}
                     </td>
+                    {!ckd5 && (
                     <td className={td}>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -1103,6 +1297,7 @@ function PersonsView({
                         {p.screened ? statusLabels.screened : statusLabels.notScreened}
                       </span>
                     </td>
+                    )}
                     <td className={td}>
                       {p.screenDate ? (
                         <span className="inline-flex items-center gap-1.5">

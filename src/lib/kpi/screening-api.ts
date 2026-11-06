@@ -4,6 +4,7 @@ import { HisConfigError, HisQueryError } from "@/lib/db/his";
 import { currentFiscalYear, MIN_FISCAL_YEAR } from "@/lib/kpi/screening";
 import {
   isScreeningCode,
+  REDUCTION_CODES,
   SCREENING_CODES,
 } from "@/lib/kpi/screening-indicators";
 import type { ScreeningCode } from "@/lib/kpi/types";
@@ -42,7 +43,7 @@ export function parseScreeningQuery(
   if (!isScreeningCode(code)) {
     return {
       ok: false,
-      error: `code ต้องเป็น ${SCREENING_CODES.join(", ")} อย่างใดอย่างหนึ่ง`,
+      error: `code ต้องเป็น ${[...SCREENING_CODES, ...REDUCTION_CODES].join(", ")} อย่างใดอย่างหนึ่ง`,
     };
   }
 

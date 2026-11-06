@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ScreeningCode } from "@/lib/kpi/types";
+import type { RatioCode } from "@/lib/kpi/types";
 
 /**
  * Contract every screening data source (mock, HIS) must implement.
@@ -25,7 +25,7 @@ export interface ScreeningSourceQuery {
 }
 
 export interface ScreeningRawIndicator {
-  code: ScreeningCode;
+  code: RatioCode;
   /** Target group size (before any target share). */
   eligible: number;
   /**
@@ -40,7 +40,7 @@ export interface ScreeningRawIndicator {
 
 /** Loads one indicator. Rejects on any error (handled per indicator by the caller). */
 export type ScreeningSource = (
-  code: ScreeningCode,
+  code: RatioCode,
   query: ScreeningSourceQuery,
 ) => Promise<ScreeningRawIndicator>;
 
@@ -88,7 +88,7 @@ export type ScreeningPersonFilter =
 export interface ScreeningDetailSource {
   /** One row per village that has at least one person in the target group. */
   villages(
-    code: ScreeningCode,
+    code: RatioCode,
     query: ScreeningSourceQuery,
   ): Promise<ScreeningVillageRaw[]>;
   /**
@@ -96,7 +96,7 @@ export interface ScreeningDetailSource {
    * caller can detect truncation; order is not significant (sorted centrally).
    */
   persons(
-    code: ScreeningCode,
+    code: RatioCode,
     query: ScreeningSourceQuery,
     filter: ScreeningPersonFilter,
     limit: number,

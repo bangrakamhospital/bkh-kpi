@@ -5,6 +5,8 @@ import ExcelJS from "exceljs";
 import { BE_OFFSET } from "@/lib/kpi/fiscal-year";
 import type { ScreeningExportData } from "@/lib/kpi/screening-detail";
 import {
+  CKD5_INDICATOR,
+  isReductionCode,
   SCREENING_INDICATORS,
   screeningTargetPercent,
   targetOperatorSign,
@@ -50,9 +52,93 @@ function finishSheet(ws: ExcelJS.Worksheet, tableRowCount: number): void {
   });
 }
 
+/**
+ * CKD5 (KPI 10) workbook. Summary: new cases per village, selected fiscal
+ * year vs the previous one (no percentage per village). List: new cases of
+ * the selected fiscal year with the date they became a new stage 5 case.
+ */
+async function buildCkd5Workbook(data: ScreeningExportData): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "bkh-kpi";
+  wb.created = new Date(data.generatedAt);
+  const n = { numFmt: "#,##0" };
+  const prevFy = data.fiscalYear - 1;
+
+  const summary = wb.addWorksheet("สรุปรายหมู่");
+  summary.columns = [
+    { key: "moo" },
+    { key: "villageName" },
+    { key: "current", style: n },
+    { key: "previous", style: n },
+  ];
+  summary.addRow([
+    "หมู่",
+    "ชื่อหมู่บ้าน",
+    `รายใหม่ ปีงบ ${data.fiscalYear}`,
+    `รายใหม่ ปีงบ ${prevFy}`,
+  ]);
+  for (const v of data.villages) {
+    summary.addRow([v.moo, v.villageName, v.numerator, v.previousCases ?? 0]);
+  }
+  const totalRow = summary.addRow([
+    "รวม",
+    "",
+    data.villages.reduce((s, v) => s + v.numerator, 0),
+    data.villages.reduce((s, v) => s + (v.previousCases ?? 0), 0),
+  ]);
+  totalRow.font = { bold: true };
+  const tableRows = summary.rowCount;
+
+  summary.addRow([]);
+  summary.addRow([`ตัวชี้วัด: ${CKD5_INDICATOR.name}`]);
+  summary.addRow([
+    `เกณฑ์: ร้อยละที่ลดลงจากปีงบประมาณก่อนหน้า ${targetOperatorSign(CKD5_INDICATOR.targetOperator)} ${CKD5_INDICATOR.targetPercent}`,
+  ]);
+  summary.addRow([
+    `ช่วงข้อมูล: ${data.periodLabel} (${toThaiDate(data.countFrom)} – ${toThaiDate(data.dataAsOf)}) ข้อมูล ณ วันที่ ${toThaiDate(data.dataAsOf)}`,
+  ]);
+  if (data.note) summary.addRow([`หมายเหตุ: ${data.note}`]);
+  summary.addRow([
+    "ไม่แสดงร้อยละรายหมู่ เพราะจำนวนรายใหม่ต่อหมู่น้อย (ร้อยละใช้ที่ระดับโรงพยาบาลเท่านั้น)",
+  ]);
+  if (data.truncated) {
+    summary.addRow([
+      `หมายเหตุ: ชีต "รายชื่อ" แสดงเพียง ${data.personLimit.toLocaleString("en-US")} รายการแรก`,
+    ]);
+  }
+  finishSheet(summary, tableRows);
+
+  const list = wb.addWorksheet("รายชื่อ");
+  list.columns = [
+    { key: "moo" },
+    { key: "hn" },
+    { key: "fullName" },
+    { key: "sex" },
+    { key: "age" },
+    { key: "caseDate" },
+  ];
+  list.addRow(["หมู่", "HN", "ชื่อ-สกุล", "เพศ", "อายุ", "วันที่เป็นรายใหม่"]);
+  for (const p of data.persons) {
+    list.addRow([
+      p.moo,
+      p.hn ?? "",
+      p.fullName,
+      p.sex,
+      p.age,
+      toThaiDate(p.screenDate),
+    ]);
+  }
+  finishSheet(list, list.rowCount);
+
+  const out = await wb.xlsx.writeBuffer();
+  return Buffer.from(out);
+}
+
 export async function buildScreeningWorkbook(
   data: ScreeningExportData,
 ): Promise<Buffer> {
+  if (isReductionCode(data.code)) return buildCkd5Workbook(data);
+
   const wb = new ExcelJS.Workbook();
   wb.creator = "bkh-kpi";
   wb.created = new Date(data.generatedAt);
