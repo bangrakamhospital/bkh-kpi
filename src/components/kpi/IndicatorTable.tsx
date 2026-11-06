@@ -32,13 +32,9 @@ interface IndicatorRowConfig {
   /** คำพ้อง/คำค้นเพิ่มเติม */
   keywords: string[];
   accent: AccentKey;
-  /** ชื่อกลุ่ม (แถวหัวกลุ่มในตาราง) — แถวของกลุ่มเดียวกันต้องอยู่ติดกัน */
-  group?: string;
   /** undefined = ยังไม่มีข้อมูล/นิยาม */
   code?: ScreeningCode;
 }
-
-const HDC_GROUP = "ตัวชี้วัด HDC";
 
 /** เพิ่มตัวชี้วัดใหม่ที่นี่ (ไม่ใส่ code = แสดงเป็นรอกำหนดนิยาม) */
 const INDICATOR_ROWS: IndicatorRowConfig[] = [
@@ -46,12 +42,11 @@ const INDICATOR_ROWS: IndicatorRowConfig[] = [
   { no: 2, code: "HT", accent: "ht", title: "คัดกรองความดันโลหิตสูง", subtitle: "ประชาชนอายุ 35 ปีขึ้นไป", keywords: ["ความดัน","HT","ความดันโลหิตสูง"] },
   { no: 3, code: "CX", accent: "cervix", title: "คัดกรองมะเร็งปากมดลูก", subtitle: "หญิงไทย 30–60 ปี", keywords: ["ปากมดลูก","HPV","Pap","มะเร็ง","CA cervix"] },
   { no: 4, code: "BR", accent: "breast", title: "คัดกรองมะเร็งเต้านม", subtitle: "หญิง 40–70 ปี", keywords: ["เต้านม","CBE","มะเร็ง","breast"] },
-  // กลุ่ม HDC: เพิ่มข้อใหม่ต่อในกลุ่มนี้โดยใส่ group: HDC_GROUP (เรียงตามเลข HDC)
-  { no: 2.1, group: HDC_GROUP, code: "DMC", accent: "confirmDm", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยเบาหวาน", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["เบาหวาน","ยืนยัน","สงสัยป่วย","FPG","DM","HDC","diabetes"] },
-  { no: 2.2, group: HDC_GROUP, code: "HTC", accent: "confirmHt", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยความดันโลหิตสูง", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["ความดัน","ความดันโลหิตสูง","ยืนยัน","สงสัยป่วย","OBPM","HT","HDC"] },
-  { no: 11.3, group: HDC_GROUP, code: "RLU_HBA1C", accent: "hba1c", title: "ผู้ป่วยเบาหวานได้รับการตรวจ HbA1c", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["HbA1c","เบาหวาน","lab","RLU","HDC","diabetes"] },
-  { no: 11.4, group: HDC_GROUP, code: "RLU_LDL", accent: "ldl", title: "ผู้ป่วยเบาหวานได้รับการตรวจ LDL", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["LDL","ไขมัน","เบาหวาน","lab","RLU","HDC"] },
-  { no: 11.5, group: HDC_GROUP, code: "RLU_CR", accent: "creatinine", title: "ผู้ป่วยเบาหวานได้รับการตรวจ Creatinine", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["Creatinine","ครีเอตินีน","ไต","เบาหวาน","lab","RLU","HDC"] },
+  { no: 5, code: "DMC", accent: "confirmDm", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยเบาหวาน", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["เบาหวาน","ยืนยัน","สงสัยป่วย","FPG","DM","HDC","diabetes"] },
+  { no: 6, code: "HTC", accent: "confirmHt", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยความดันโลหิตสูง", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["ความดัน","ความดันโลหิตสูง","ยืนยัน","สงสัยป่วย","OBPM","HT","HDC"] },
+  { no: 7, code: "RLU_HBA1C", accent: "hba1c", title: "ผู้ป่วยเบาหวานได้รับการตรวจ HbA1c", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["HbA1c","เบาหวาน","lab","RLU","HDC","diabetes"] },
+  { no: 8, code: "RLU_LDL", accent: "ldl", title: "ผู้ป่วยเบาหวานได้รับการตรวจ LDL", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["LDL","ไขมัน","เบาหวาน","lab","RLU","HDC"] },
+  { no: 9, code: "RLU_CR", accent: "creatinine", title: "ผู้ป่วยเบาหวานได้รับการตรวจ Creatinine", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["Creatinine","ครีเอตินีน","ไต","เบาหวาน","lab","RLU","HDC"] },
 ];
 
 const disabledButtonClass =
@@ -302,13 +297,11 @@ export function IndicatorTable({
 
   const rows: SearchableRow[] = INDICATOR_ROWS.map((row) => ({
     no: row.no,
-    group: row.group,
     keywords: [
       `ข้อ ${row.no}`,
       row.title,
       row.subtitle,
       row.code ?? "",
-      row.group ?? "",
       ...row.keywords,
     ].join(" "),
     node: renderRow(row),

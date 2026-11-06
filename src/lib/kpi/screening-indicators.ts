@@ -1,5 +1,5 @@
 /**
- * Screening indicator definitions (KPI 1–4 + HDC 2.1/2.2, 11.3–11.5): display metadata, target
+ * Screening indicator definitions (KPI 1–9; 5–9 = HDC 2.1/2.2, 11.3–11.5): display metadata, target
  * group, counting period and target. Pure data / functions, no I/O —
  * safe for server and client (UI may import labels from here).
  *
@@ -57,7 +57,7 @@ export type ScreeningPeriodRule =
 
 export interface ScreeningIndicatorMeta {
   code: ScreeningCode;
-  /** KPI number on the dashboard (1–4, or the HDC number, e.g. 2.1, 11.3). */
+  /** KPI number on the dashboard (1–9, one sequential list). */
   no: number;
   /** Full Thai name. */
   name: string;
@@ -306,21 +306,21 @@ export const SCREENING_INDICATORS: Record<ScreeningCode, ScreeningIndicatorMeta>
     },
     DMC: confirmMeta(
       "DMC",
-      2.1,
+      5,
       "เบาหวาน",
       70,
       "B = คัดกรอง 1 ต.ค.–30 มิ.ย. ค่าน้ำตาลอดอาหาร ≥126; A = ตรวจ FPG ทางห้องปฏิบัติการหลังวันคัดกรอง",
     ),
     HTC: confirmMeta(
       "HTC",
-      2.2,
+      6,
       "ความดันโลหิตสูง",
       80,
       "นับเฉพาะการวัดซ้ำที่ รพ. (OBPM) ไม่รวมวัดที่บ้าน (HBPM) ผลอาจต่ำกว่า HDC",
     ),
-    RLU_HBA1C: rluMeta("RLU_HBA1C", 11.3, "HbA1c", "ตรวจ HbA1c ผู้ป่วยเบาหวาน"),
-    RLU_LDL: rluMeta("RLU_LDL", 11.4, "LDL", "ตรวจ LDL ผู้ป่วยเบาหวาน"),
-    RLU_CR: rluMeta("RLU_CR", 11.5, "Creatinine", "ตรวจ Creatinine ผู้ป่วยเบาหวาน"),
+    RLU_HBA1C: rluMeta("RLU_HBA1C", 7, "HbA1c", "ตรวจ HbA1c ผู้ป่วยเบาหวาน"),
+    RLU_LDL: rluMeta("RLU_LDL", 8, "LDL", "ตรวจ LDL ผู้ป่วยเบาหวาน"),
+    RLU_CR: rluMeta("RLU_CR", 9, "Creatinine", "ตรวจ Creatinine ผู้ป่วยเบาหวาน"),
   };
 
 /* ------------------------------ periods ---------------------------------- */
