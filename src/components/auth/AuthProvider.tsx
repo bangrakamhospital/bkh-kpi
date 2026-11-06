@@ -1,27 +1,28 @@
 "use client";
 
+import { useCallback, useMemo } from "react";
 import {
-  createContext,
-  use,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import type { MeResponse } from "@/lib/auth/types";
+  SessionProvider,
+  signIn,
+  signOut,
+  useSession,
+} from "next-auth/react";
+import { GENERIC_LOGIN_ERROR, loginErrorMessage } from "@/lib/auth/messages";
 
 /**
- * Client-side login state, loaded from GET /api/auth/me after hydration so
- * that pages stay in the static shell (no cookies() during render).
- * This is UI state only — every protected route handler re-checks the
- * session itself.
+ * Client-side login state from Auth.js (`SessionProvider` fetches
+ * /api/auth/session after hydration, so pages stay in the static shell —
+ * no cookies() during render). UI state only: every protected route
+ * handler re-checks the session with `auth()`.
+ *
+ * `useAuth()` keeps the small API used by the dashboard components.
  */
 
 export type AuthStatus = "loading" | "in" | "out";
 
 export type LoginResult = { ok: true } | { ok: false; error: string };
 
-interface AuthContextValue {
+interface AuthState {
   status: AuthStatus;
   displayName: string | null;
   login: (username: string, password: string) => Promise<LoginResult>;
@@ -30,48 +31,31 @@ interface AuthContextValue {
   markLoggedOut: () => void;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
-
-const GENERIC_ERROR = "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่";
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>("loading");
-  const [displayName, setDisplayName] = useState<string | null>(null);
+  return (
+    <SessionProvider basePath="/api/auth" refetchOnWindowFocus>
+      {children}
+    </SessionProvider>
+  );
+}
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/auth/me", { cache: "no-store", signal: controller.signal })
-      .then((res) => (res.ok ? (res.json() as Promise<MeResponse>) : null))
-      .then((me) => {
-        setStatus(me?.loggedIn ? "in" : "out");
-        setDisplayName(me?.loggedIn ? me.displayName : null);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setStatus("out");
-      });
-    return () => controller.abort();
-  }, []);
-
+export function useAuth(): AuthState {
+  const { data, status } = useSession();
   const login = useCallback(
     async (username: string, password: string): Promise<LoginResult> => {
       try {
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-          cache: "no-store",
+        const res = await signIn("credentials", {
+          username,
+          password,
+          redirect: false,
         });
-        const json = (await res.json().catch(() => null)) as
-          | (Partial<MeResponse> & { error?: string })
-          | null;
-        if (res.ok && json?.loggedIn) {
-          setStatus("in");
-          setDisplayName(json.displayName ?? null);
-          return { ok: true };
+        if (!res) return { ok: false, error: GENERIC_LOGIN_ERROR };
+        if (res.error) {
+          return { ok: false, error: loginErrorMessage(res.error, res.code) };
         }
-        return { ok: false, error: json?.error ?? GENERIC_ERROR };
+        return { ok: true };
       } catch {
-        return { ok: false, error: GENERIC_ERROR };
+        return { ok: false, error: GENERIC_LOGIN_ERROR };
       }
     },
     [],
@@ -79,28 +63,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
-    } finally {
-      setStatus("out");
-      setDisplayName(null);
+      await signOut({ redirect: false });
+    } catch {
+      // Network error: the cookie may remain until it expires.
     }
   }, []);
 
   const markLoggedOut = useCallback(() => {
-    setStatus("out");
-    setDisplayName(null);
+    // Clear the stale cookie; signOut also resyncs the shared session
+    // state (SessionProvider) so every consumer switches to "out".
+    void signOut({ redirect: false }).catch(() => {});
   }, []);
 
-  const value = useMemo(
-    () => ({ status, displayName, login, logout, markLoggedOut }),
-    [status, displayName, login, logout, markLoggedOut],
+  const user = data?.user as { name?: unknown } | undefined;
+  const mapped: AuthStatus =
+    status === "loading" ? "loading" : status === "authenticated" ? "in" : "out";
+  const displayName =
+    mapped === "in" && typeof user?.name === "string" ? user.name : null;
+
+  return useMemo(
+    () => ({ status: mapped, displayName, login, logout, markLoggedOut }),
+    [mapped, displayName, login, logout, markLoggedOut],
   );
-
-  return <AuthContext value={value}>{children}</AuthContext>;
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = use(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }

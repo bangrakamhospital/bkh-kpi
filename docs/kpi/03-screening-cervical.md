@@ -1,6 +1,6 @@
 # KPI 3: การคัดกรองมะเร็งปากมดลูก (CX) ในหญิงไทยอายุ 30–60 ปี (สะสม 5 ปี)
 
-> สถานะ: **นิยามพร้อมใช้ (เกณฑ์ปี 2570 ยังรอยืนยัน) / SQL ของ HOSxP เขียนแล้วแต่ยังไม่ได้ verify กับฐานจริง**
+> สถานะ: **นิยามพร้อมใช้ (เกณฑ์ปี 2570 ยังรอยืนยัน) / SQL ของ HOSxP verify กับฐานจริงแล้ว (db-cli, 2026-11-06)**
 > โค้ด: นิยาม `src/lib/kpi/screening-indicators.ts` (`SCREENING_INDICATORS.CX`), คำนวณ `src/lib/kpi/screening.ts` / `screening-detail.ts`,
 > SQL `src/lib/kpi/sql/screening-cancer-hosxp.ts` (`CX_SQL`) + ตัวสร้าง SQL กลาง `src/lib/kpi/sql/screening-common.ts`,
 > mock `src/lib/kpi/sources/screening-mock.ts`
@@ -44,7 +44,7 @@
 1. เพศหญิง (`person.sex = '2'`)
 2. สัญชาติไทย (`person.nationality = '99'`)
 3. อายุ 30–60 ปีเต็ม **ณ 1 ต.ค. ของปีงบฯ ที่เลือก** โดย `periodStart − 61 ปี < birthdate ≤ periodStart − 30 ปี`
-4. อยู่ในเขตรับผิดชอบ (TYPEAREA 1, 3), ยังมีชีวิต และยังไม่จำหน่าย (ตัวกรองเดียวกับ DM/HT)
+4. อยู่ในเขตรับผิดชอบ (TYPEAREA 1, 3) ในหมู่บ้านของเขต (ไม่นับหมู่ 0), ยังมีชีวิต และยังไม่จำหน่าย (ตัวกรองเดียวกับ DM/HT)
 5. นับเป็นคน (distinct `person_id`)
 6. **ไม่มีเงื่อนไขคัดออกด้วยโรค** เพราะสูตรทางการใช้ 70% ของประชากรทั้งหมดเป็นเป้าหมาย 5 ปี
 
@@ -61,7 +61,7 @@ B = ROUND(0.7 × eligible)        -- ปัดครึ่งขึ้น คำ
 
 คนใน eligible ที่มีบริการคัดกรองมะเร็งปากมดลูก**อย่างน้อย 1 ครั้ง**ระหว่าง `countFrom` ถึง `dataAsOf`
 
-- นับทุกวิธี ได้แก่ HPV DNA, Pap smear และ VIA และนับทุกผลตรวจ
+- นับทุกวิธี ได้แก่ HPV DNA, Pap smear และ VIA และนับทุกผลตรวจ (รหัส SPECIALPP ดูข้อ 9.1)
 - นับคนไม่ซ้ำ โดยคนหนึ่งนับได้ 1 ครั้งต่อ Phase และนับเข้าเดือนของการคัดกรองครั้งแรกใน Phase
 
 ## 6. สูตร
@@ -97,39 +97,48 @@ B = ROUND(0.7 × eligible)        -- ปัดครึ่งขึ้น คำ
 - **Excel**: ชีตสรุปมีคอลัมน์ "หญิงไทย 30–60 ปี" (eligible) เพิ่มก่อนคอลัมน์ "B (เป้าหมาย 70%)" และมีหมายเหตุช่วงข้อมูล (วันที่เริ่ม Phase ถึงวันตัดข้อมูล), note และวิธีแบ่ง B
 - ข้อมูลรายบุคคลใช้กติกาเดียวกับ DM/HT (01 ข้อ 9.2) คือไม่ cache, `private, no-store` และไม่ดึงเลขบัตร/ผลตรวจ
 
-## 9. SQL สำหรับ HOSxP (ยังไม่ได้ verify)
+## 9. SQL สำหรับ HOSxP (verify แล้ว)
 
-> **คำเตือน: ตาราง/คอลัมน์/รหัสทั้งหมดในส่วนนี้เป็นสมมติฐาน ยังไม่ได้ตรวจกับฐานจริง** (ยังไม่มี skill `db-cli`)
+> ตรวจกับฐานจริง (`bkhosxp`, MariaDB 10.11) ผ่าน skill `db-cli` เมื่อ 2026-11-06 ด้วย DESCRIBE / COUNT / GROUP BY เท่านั้น
 > โค้ดจริงอยู่ที่ `src/lib/kpi/sql/screening-cancer-hosxp.ts` ถ้าแก้ที่นั่นให้แก้เอกสารนี้ตามด้วย
 
-### 9.1 ตาราง/คอลัมน์/รหัสที่สมมติ
+### 9.1 ตาราง/คอลัมน์/รหัสที่พบ
 
-| รายการ | ความหมายที่สมมติ | ต้อง verify |
+| รายการ | สิ่งที่พบในฐานจริง |
+| --- | --- |
+| `person.sex` | char(1) `'2'` = หญิง |
+| `person.nationality` | varchar(3) `'99'` = ไทย (ประชากรเกือบทั้งหมดเป็น 99 รองลงมาคือ 48 พม่า, 56 ลาว, 57 กัมพูชา) |
+| ตัวกรองประชากรในเขต | เหมือน 01 ข้อ 7.1 (TYPEAREA 1/3, discharge 9, ไม่นับหมู่ 0 "นอกเขตรับผิดชอบ") |
+| `pp_special(vn, pp_special_type_id, hn, pp_special_code)` | มีจริง index ที่ `vn` เท่านั้น (ไม่มี index ที่ `pp_special_type_id`) ไม่มีวันที่ในตัว จึงใช้ `ovst.vstdate` |
+| `pp_special_type(pp_special_type_id, pp_special_code, pp_special_type_name, is_active)` | มีจริง |
+| `ovst(vn unique, hn, vstdate)` | มี index ครบ; `person.patient_hn = ovst.hn` |
+
+รหัส SPECIALPP กลุ่มมะเร็งปากมดลูกในตาราง `pp_special_type` ของ รพ. นี้ (นับทั้งหมด ยกเว้นรหัสกลุ่มที่ยกเลิก `1B004`):
+
+| รหัส | ความหมาย | มีการใช้ (ปีงบฯ 2567–2570) |
 | --- | --- | --- |
-| `person.sex = '2'` | หญิง | ค่าและชนิดข้อมูล |
-| `person.nationality = '99'` | สัญชาติไทย | ชื่อคอลัมน์และรหัส (ดูตาราง `nationality`) รวมถึงสัดส่วนค่า NULL ถ้า NULL เยอะ eligible จะต่ำเกินจริง |
-| `pp_special.vn`, `.pp_special_type_id` | บริการส่งเสริมป้องกันเฉพาะ (SPECIALPP) ต่อ visit | มีตารางนี้หรือไม่ (HOSxP XE หรือ PCU) |
-| `pp_special_type.pp_special_type_id`, `.pp_special_code` | รหัส SPECIALPP มาตรฐาน | ชื่อคอลัมน์รหัส |
-| `ovst.vn`, `.hn`, `.vstdate` | visit (ใช้เป็นวันที่บริการ) | ตรวจด้วยว่าใช้วันที่ใน `pp_special` แทนได้หรือไม่ |
-| `person.patient_hn = ovst.hn` | การเชื่อมคนกับ visit | สัดส่วน HN ว่าง (คนในเขตที่ไม่มี HN จะไม่ถูกนับใน A) |
-| รหัส CX `1B0040`–`1B0049` | การคัดกรองมะเร็งปากมดลูก ทุกวิธีและทุกผล (Pap/VIA/HPV) | **ไม่มั่นใจที่สุด** ต้องดูรายการรหัสจริง เช่น HPV DNA หรือ HPV self-sampling อาจใช้รหัสกลุ่มอื่น |
+| `1B0040`–`1B0043`, `1B0045` | VIA (ผลลบ / บวกไม่รักษา / บวกรักษา / ไม่ระบุผล / เป็นมะเร็ง) | น้อย (ส่วนใหญ่ `1B0040` ปี 2567) |
+| `1B0044` | Pap (ยังไม่ทราบผล) | น้อย |
+| `1B0046` | HPV Genotype Testing | **หลัก** (ราว 500–800 คนต่อปี) |
+| `1B0048` / `1B0049` | วิธีอื่น / ไม่ระบุวิธี | แทบไม่มี |
+| `1B30` / `1B40` | ผล Pap ปกติ / ผิดปกติ (รหัสเฉพาะของ รพ., Z014) | **หลัก** (ราว 500–700 คนต่อปี) — เดิมไม่ได้นับ เพิ่มแล้ว |
+| `1B0047` | ไม่มีในตารางนี้ | (คงไว้ในรายการเผื่ออนาคต) |
 
-query สำหรับตรวจผ่าน `db-cli` (SELECT เท่านั้น ไม่มีข้อมูลผู้ป่วย):
+แหล่งอื่นที่ตรวจแล้ว**ไม่ได้นับ**:
 
-```sql
-SELECT pp_special_type_id, pp_special_code, pp_special_name
-FROM pp_special_type
-WHERE pp_special_code LIKE '1B00%'
-ORDER BY pp_special_code;
-```
+- lab `HPV DNA` (lab_items_code 1017) และ `PAP smear` (474) ใน `lab_head`/`lab_order`: ในกลุ่ม eligible ปีงบฯ 2570 มีหญิงที่มีผล lab แต่ไม่มี SPECIALPP 67 คน (เทียบกับ 559 คนที่มี SPECIALPP) HDC ไม่เห็น lab เหล่านี้เช่นกัน จึงไม่นับเพื่อให้ตรง HDC ถ้าต้องการนับควรให้หน่วยบริการบันทึก SPECIALPP ให้ครบ
+- `person_women_vagina_cancer_test` (บัญชีงานสตรีของ HOSxP) มีราว 500–1,000 รายการต่อปี ใกล้เคียงกับ SPECIALPP และไม่ใช่แฟ้มที่ HDC ใช้
 
-ทางเลือกถ้า รพ. ไม่ได้บันทึกผ่าน SPECIALPP:
+### 9.1.1 ตัวเลขตรวจสอบ (db-cli, ข้อมูล ณ 2026-11-06)
 
-- `person_women_service` / `women_service` (งานอนามัยแม่และเด็ก/สตรีใน HOSxP PCU)
-- ผล lab Pap/HPV (`lab_head` / `lab_order`) ซึ่งต้องรู้ lab code ของ รพ.
-- ข้อมูลโครงการ HPV self-sampling ที่อาจอยู่นอก HOSxP
+| ปีงบฯ | eligible | B = ROUND(0.7 × eligible) | A (สะสมตั้งแต่ 2024-10-01) | ร้อยละ |
+| --- | --- | --- | --- | --- |
+| 2569 | 2,318 | 1,623 | 566 | 34.87 |
+| 2570 (ถึง 6 พ.ย. 2569) | 2,250 | 1,575 | 559 | 35.49 |
 
-index ที่ควรมี: `pp_special(vn)`, `pp_special(pp_special_type_id)`, `ovst(vn)`, `ovst(vstdate)`, `person(patient_hn)`, `person(sex, house_regist_type_id, birthdate)`
+ก่อนแก้ production ปีงบฯ 2570 ได้ B 1,677 / A 565 ส่วนต่างของ B มาจากการคัดออกหมู่ 0 (A ต่างเล็กน้อยเพราะเพิ่มรหัส `1B30`/`1B40` แต่ตัดคนหมู่ 0 ออก)
+
+ประสิทธิภาพ (EXPLAIN): subquery scan `pp_special` ทั้งตาราง (ราว 680k แถว ไม่มี index ที่ `pp_special_type_id`) แล้ว eq_ref ไป `pp_special_type`/`ovst` ใช้ราว 1.4 วินาทีต่อ query ยอมรับได้
 
 ### 9.2 SQL (MySQL/MariaDB)
 
@@ -142,12 +151,14 @@ index ที่ควรมี: `pp_special(vn)`, `pp_special(pp_special_type_id
 - `:birthAfter` = periodStart − 61 ปี
 
 ```sql
--- UNVERIFIED
+-- Verified with db-cli, see 9.1
 -- eligible filter on person p:
---       p.house_regist_type_id IN ('1','3')
---   AND p.person_discharge_id = '9'
+--       p.house_regist_type_id IN (1, 3)
+--   AND p.person_discharge_id = 9
 --   AND COALESCE(p.death,'N') <> 'Y'
 --   AND p.birthdate IS NOT NULL
+--   AND p.village_id IN (SELECT cv.village_id FROM village cv
+--                        WHERE TRIM(LEADING '0' FROM TRIM(cv.village_moo)) <> '')
 --   AND p.sex = '2'
 --   AND p.nationality = '99'
 --   AND p.birthdate <= :birthOnOrBefore
@@ -159,7 +170,7 @@ FROM pp_special ps
 JOIN pp_special_type pt ON pt.pp_special_type_id = ps.pp_special_type_id
 JOIN ovst o            ON o.vn = ps.vn
 JOIN person sp         ON sp.patient_hn = o.hn
-WHERE pt.pp_special_code IN ('1B0040','1B0041',...,'1B0049')
+WHERE pt.pp_special_code IN ('1B0040',...,'1B0049','1B30','1B40')
   AND o.vstdate >= :countFrom
   AND o.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
 GROUP BY sp.person_id;
@@ -189,6 +200,6 @@ query รายหมู่และรายชื่อสร้างจา�
 
 1. เกณฑ์ปีงบฯ 2570 (25% ตาม Service Plan 2568 หรือ 60% ตามแผนตรวจราชการ หรือค่าอื่น)
 2. Phase 2568–2572 ยังใช้ในปี 2570 หรือไม่ และตัวคูณ 70% ยังเหมือนเดิมหรือไม่
-3. รหัส SPECIALPP ของ Pap/VIA/HPV ในฐานจริง และ รพ. บันทึกการคัดกรองที่ตารางใด
+3. ~~รหัส SPECIALPP ของ Pap/VIA/HPV~~ ตรวจแล้ว (ข้อ 9.1) เหลือตัดสินใจว่าจะนับผล lab HPV DNA ที่ไม่มี SPECIALPP (ราว 67 คนในปีงบฯ 2570) หรือไม่
 4. วิธีคิดอายุ (ณ 1 ต.ค. ของปีที่เลือก หรือ ณ วันคัดกรอง) ถ้าต้องการให้ตรง HDC
 5. นับเฉพาะสัญชาติไทยตามนิยาม หรือรวมคนต่างด้าวในเขตด้วย

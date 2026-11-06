@@ -9,22 +9,25 @@ const inputClass =
 const iconCls = "h-4 w-4 shrink-0";
 
 /**
- * Login with a HOSxP staff account. Used inside the village modal and on
+ * Login form. Used inside the village modal and on
  * /login. The password is held only in this component's state and sent
- * once to POST /api/auth/login.
+ * once to the Auth.js credentials callback (POST /api/auth/callback/credentials).
  */
 export function LoginForm({
   onSuccess,
   description,
+  initialError = null,
 }: {
   onSuccess: () => void;
   description?: string;
+  /** E.g. from /login?error=&code= after an Auth.js redirect. */
+  initialError?: string | null;
 }) {
   const { login } = useAuth();
   const id = useId();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [pending, setPending] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -67,7 +70,7 @@ export function LoginForm({
       )}
       <div className="space-y-1">
         <label htmlFor={`${id}-user`} className="text-sm font-medium">
-          ชื่อผู้ใช้ HOSxP
+          ชื่อผู้ใช้
         </label>
         <div className="relative">
           <User

@@ -21,3 +21,25 @@ export function safeNextPath(raw: string | null | undefined): string {
     return "/";
   }
 }
+
+/**
+ * `callbackUrl` from /login?callbackUrl=... : an internal path, or an
+ * absolute URL on `origin` (Auth.js sends absolute same-origin URLs).
+ * Anything else falls back to "/". Pass `origin` only where `window` is
+ * available (event handlers), not during render.
+ */
+export function safeCallbackPath(
+  raw: string | null | undefined,
+  origin?: string,
+): string {
+  if (raw && origin && !raw.startsWith("/")) {
+    try {
+      const url = new URL(raw);
+      if (url.origin !== origin) return "/";
+      return safeNextPath(`${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      return "/";
+    }
+  }
+  return safeNextPath(raw);
+}

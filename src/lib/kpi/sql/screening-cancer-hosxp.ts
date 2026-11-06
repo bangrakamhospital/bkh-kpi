@@ -19,26 +19,27 @@ import {
  * SQL for KPI 3 (CX, cervical cancer screening) and KPI 4 (BR, clinical
  * breast examination) against HOSxP (MySQL/MariaDB).
  *
- * !!! UNVERIFIED !!!
  * Screening services are read from the SPECIALPP records of HOSxP
  * (`pp_special` + `pp_special_type.pp_special_code`, linked to the visit
  * via `ovst`), i.e. the same source HOSxP exports as the 43-file SPECIALPP
- * that HDC uses. Every table, column and code below is an assumption that
- * has NOT been checked against the real database (db-cli not available).
- * See docs/kpi/03-screening-cervical.md and 04-screening-breast.md.
- *
- * VERIFY:
- *  - pp_special(vn, pp_special_type_id)
- *  - pp_special_type(pp_special_type_id, pp_special_code)
- *  - ovst(vn, hn, vstdate); person.patient_hn = ovst.hn
- *  - the code lists below (list pp_special_type rows with code '1B00%')
- *  - whether the site records Pap / VIA / HPV in another place instead
- *    (person_women_service, lab results, HPV self-sampling projects)
+ * that HDC uses. Tables, columns and codes were verified with db-cli
+ * against the production database — see docs/kpi/03-screening-cervical.md
+ * and 04-screening-breast.md:
+ *  - pp_special(vn [indexed], pp_special_type_id)
+ *  - pp_special_type(pp_special_type_id PK, pp_special_code, name)
+ *  - ovst(vn unique, hn, vstdate); person.patient_hn = ovst.hn
+ *  - HPV DNA / Pap lab orders without a SPECIALPP record are NOT counted
+ *    (HDC does not see them either); see docs for the size of that gap.
  */
 
 /**
- * SPECIALPP codes counted as cervical cancer screening (any method:
- * HPV DNA, Pap smear, VIA; any result). VERIFY — assumed 1B0040–1B0049.
+ * SPECIALPP codes counted as cervical cancer screening (any method, any
+ * result), as defined in this site's pp_special_type:
+ *  1B0040–1B0043, 1B0045 VIA; 1B0044 Pap (result pending);
+ *  1B0046 HPV genotype testing; 1B0048 other method; 1B0049 unspecified;
+ *  1B30 / 1B40 Pap result normal / abnormal (site-specific codes, Z014).
+ * 1B0047 is not defined at this site (kept for forward compatibility).
+ * The retired group code 1B004 is not counted.
  */
 export const CERVICAL_SCREENING_PP_CODES = [
   "1B0040",
@@ -51,14 +52,34 @@ export const CERVICAL_SCREENING_PP_CODES = [
   "1B0047",
   "1B0048",
   "1B0049",
+  "1B30",
+  "1B40",
 ] as const;
 
 /**
  * SPECIALPP codes counted as clinical breast examination by health
- * personnel (CBE, any result). Self-examination (BSE, Service Plan 2.1)
- * must NOT be in this list. VERIFY — assumed 1B0030–1B0031.
+ * personnel (CBE, Z123), any result: 1B0030–1B0037 = CBE normal/abnormal
+ * combined with the client's self-exam history, 1B0039 = unspecified.
+ * There is no separate BSE-only SPECIALPP code, so BSE is not counted by
+ * code. The retired group code 1B003 is not counted. 1B0038 is not
+ * defined at this site (kept for forward compatibility).
+ *
+ * CAVEAT (see docs/kpi/04-screening-breast.md): at this site almost all
+ * 1B0030 records are generated from the women's breast-exam form where
+ * the exam type is "ตรวจด้วยตนเอง"; HDC still counts them as CBE.
  */
-export const BREAST_CBE_PP_CODES = ["1B0030", "1B0031"] as const;
+export const BREAST_CBE_PP_CODES = [
+  "1B0030",
+  "1B0031",
+  "1B0032",
+  "1B0033",
+  "1B0034",
+  "1B0035",
+  "1B0036",
+  "1B0037",
+  "1B0038",
+  "1B0039",
+] as const;
 
 /** Known breast cancer (excluded from BR target): ICD-10 C50 incl. subcodes. */
 export const BREAST_CANCER_ICD_RANGE = {

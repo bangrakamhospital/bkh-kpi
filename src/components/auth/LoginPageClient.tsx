@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
-import { safeNextPath } from "@/lib/auth/redirect";
+import { loginErrorMessage } from "@/lib/auth/messages";
+import { safeCallbackPath } from "@/lib/auth/redirect";
 import { useAuth } from "./AuthProvider";
 import { LoginForm } from "./LoginForm";
 
@@ -14,7 +15,13 @@ export function LoginPageClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { status, displayName } = useAuth();
-  const next = safeNextPath(searchParams.get("next"));
+  const rawCallback = searchParams.get("callbackUrl");
+  // Render-safe (path only); absolute same-origin URLs are resolved on submit.
+  const next = safeCallbackPath(rawCallback);
+  const authError = searchParams.get("error");
+  const initialError = authError
+    ? loginErrorMessage(authError, searchParams.get("code"))
+    : null;
 
   if (status === "in") {
     return (
@@ -37,8 +44,11 @@ export function LoginPageClient() {
   return (
     <div className="flex w-full flex-col items-center gap-4">
       <LoginForm
-        description="ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับ HOSxP เพื่อดูรายชื่อและดาวน์โหลด Excel"
-        onSuccess={() => router.replace(next)}
+        description="ใช้ชื่อผู้ใช้และรหัสผ่านเพื่อดูรายชื่อและดาวน์โหลด Excel"
+        initialError={initialError}
+        onSuccess={() =>
+          router.replace(safeCallbackPath(rawCallback, window.location.origin))
+        }
       />
       <Link href={next} className="text-xs text-brand-700 underline-offset-2 hover:underline dark:text-brand-300">
         กลับไปหน้าเดิมโดยไม่เข้าสู่ระบบ

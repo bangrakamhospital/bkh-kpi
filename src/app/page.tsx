@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { HeartPulse } from "lucide-react";
+import Image from "next/image";
 import { ScreeningDashboard } from "@/components/kpi/ScreeningDashboard";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
@@ -9,8 +9,8 @@ export default function Home(props: PageProps<"/">) {
     <>
       <header className="bg-linear-to-r from-brand-700 via-brand-800 to-brand-900 pb-12 pt-5 text-white">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 sm:px-6">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/15">
-            <HeartPulse aria-hidden="true" className="h-5 w-5" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white p-1">
+            <Image src="/logo.png" alt="โลโก้โรงพยาบาล" width={32} height={32} className="h-8 w-8 object-contain" />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-base font-bold tracking-wide text-brand-100">
@@ -23,7 +23,7 @@ export default function Home(props: PageProps<"/">) {
               ตัวชี้วัดการคัดกรองเบาหวาน ความดันโลหิตสูง และมะเร็ง
             </p>
           </div>
-          {/* Client-side (/api/auth/me): keeps "/" a Partial Prerender. */}
+          {/* Client-side (Auth.js useSession): keeps "/" a Partial Prerender. */}
           <HeaderAuth />
         </div>
       </header>

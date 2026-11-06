@@ -1,9 +1,7 @@
 import "server-only";
 
-import type { NextRequest } from "next/server";
-
 /**
- * Request helpers for auth route handlers.
+ * Request helpers for auth code (route handlers and Auth.js callbacks).
  */
 
 const NO_STORE = "private, no-store";
@@ -20,42 +18,15 @@ export function authJson(
 }
 
 /**
- * CSRF check for state-changing POSTs (route handlers are not covered by
- * the Server Action origin check). The Origin header must match the host
- * the request was sent to (X-Forwarded-Host when behind a reverse proxy).
- * Without Origin, only `Sec-Fetch-Site: same-origin` is accepted.
- */
-export function isSameOrigin(request: NextRequest): boolean {
-  const host = (
-    request.headers.get("x-forwarded-host") ??
-    request.headers.get("host") ??
-    ""
-  )
-    .split(",")[0]
-    .trim()
-    .toLowerCase();
-  const origin = request.headers.get("origin");
-  if (origin) {
-    if (!host || origin === "null") return false;
-    try {
-      return new URL(origin).host.toLowerCase() === host;
-    } catch {
-      return false;
-    }
-  }
-  return request.headers.get("sec-fetch-site") === "same-origin";
-}
-
-/**
  * Best-effort client IP for rate limiting / audit. X-Forwarded-For is
  * trusted only as far as the reverse proxy sets it; without a proxy it
  * can be spoofed (the per-IP limit then degrades, per-user still applies
  * per spoofed value). Never used for authorization.
  */
-export function clientIp(request: NextRequest): string {
-  const xff = request.headers.get("x-forwarded-for");
+export function clientIp(headers: Headers | null | undefined): string {
+  const xff = headers?.get("x-forwarded-for");
   const first = xff?.split(",")[0]?.trim();
-  const ip = first || request.headers.get("x-real-ip")?.trim() || "unknown";
+  const ip = first || headers?.get("x-real-ip")?.trim() || "unknown";
   return ip.slice(0, 64);
 }
 

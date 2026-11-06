@@ -22,8 +22,3 @@ export interface AuthProvider {
   verify(username: string, password: string): Promise<AuthUser | null>;
 }
 
-/** Body of GET /api/auth/me. */
-export interface MeResponse {
-  loggedIn: boolean;
-  displayName: string | null;
-}

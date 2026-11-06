@@ -543,7 +543,7 @@ function LoginPanel({
   const description =
     reason === "expired"
       ? `การเข้าสู่ระบบหมดอายุ กรุณาเข้าสู่ระบบอีกครั้งเพื่อ${what}`
-      : `ต้องเข้าสู่ระบบด้วยบัญชี HOSxP ก่อน${what}`;
+      : `ต้องเข้าสู่ระบบก่อน${what}`;
   return (
     <>
       <div

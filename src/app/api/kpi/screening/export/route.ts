@@ -18,7 +18,7 @@ import { buildScreeningWorkbook } from "@/lib/kpi/screening-excel";
  * Contains patient-identifiable data (HN, name): never cached
  * (`Cache-Control: private, no-store`).
  *
- * Requires login: 401 { error: "กรุณาเข้าสู่ระบบ" } without a valid session,
+ * Requires login (Auth.js session): 401 { error: "กรุณาเข้าสู่ระบบ" } without a valid session,
  * 503 when auth is not configured. Each success is audit-logged.
  */
 const XLSX_TYPE =
@@ -26,7 +26,7 @@ const XLSX_TYPE =
 
 export async function GET(request: NextRequest): Promise<Response> {
   // Login required (patient-identifiable data). Checked here, not only in UI.
-  const auth = requireSession(request, "api/kpi/screening/export");
+  const auth = await requireSession("api/kpi/screening/export");
   if (!auth.ok) return auth.response;
 
   const parsed = parseScreeningQuery(
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
     auditDataAccess({
       action: "export",
-      loginname: auth.session.loginname,
+      loginname: auth.user.username,
       code,
       fiscalYear,
       villageId,

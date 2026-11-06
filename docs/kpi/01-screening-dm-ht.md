@@ -1,6 +1,6 @@
 # KPI 1: การคัดกรองเบาหวาน (DM) และความดันโลหิตสูง (HT) ในประชาชนอายุ 35 ปีขึ้นไป
 
-> สถานะ: **นิยามพร้อมใช้ / SQL ของ HOSxP เขียนแล้วแต่ยังไม่ได้ verify กับฐานจริง**
+> สถานะ: **นิยามพร้อมใช้ / SQL ของ HOSxP verify กับฐานจริงแล้ว (db-cli, 2026-11-06)**
 > โค้ด: `src/lib/kpi/screening.ts` (`getScreeningKpi`), นิยาม/ป้ายแสดงผล: `src/lib/kpi/screening-indicators.ts`,
 > SQL: `src/lib/kpi/sql/screening-hosxp.ts` (DM/HT) + ตัวสร้าง SQL กลาง `src/lib/kpi/sql/screening-common.ts` (ใช้ร่วมกับ CX/BR ใน 03, 04),
 > source: `src/lib/kpi/sources/screening-his.ts` (ค่าเริ่มต้น) / `screening-mock.ts` (ใช้เมื่อ `KPI_DATA_SOURCE=mock`)
@@ -24,12 +24,13 @@
 ประชาชนที่มีคุณสมบัติครบทุกข้อต่อไปนี้
 
 1. อายุ ≥ 35 ปีเต็ม **ณ วันที่ 1 ต.ค. ของปีงบฯ** (วันเกิด ≤ 1 ต.ค. ของปีงบฯ ลบ 35 ปี)
-2. อาศัยอยู่ในเขตรับผิดชอบ (TYPEAREA 1, 3)
+2. อาศัยอยู่ในเขตรับผิดชอบ (TYPEAREA 1, 3) และบ้านอยู่ในหมู่บ้านของเขตรับผิดชอบจริง (ไม่นับหมู่บ้านหลอก "นอกเขตรับผิดชอบ" หมู่ 0 และคนที่ไม่ระบุหมู่บ้าน)
 3. ยังมีชีวิตอยู่และยังไม่ถูกจำหน่าย (DISCHARGE = 9)
 4. นับเป็น**คน** (distinct `person_id`)
 5. **คัดออก**ผู้ที่ได้รับการวินิจฉัยโรคนั้น**ก่อน 1 ต.ค. ของปีงบฯ**
    - DM: ICD-10 `E10`–`E14` (รวมรหัสย่อย)
    - HT: ICD-10 `I10`–`I15` (รวมรหัสย่อย)
+   - หรือเป็นสมาชิกคลินิกโรคเรื้อรัง (`clinicmember`) ที่ลงทะเบียนก่อน 1 ต.ค. (หรือไม่ระบุวันลงทะเบียน): DM คลินิก `001` โรคเบาหวาน, HT คลินิก `002` โรคความดันโลหิตสูง
 
 ตัวหารของ DM และ HT **แยกกัน**
 
@@ -37,7 +38,7 @@
 
 คนใน B ที่มีบันทึกการคัดกรองซึ่งวันที่คัดกรองอยู่ระหว่าง 1 ต.ค. ถึง `dataAsOf` และมีผลตรวจที่ใช้ได้
 
-- DM: มีค่าน้ำตาลในเลือดมากกว่า 0
+- DM: มีค่าน้ำตาลในเลือดค่าใดค่าหนึ่งมากกว่า 0 (`last_fgc` DTX อดอาหาร, `last_fgc_no_food_limit` DTX ไม่อดอาหาร, `last_fpg` FPG, `ppg`) ตรงกับ NCDSCREEN.BSTEST 1–4
 - HT: มีค่าความดัน systolic และ diastolic มากกว่า 0
 
 แต่ละคนนับได้ 1 ครั้งต่อปีงบฯ และนับเข้าเดือนของการคัดกรองครั้งแรก
@@ -57,44 +58,63 @@
 | --- | --- | --- |
 | นับครั้งหรือนับคน | นับ**คน** | ตรงกับ HDC และทำให้ A ≤ B เสมอ เพราะ A ใช้ตัวกรองกลุ่มเป้าหมายชุดเดียวกับ B |
 | วันที่ใช้คิดอายุ | 1 ต.ค. ของปีงบฯ | ตามที่กำหนด ทำให้ B คงที่ตลอดปี |
-| เกณฑ์คัดออก | วินิจฉัยใน `ovstdiag` ก่อน 1 ต.ค. | `ovstdiag` เป็นตารางมาตรฐานที่ทุก รพ. ที่ใช้ HOSxP มี ส่วน `clinicmember` ใช้รหัสคลินิกต่างกันไปในแต่ละแห่ง |
+| เกณฑ์คัดออก | วินิจฉัยใน `ovstdiag` ก่อน 1 ต.ค. **หรือ** เป็นสมาชิก `clinicmember` (DM `001`, HT `002`) ที่ลงทะเบียนก่อน 1 ต.ค. | คลินิกจับผู้ป่วยเดิมที่วินิจฉัยจากที่อื่นและไม่มี diagnosis ใน `ovstdiag` (ปีงบ 2569 คัดออกเพิ่ม DM ราว 89 คน, HT ราว 223 คน) |
+| หมู่บ้าน | ต้องเป็นหมู่บ้านในเขต (`village_moo` ไม่ใช่ 0) | ฐานนี้มีหมู่บ้านหลอก "นอกเขตรับผิดชอบ" (หมู่ 0) ที่ยังมีคน TYPEAREA 1/3 อยู่ราว 700 คน (ข้อมูลขัดกัน) HDC นับเฉพาะคนที่บ้านอยู่ในหมู่บ้านของเขต |
 | สถานะประชากร | สถานะใน `person` ณ วันที่ประมวลผล | HOSxP ไม่เก็บประวัติ TYPEAREA ย้อนหลัง |
-| แหล่งผลคัดกรอง | `person_dmht_risk_screen_head` (งานคัดกรอง DM/HT ของ HOSxP ที่ส่งออกเป็นแฟ้ม NCDSCREEN) | ใกล้เคียงนิยาม HDC มากที่สุด ยังไม่นับการวัดใน `opdscreen` ตอนมารับบริการ OPD |
+| แหล่งผลคัดกรอง | `person_dmht_risk_screen_head` (งานคัดกรอง DM/HT ของ HOSxP ที่ส่งออกเป็นแฟ้ม NCDSCREEN) | ตรงนิยาม HDC ไม่นับการวัดใน `opdscreen` ตอนมารับบริการ OPD เพราะไม่ใช่ NCDSCREEN |
 | การคัดกรองนอกหน่วยบริการ | ไม่นับ | HIS มีเฉพาะข้อมูลของหน่วยบริการเอง ค่าที่ได้จึงอาจต่ำกว่า HDC |
 | ปีงบฯ ที่รองรับ | 2560 ถึงปีงบฯ ปัจจุบัน | ถ้าอยู่นอกช่วงจะ throw `RangeError` |
 
-## 7. SQL สำหรับ HOSxP (ยังไม่ได้ verify)
+## 7. SQL สำหรับ HOSxP (verify แล้ว)
 
-> **คำเตือน: ชื่อตาราง/คอลัมน์ทั้งหมดในส่วนนี้เป็นสมมติฐาน และยังไม่ได้ตรวจกับฐานข้อมูลจริง**
-> ตอนนี้ยังไม่มี skill `db-cli` และยังไม่รู้ว่าเป็น HOSxP รุ่นโรงพยาบาล (HOSxP XE) หรือ HOSxP PCU ต้องตรวจทุกข้อในตารางด้านล่างผ่าน `db-cli` ก่อนนำตัวเลขไปใช้จริง
+> ตรวจกับฐานจริง (`bkhosxp`, MariaDB 10.11, HOSxP รุ่นโรงพยาบาล) ผ่าน skill `db-cli` เมื่อ 2026-11-06 ด้วย DESCRIBE / COUNT / GROUP BY เท่านั้น
 > โค้ดที่ใช้งานจริงอยู่ใน `src/lib/kpi/sql/screening-hosxp.ts` (ตัวกรองและ subquery ของ DM/HT) กับ `src/lib/kpi/sql/screening-common.ts` (ตัวกรองประชากร/อายุ/คัดออก และตัวสร้าง query ทั้ง 5 แบบ) ถ้าแก้ตรงนั้นให้อัปเดตเอกสารนี้ตามด้วย
 
-### 7.1 ตาราง/คอลัมน์ที่สมมติ และสิ่งที่ต้อง verify
+### 7.1 ตาราง/คอลัมน์ที่ใช้ และผลการตรวจ
 
-| ตาราง.คอลัมน์ | ความหมายที่สมมติ | ต้อง verify |
-| --- | --- | --- |
-| `person.person_id` | PK ของประชากร | มีอยู่จริงหรือไม่ และไม่ซ้ำ |
-| `person.birthdate` | วันเกิด (DATE) | ชนิดข้อมูล และสัดส่วนค่า NULL หรือ 0000-00-00 |
-| `person.house_regist_type_id` | TYPEAREA (1–5) | ค่า 1 และ 3 ตรงกับ TYPEAREA 1 และ 3 หรือไม่ (ดูตาราง `house_regist_type`) |
-| `person.person_discharge_id` | สถานะจำหน่าย (9 = ยังไม่จำหน่าย) | ค่ารหัส (ดูตาราง `person_discharge`) |
-| `person.death` | `'Y'` = เสียชีวิต | มีคอลัมน์นี้หรือไม่ และอาจต้องใช้ `person_discharge_id = 1` แทน |
-| `person.patient_hn` | HN ที่ใช้เชื่อมกับ `ovstdiag.hn` | สัดส่วนที่เป็น NULL และ format ของ HN ตรงกันหรือไม่ |
-| `ovstdiag.hn`, `.icd10`, `.vstdate` | การวินิจฉัย OPD | `icd10` เก็บแบบไม่มีจุด (เช่น `E119`) หรือไม่ และมี index ที่ `hn` หรือไม่ |
-| `person_dmht_screen_summary.person_dmht_screen_summary_id`, `.person_id` | หัวการคัดกรองรายปีของแต่ละคน | ชื่อคอลัมน์ และมี `bdg_year` หรือไม่ (ยังไม่ได้ใช้) |
-| `person_dmht_risk_screen_head.person_dmht_screen_summary_id`, `.screen_date` | ครั้งการคัดกรอง | ชื่อคอลัมน์และชนิดของ `screen_date` |
-| `person_dmht_risk_screen_head.last_fgc` | ค่าน้ำตาล (DM) | **ไม่มั่นใจที่สุด** อาจใช้ชื่ออื่น หรือเก็บอยู่ในตารางลูก |
-| `person_dmht_risk_screen_head.last_bps`, `.last_bpd` | ความดัน (HT) | **ไม่มั่นใจที่สุด** เช่นกัน |
-| `person.village_id` | หมู่บ้านที่อาศัย (FK ไป `village`) | มีคอลัมน์นี้หรือไม่ (HOSxP PCU อาจผูกหมู่บ้านผ่าน `house.village_id` แทน) และสัดส่วนค่า NULL/0 |
-| `village.village_id`, `.village_moo`, `.village_name` | ตารางหมู่บ้าน | ชื่อคอลัมน์ ชนิดของ `village_moo` (int หรือ varchar) และมีแถว "นอกเขต" (moo 0) หรือไม่ |
-| `person.pname`, `.fname`, `.lname` | คำนำหน้า (ข้อความ เช่น `นาย`) / ชื่อ / สกุล | `pname` เป็นข้อความหรือรหัส ถ้าเป็นรหัสต้อง join ตาราง `pname` |
-| `person.sex` | `'1'` = ชาย, `'2'` = หญิง | ค่าที่ใช้จริง |
+| ตาราง.คอลัมน์ | สิ่งที่พบในฐานจริง |
+| --- | --- |
+| `person.person_id` | int PK |
+| `person.birthdate` | DATE |
+| `person.house_regist_type_id` | **int** อ้าง `house_regist_type`: 1 = มีชื่อตามทะเบียนบ้านและอยู่จริง, 2 = มีชื่อแต่ไม่อยู่จริง, 3 = มาอาศัยในเขตแต่ทะเบียนบ้านอยู่นอกเขต, 4 = อยู่นอกเขตและมารับบริการ, 5 = อาศัยในเขตแต่ไม่อยู่ตามทะเบียนบ้าน (เช่น คนเร่ร่อน) → ใช้ 1, 3 ตรงกับ TYPEAREA |
+| `person.person_discharge_id` | **int** อ้าง `person_discharge`: 1 เสียชีวิต, 2 ย้าย, 3 สาบสูญ, 9 ยังอาศัยอยู่ → ใช้ 9 |
+| `person.death` | char(1) `'Y'`/`'N'` (เก็บไว้เป็น safety net สอดคล้องกับ discharge แทบทั้งหมด) |
+| `person.sex` | char(1) `'1'` ชาย, `'2'` หญิง |
+| `person.nationality` | varchar(3) `'99'` = ไทย (อ้าง `nationality`) |
+| `person.patient_hn` | varchar(9) มี index ไม่มีค่าว่างในกลุ่มเป้าหมาย ใช้เชื่อมกับ `ovstdiag.hn` / `ovst.hn` / `clinicmember.hn` |
+| `person.village_id` → `village(village_id, village_moo, village_name)` | มี index ที่ `person.village_id`; `village_moo` เป็น varchar (`'01'`–`'19'`) มีหมู่บ้านหลอก `village_moo = '0'` ชื่อ "นอกเขตรับผิดชอบ" → **คัดออก** |
+| `ovstdiag.hn`, `.icd10`, `.vstdate` | icd10 เก็บแบบ**ไม่มีจุด** (เช่น `E119`, `I10`) มี index ที่ `hn`, `icd10`, `vstdate` |
+| `clinicmember(hn, clinic, regdate)` | unique index (hn, clinic); คลินิก `001` โรคเบาหวาน, `002` โรคความดันโลหิตสูง; regdate เป็น NULL ส่วนน้อย (นับเป็นผู้ป่วยเดิม) |
+| `person_dmht_screen_summary(person_dmht_screen_summary_id, person_id, bdg_year)` | หัวการคัดกรองรายปีของแต่ละคน (`bdg_year` ไม่ได้ใช้ เพราะไม่ตรงปีงบฯ เสมอไป ใช้ `screen_date` แทน) |
+| `person_dmht_risk_screen_head(person_dmht_screen_summary_id, screen_date, last_bps, last_bpd, last_fgc, last_fgc_no_food_limit, last_fpg, ppg)` | ครั้งการคัดกรอง = แหล่งของแฟ้ม NCDSCREEN; `screen_date` เป็น DATE (ไม่มี index แต่ตารางมีราว 160k แถว scan ได้เร็ว) |
 
-ทางเลือกที่ควรพิจารณาหลัง verify:
+ตารางที่ตรวจแล้ว**ไม่ใช้**:
 
-- ใช้ `clinicmember` (hn, clinic, regdate) หรือ `person_chronic` เป็นเงื่อนไขคัดออกเพิ่ม ต้องรู้รหัสคลินิก DM/HT ของ รพ. ก่อน
-- รวม `ovstdiag` กับการวินิจฉัย IPD (`iptdiag`) ในเงื่อนไขคัดออก
-- นับการวัดน้ำตาลหรือความดันใน `opdscreen` (`bps`, `bpd`, `fbs`) เป็นการคัดกรองด้วย ถ้า รพ. ไม่ได้บันทึกผ่านเมนูคัดกรอง DM/HT
-- ตรวจ index: `person(house_regist_type_id, birthdate)`, `ovstdiag(hn, icd10)`, `person_dmht_risk_screen_head(screen_date)`
+- `person_dm_fgc_screen`, `person_ht_risk_bp_screen`, `person_dmht_nhso_screen` เป็นตารางลูกของ `person_dmht_risk_screen_head` (ค่าวัดซ้ำ/แบบสอบถาม) ไม่ได้เพิ่มคนที่คัดกรอง
+- `person_ncd_screen`, `person_ncd_summary` ว่าง (0 แถว)
+- `opdscreen` (bps/bpd/fbs ตอนมา OPD) ไม่ใช่ NCDSCREEN
+
+### 7.1.1 ทำไม A ของปีงบฯ 2570 เป็น 0
+
+รพ. นี้คัดกรอง DM/HT แบบรณรงค์ (ข้อมูลส่วนใหญ่อยู่ช่วง มี.ค.–พ.ค.) วันที่คัดกรองล่าสุดใน `person_dmht_risk_screen_head` คือเดือน พ.ค. 2569 (ค.ศ. 2026) ยังไม่มีการคัดกรองเลยตั้งแต่ 1 ต.ค. 2569 (เริ่มปีงบฯ 2570) A = 0 จึงเป็นค่าที่ถูกต้องตามข้อมูล ไม่ใช่ bug ของ SQL จะเริ่มมีตัวเลขเมื่อหน่วยบริการบันทึกการคัดกรองในเมนูคัดกรอง DM/HT
+
+### 7.1.2 ตัวเลขตรวจสอบ (db-cli, ข้อมูล ณ 2026-11-06)
+
+| ปีงบฯ | ตัวชี้วัด | B | A | ร้อยละ |
+| --- | --- | --- | --- | --- |
+| 2569 | DM | 5,787 | 5,678 | 98.12 |
+| 2569 | HT | 4,251 | 4,217 | 99.20 |
+| 2570 (ถึง 6 พ.ย. 2569) | DM | 5,833 | 0 | 0.00 |
+| 2570 (ถึง 6 พ.ย. 2569) | HT | 4,227 | 0 | 0.00 |
+
+ก่อนแก้ (production เดิม) ปีงบฯ 2570 ได้ B DM 6,272 / HT 4,540 ส่วนต่างมาจากการคัดออกหมู่ 0 และสมาชิกคลินิก
+
+ประสิทธิภาพ (EXPLAIN): person ใช้ `ix_village_id`, NOT EXISTS ของ `ovstdiag`/`clinicmember` ถูก materialize ครั้งเดียว (range บน `icd10`), screen head เป็น full scan ราว 160k แถว แต่ละ query ใช้ราว 1.3–1.7 วินาที
+
+ทางเลือกที่ยังไม่ได้ทำ:
+
+- รวมการวินิจฉัย IPD (`iptdiag`) ในเงื่อนไขคัดออก
+- การคัดกรองที่หน่วยบริการอื่น (HDC เห็น แต่ HIS นี้ไม่เห็น)
 
 ### 7.2 SQL (สำเนาจากโค้ด, MySQL/MariaDB)
 
@@ -105,31 +125,38 @@
 - `:countFrom` = จุดเริ่มนับ A ซึ่ง DM/HT เท่ากับ `:periodStart` เสมอ (CX ใช้วันเริ่ม Phase)
 - `:birthOnOrBefore` = `:periodStart` ลบ 35 ปี เช่น `1991-10-01` (เดิมชื่อ `:ageCutoffBirth`)
 - `:icdFrom` / `:icdToExclusive`: DM ใช้ `'E10'` / `'E15'` ส่วน HT ใช้ `'I10'` / `'I16'`
+- `:clinicCode`: DM `'001'`, HT `'002'`
 
 ใช้ช่วง string แทน `LEFT(icd10,3)` เพื่อให้ใช้ index ได้
 
 ```sql
--- UNVERIFIED — HOSxP schema assumptions, see 7.1
+-- Verified with db-cli, see 7.1
 -- Shared target filter (B) on person p:
---   p.house_regist_type_id IN ('1','3')
---   AND p.person_discharge_id = '9'
+--   p.house_regist_type_id IN (1, 3)
+--   AND p.person_discharge_id = 9
 --   AND COALESCE(p.death,'N') <> 'Y'
 --   AND p.birthdate IS NOT NULL
+--   AND p.village_id IN (SELECT cv.village_id FROM village cv
+--                        WHERE TRIM(LEADING '0' FROM TRIM(cv.village_moo)) <> '')
 --   AND p.birthdate <= :birthOnOrBefore
 --   AND NOT EXISTS (SELECT 1 FROM ovstdiag d
 --                   WHERE d.hn = p.patient_hn
 --                     AND d.icd10 >= :icdFrom AND d.icd10 < :icdToExclusive
 --                     AND d.vstdate < :periodStart)
+--   AND NOT EXISTS (SELECT 1 FROM clinicmember cm
+--                   WHERE cm.hn = p.patient_hn AND cm.clinic = :clinicCode
+--                     AND (cm.regdate IS NULL OR cm.regdate < :periodStart))
 
 -- screened subquery sc (first valid screening per person in the window)
 SELECT s.person_id, MIN(h.screen_date) AS first_screen_date
-FROM person_dmht_screen_summary s
-JOIN person_dmht_risk_screen_head h
-  ON h.person_dmht_screen_summary_id = s.person_dmht_screen_summary_id
+FROM person_dmht_risk_screen_head h
+JOIN person_dmht_screen_summary s
+  ON s.person_dmht_screen_summary_id = h.person_dmht_screen_summary_id
 WHERE h.screen_date >= :countFrom
   AND h.screen_date <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
-  AND h.last_fgc > 0                          -- DM
-  -- AND h.last_bps > 0 AND h.last_bpd > 0    -- HT
+  AND (h.last_fgc > 0 OR h.last_fgc_no_food_limit > 0
+       OR h.last_fpg > 0 OR h.ppg > 0)          -- DM
+  -- AND h.last_bps > 0 AND h.last_bpd > 0      -- HT
 GROUP BY s.person_id;
 
 -- B (one row; generic column name "eligible", B = eligible for DM/HT)
@@ -179,7 +206,7 @@ GROUP BY 1;
 ### 9.1 นิยาม
 
 - ใช้ตัวกรอง B (`TARGET_WHERE`) และเงื่อนไข A (ช่วงวันที่ + ผลตรวจที่ใช้ได้) **ชุดเดียวกับข้อ 3–4** ดังนั้นผลรวม B และ A ของทุกหมู่ = ตัวเลขหน้าแรก เมื่อคำนวณจากข้อมูลชุดเดียวกัน
-- หมู่บ้านคือ `person.village_id` join `village` คนที่ไม่มี `village_id` หรือ `village_id` ไม่อยู่ในตาราง `village` จะรวมอยู่ในแถว `villageId = 0` ("ไม่ระบุหมู่บ้าน") ซึ่งอยู่ท้ายสุด แถวนี้มีไว้เพื่อให้ผลรวมตรงกัน และ**ดูรายชื่อผ่าน API ไม่ได้** (village ต้อง > 0) แต่จะอยู่ในไฟล์ Excel ที่ export ทั้งปีงบฯ
+- หมู่บ้านคือ `person.village_id` join `village` ตัวกรอง B บังคับให้มีหมู่บ้านในเขตแล้ว (ไม่นับหมู่ 0 "นอกเขตรับผิดชอบ" และคนที่ไม่ระบุหมู่บ้าน) แถว `villageId = 0` ("ไม่ระบุหมู่บ้าน") ยังคงไว้ใน SQL เป็น safety net แต่ในฐานปัจจุบันจะไม่เกิด ถ้าเกิดจะอยู่ท้ายสุด **ดูรายชื่อผ่าน API ไม่ได้** (village ต้อง > 0) แต่จะอยู่ในไฟล์ Excel ที่ export ทั้งปีงบฯ
 - เรียงหมู่ตามเลขหมู่ (ตัวเลข) แล้วตาม `villageId`
 - รายชื่อ = ทุกคนใน B ของหมู่นั้น พร้อมสถานะว่าอยู่ใน A หรือไม่
   - `age` = อายุเต็มปี ณ 1 ต.ค. ของปีงบฯ (วันอ้างอิงเดียวกับเกณฑ์อายุ 35 ปี) ไม่ใช่อายุปัจจุบัน
@@ -220,10 +247,10 @@ param ผิดคืน `400 { error: string }` ส่วน error ฐานข
 - `/persons` และ Excel ไม่ cache จึงอาจใหม่กว่าตัวเลขรายหมู่ใน modal ได้เล็กน้อย
 - mock (`KPI_DATA_SOURCE=mock`): มี 12 หมู่บ้านปลอม ("บ้านจำลอง...", `villageId` 101–112) ชื่อคนเป็น "ทดสอบ0001 ข้อมูลจำลอง1" และ HN ขึ้นต้นด้วย `MOCK` ผลรวม B/A รายหมู่ = ตัวเลข mock หน้าแรกเป๊ะ และจำนวนคนในรายชื่อ = B/A ของหมู่นั้น (deterministic) แต่วันที่คัดกรองของ mock สุ่มในช่วงเวลา ไม่ได้กระจายตามรายเดือนของกราฟ
 
-### 9.5 SQL ที่เพิ่ม (ยังไม่ได้ verify, ดูตาราง 7.1)
+### 9.5 SQL ที่เพิ่ม (verify แล้ว, ดูตาราง 7.1)
 
 - `SCREENING_SQL[code].village` (สร้างโดย `buildScreeningSql()`): `person p LEFT JOIN village v LEFT JOIN (คนที่คัดกรองแล้วในช่วงเวลา) sc WHERE <target filter> GROUP BY หมู่บ้าน` แล้วนับ `COUNT(DISTINCT p.person_id)` เป็น `eligible` (= B สำหรับ DM/HT) และ `COUNT(DISTINCT sc.person_id)` เป็น A
 - `SCREENING_SQL[code].personsByVillage` / `.personsAll`: join ชุดเดียวกัน แล้วเลือกเฉพาะคอลัมน์ในข้อ 9.2 พร้อม `LIMIT` ที่เป็นค่าคงที่ (5001 / 50001)
 - parameter เพิ่ม: `:villageId` (เฉพาะรายชื่อรายหมู่)
-- index ที่ควรมี: `person(village_id)`, `person_dmht_screen_summary(person_id)`
-- derived table `sc` คัดกรองทุกคนที่คัดกรองในช่วงเวลา (ยังไม่กรองกลุ่มเป้าหมาย) ถ้าช้าให้ดู `EXPLAIN` ผ่าน `db-cli` แล้วพิจารณาเปลี่ยนเป็น `EXISTS`/subquery ต่อคน
+- index ที่มีจริง: `person(village_id)` (`ix_village_id`), `person_dmht_screen_summary(person_id)`, `person_dmht_risk_screen_head(person_dmht_screen_summary_id)`
+- derived table `sc` คัดกรองทุกคนที่คัดกรองในช่วงเวลา (ยังไม่กรองกลุ่มเป้าหมาย) ตรวจ `EXPLAIN` แล้ว ใช้ราว 1.3–1.7 วินาทีต่อ query (ดู 7.1.2)

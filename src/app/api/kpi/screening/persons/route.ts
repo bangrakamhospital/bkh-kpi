@@ -21,12 +21,12 @@ import type { ScreeningPerson } from "@/lib/kpi/types";
  * (no "use cache" in the data layer, `Cache-Control: private, no-store`).
  * Do not log the response body.
  *
- * Requires login: 401 { error: "กรุณาเข้าสู่ระบบ" } without a valid session,
+ * Requires login (Auth.js session): 401 { error: "กรุณาเข้าสู่ระบบ" } without a valid session,
  * 503 when auth is not configured. Each success is audit-logged.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   // Login required (patient-identifiable data). Checked here, not only in UI.
-  const auth = requireSession(request, "api/kpi/screening/persons");
+  const auth = await requireSession("api/kpi/screening/persons");
   if (!auth.ok) return auth.response;
 
   const parsed = parseScreeningQuery(
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     );
     auditDataAccess({
       action: "persons",
-      loginname: auth.session.loginname,
+      loginname: auth.user.username,
       code,
       fiscalYear,
       villageId,

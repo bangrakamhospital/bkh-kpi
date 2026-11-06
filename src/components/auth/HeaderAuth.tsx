@@ -30,8 +30,8 @@ export function HeaderAuth() {
         type="button"
         className={pillClass}
         onClick={() => {
-          const next = `${window.location.pathname}${window.location.search}`;
-          router.push(`/login?next=${encodeURIComponent(next)}`);
+          const callbackUrl = `${window.location.pathname}${window.location.search}`;
+          router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
         }}
       >
         <LogIn aria-hidden="true" className={iconCls} />
