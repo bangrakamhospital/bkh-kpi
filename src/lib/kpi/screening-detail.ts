@@ -74,6 +74,7 @@ function compareVillages(a: VillageBreakdown, b: VillageBreakdown): number {
 }
 
 function toVillageBreakdown(
+  code: ScreeningCode,
   raw: ScreeningVillageRaw,
   denominator: number,
 ): VillageBreakdown {
@@ -83,7 +84,8 @@ function toVillageBreakdown(
     villageName:
       raw.villageName ??
       (raw.villageId === 0
-        ? UNKNOWN_VILLAGE_NAME
+        ? (SCREENING_INDICATORS[code].unknownVillageName ??
+          UNKNOWN_VILLAGE_NAME)
         : `หมู่บ้านรหัส ${raw.villageId}`),
     eligible: raw.eligible,
     denominator,
@@ -105,7 +107,7 @@ async function computeVillages(
     SCREENING_INDICATORS[code].denominatorFactor,
   );
   return raw
-    .map((r, i) => toVillageBreakdown(r, denominators[i]))
+    .map((r, i) => toVillageBreakdown(code, r, denominators[i]))
     .sort(compareVillages);
 }
 
@@ -170,6 +172,7 @@ function toScreeningPerson(raw: ScreeningPersonRaw): ScreeningPerson {
     age: raw.age,
     screened: raw.screenDate !== null,
     screenDate: raw.screenDate,
+    ...(raw.suspectDate !== undefined ? { suspectDate: raw.suspectDate } : {}),
   };
 }
 

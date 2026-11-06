@@ -24,6 +24,18 @@ export const LOGIN_CODE = {
   rateLimited: "rate_limited",
 } as const;
 
+/** `code` values of /login?error=AccessDenied set by the SSO signIn callback. */
+export const SSO_CODE = {
+  orgNotAllowed: "org_not_allowed",
+  /** AUTH_PLKHEALTH_ALLOWED_ORGS is empty: SSO is fail-closed. */
+  orgNotConfigured: "org_not_configured",
+} as const;
+
+export const ORG_NOT_ALLOWED_MESSAGE =
+  "บัญชี Provider ID นี้ไม่ได้สังกัดหน่วยงานที่ได้รับอนุญาต";
+export const ORG_NOT_CONFIGURED_MESSAGE =
+  "ยังไม่ได้กำหนดหน่วยงานที่อนุญาตให้เข้าสู่ระบบ กรุณาติดต่อผู้ดูแลระบบ";
+
 export function rateLimitedCode(retryAfterSeconds: number): string {
   return `${LOGIN_CODE.rateLimited}_${Math.max(1, Math.ceil(retryAfterSeconds / 60))}`;
 }
@@ -36,7 +48,27 @@ export function loginErrorMessage(
   error: string | null | undefined,
   code: string | null | undefined,
 ): string {
-  if (error !== "CredentialsSignin") return GENERIC_LOGIN_ERROR;
+  switch (error) {
+    case "AccessDenied":
+      if (code === SSO_CODE.orgNotAllowed) return ORG_NOT_ALLOWED_MESSAGE;
+      if (code === SSO_CODE.orgNotConfigured) return ORG_NOT_CONFIGURED_MESSAGE;
+      return "ไม่ได้รับอนุญาตให้เข้าสู่ระบบ";
+    // Server-side problem: misconfiguration, or a stale/missing state/PKCE
+    // cookie (e.g. reached the app on another origin / an old tab).
+    case "Configuration":
+      return "เข้าสู่ระบบไม่สำเร็จ (ระบบยังตั้งค่าไม่ครบหรือคำขอหมดอายุ) กรุณาลองใหม่ หากยังไม่ได้ให้ติดต่อผู้ดูแลระบบ";
+    // The IdP answered with an error, e.g. the user cancelled.
+    case "OAuthCallbackError":
+      return "การเข้าสู่ระบบถูกยกเลิกหรือ Provider ID ปฏิเสธคำขอ กรุณาลองใหม่";
+    case "OAuthSignInError":
+      return "ไม่สามารถเชื่อมต่อ Provider ID ได้ในขณะนี้ กรุณาลองใหม่";
+    case "CredentialsSignin":
+      break;
+    default:
+      return error
+        ? "เข้าสู่ระบบด้วย Provider ID ไม่สำเร็จ กรุณาลองใหม่"
+        : GENERIC_LOGIN_ERROR;
+  }
   const limited = code?.match(/^rate_limited_(\d{1,3})$/);
   if (limited) {
     return `พยายามเข้าสู่ระบบหลายครั้งเกินไป กรุณาลองใหม่ในอีก ${limited[1]} นาที`;

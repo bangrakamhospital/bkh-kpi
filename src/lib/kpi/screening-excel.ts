@@ -4,10 +4,14 @@ import ExcelJS from "exceljs";
 
 import { BE_OFFSET } from "@/lib/kpi/fiscal-year";
 import type { ScreeningExportData } from "@/lib/kpi/screening-detail";
-import { SCREENING_INDICATORS } from "@/lib/kpi/screening-indicators";
+import {
+  SCREENING_INDICATORS,
+  screeningTargetPercent,
+  targetOperatorSign,
+} from "@/lib/kpi/screening-indicators";
 
 /**
- * Builds the screening KPI Excel workbook (server-side only, KPI 1–4).
+ * Builds the screening KPI Excel workbook (server-side only, all SCREENING_CODES).
  * Sheet "สรุปรายหมู่": aggregates. Sheet "รายชื่อ": HN, name, sex, age,
  * status, screening date — no CID / phone / address / lab values.
  * All values are written as plain values (never formulas), so text from
@@ -58,6 +62,18 @@ export async function buildScreeningWorkbook(
   const showEligible = meta.denominatorFactor !== 1;
   const sharePct = Math.round(meta.denominatorFactor * 100);
   const n = { numFmt: "#,##0" };
+  const labels = meta.statusLabels;
+  const doneLabel = labels.summary?.done ?? "คัดกรองแล้ว";
+  const dateHeader = labels.dateHeader ?? "วันที่คัดกรอง";
+  const hasSuspectDate = data.persons.some((p) => p.suspectDate !== undefined);
+  const noAgeLimit = meta.minAge === 0 && meta.maxAge === null;
+  const targetGroup = meta.population.includes(meta.ageRange)
+    ? meta.population
+    : noAgeLimit
+      ? `${meta.population} (${meta.ageRange})`
+      : `${meta.population} อายุ ${meta.ageRange}`;
+  const target = screeningTargetPercent(data.code, data.fiscalYear);
+  const sign = targetOperatorSign(meta.targetOperator ?? ">=");
 
   /* ---- Sheet 1: summary by village ---- */
   const summary = wb.addWorksheet("สรุปรายหมู่");
@@ -73,8 +89,10 @@ export async function buildScreeningWorkbook(
     "หมู่",
     "ชื่อหมู่บ้าน",
     ...(showEligible ? [`${meta.population} ${meta.ageRange}`] : []),
-    showEligible ? `B (เป้าหมาย ${sharePct}%)` : "B (กลุ่มเป้าหมาย)",
-    "A (คัดกรองแล้ว)",
+    showEligible
+      ? `B (เป้าหมาย ${sharePct}%)`
+      : `B (${labels.targetHeader ?? "กลุ่มเป้าหมาย"})`,
+    `A (${doneLabel})`,
     "ร้อยละ",
   ]);
   for (const v of data.villages) {
@@ -107,7 +125,7 @@ export async function buildScreeningWorkbook(
   summary.addRow([]);
   summary.addRow([`ตัวชี้วัด: ${meta.name}`]);
   summary.addRow([
-    `กลุ่มเป้าหมาย: ${meta.population} อายุ ${meta.ageRange} (อายุ ณ 1 ต.ค. ของปีงบประมาณ) เกณฑ์ ≥ ร้อยละ ${meta.targetPercent}`,
+    `กลุ่มเป้าหมาย: ${targetGroup}${noAgeLimit ? "" : " (อายุ ณ 1 ต.ค. ของปีงบประมาณ)"} เกณฑ์ ${sign} ร้อยละ ${target}`,
   ]);
   summary.addRow([
     `ช่วงข้อมูล: ${data.periodLabel} (${toThaiDate(data.countFrom)} – ${toThaiDate(data.dataAsOf)}) ปีงบประมาณ ${data.fiscalYear} ข้อมูล ณ วันที่ ${toThaiDate(data.dataAsOf)}`,
@@ -134,6 +152,7 @@ export async function buildScreeningWorkbook(
     { key: "sex" },
     { key: "age" },
     { key: "status" },
+    ...(hasSuspectDate ? [{ key: "suspectDate" }] : []),
     { key: "screenDate" },
   ];
   list.addRow([
@@ -143,7 +162,8 @@ export async function buildScreeningWorkbook(
     "เพศ",
     "อายุ",
     "สถานะ",
-    "วันที่คัดกรอง",
+    ...(hasSuspectDate ? ["วันที่คัดกรอง (สงสัย)"] : []),
+    dateHeader,
   ]);
   for (const p of data.persons) {
     list.addRow([
@@ -152,7 +172,8 @@ export async function buildScreeningWorkbook(
       p.fullName,
       p.sex,
       p.age,
-      p.screened ? meta.statusLabels.screened : meta.statusLabels.notScreened,
+      p.screened ? labels.screened : labels.notScreened,
+      ...(hasSuspectDate ? [toThaiDate(p.suspectDate ?? null)] : []),
       toThaiDate(p.screenDate),
     ]);
   }

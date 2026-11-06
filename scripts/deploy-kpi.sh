@@ -38,12 +38,13 @@ git log --oneline -1
 echo "==> 3/6 .env"
 if [ ! -f .env ]; then
   umask 077
+  # Production is served over HTTPS, so AUTH_COOKIE_INSECURE stays empty
+  # (Secure cookies). An existing .env is never rewritten by this script.
   sed -e "s|^AUTH_SECRET=.*|AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")|" \
-      -e "s|^AUTH_COOKIE_INSECURE=.*|AUTH_COOKIE_INSECURE=true|" \
       .env.example > .env
   chmod 600 .env
   echo "Created $APP_DIR/.env (AUTH_SECRET generated)."
-  echo "Fill in HIS_HOST / HIS_USER / HIS_PASSWORD / HIS_DATABASE, then run this script again:"
+  echo "Fill in HIS_* and AUTH_PLKHEALTH_* (SSO), then run this script again:"
   echo "  nano $APP_DIR/.env"
   exit 0
 fi
@@ -72,6 +73,9 @@ fi
 
 echo "==> 6/6 nginx :$PUBLIC_PORT"
 NGINX_SITE="/etc/nginx/sites-available/$APP_NAME"
+# Written only when missing: an existing site (HTTPS on :$PUBLIC_PORT with
+# X-Forwarded-Proto https) is left untouched. This fallback block is plain
+# HTTP; SSO and Secure cookies need HTTPS (or AUTH_COOKIE_INSECURE=true).
 if [ ! -f "$NGINX_SITE" ]; then
   sudo tee "$NGINX_SITE" >/dev/null <<NGINX
 server {

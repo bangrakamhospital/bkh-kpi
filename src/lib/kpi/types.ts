@@ -8,9 +8,24 @@
  * DM / HT = KPI 1–2 (age >= 35), CX = KPI 3 cervical cancer screening
  * (Thai women 30–60, cumulative over a 5-year phase), BR = KPI 4 clinical
  * breast examination (women 40–70, per fiscal year).
+ * RLU_* = HDC 11.3 / 11.4 / 11.5 (hospital level): % of diabetes clinic
+ * patients with >= 1 HbA1c / LDL / creatinine result per fiscal year.
+ * DMC / HTC = HDC 2.1 / 2.2: % of suspected DM / HT (from screening) with a
+ * confirmation test after the suspect screening.
  * Display order: SCREENING_CODES in `@/lib/kpi/screening-indicators`.
  */
-export type ScreeningCode = "DM" | "HT" | "CX" | "BR";
+export type ScreeningCode =
+  | "DM"
+  | "HT"
+  | "CX"
+  | "BR"
+  | "RLU_HBA1C"
+  | "RLU_LDL"
+  | "RLU_CR"
+  | "DMC"
+  | "HTC";
+
+export type TargetOperator = ">=" | ">";
 
 export type KpiDataSource = "mock" | "his";
 
@@ -33,8 +48,10 @@ export interface ScreeningIndicator {
   code: ScreeningCode;
   /** Thai display name of the indicator. */
   name: string;
-  /** Target in percent (e.g. 90 means >= 90%). */
+  /** Target in percent for the selected fiscal year (e.g. 90 means >= 90%). */
   targetPercent: number;
+  /** ">=" or ">" (strictly above targetPercent, HDC RLU). */
+  targetOperator: TargetOperator;
   /**
    * B: target. Equals `eligible` except when denominatorFactor < 1
    * (CX: B = round(0.7 × eligible), the 5-year phase target).
@@ -63,7 +80,7 @@ export interface ScreeningIndicator {
   note?: string;
   /** People in the target group (before applying denominatorFactor). */
   eligible: number;
-  /** B = round(eligible × denominatorFactor). 1 for DM/HT/BR, 0.7 for CX. */
+  /** B = round(eligible × denominatorFactor). 1 except CX (0.7). */
   denominatorFactor: number;
   /** ISO "YYYY-MM-DD": first day A is counted from (fiscal year start, or phase start for CX). */
   countFrom: string;
@@ -96,7 +113,7 @@ export interface ScreeningKpiResult {
   /** ISO timestamp when this result was generated (cache fill time). */
   updatedAt: string;
   source: KpiDataSource;
-  /** Always DM, HT, CX, BR in this order (failed ones carry `error`). */
+  /** One per SCREENING_CODES entry, in that order (failed ones carry `error`). */
   indicators: ScreeningIndicator[];
 }
 
@@ -150,4 +167,9 @@ export interface ScreeningPerson {
    * window (the whole phase so far for CX), null if not screened.
    */
   screenDate: string | null;
+  /**
+   * HDC 2.1 / 2.2 only: "YYYY-MM-DD" of the first suspect screening (screenDate
+   * is then the confirmation date). Absent for the other indicators.
+   */
+  suspectDate?: string | null;
 }

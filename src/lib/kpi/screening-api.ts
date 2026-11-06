@@ -29,7 +29,7 @@ export type ParseResult =
   | { ok: false; error: string };
 
 /**
- * Validates `code` (DM|HT|CX|BR), `fy` (BE year in [2560, current FY]) and,
+ * Validates `code` (one of SCREENING_CODES), `fy` (BE year in [2560, current FY]) and,
  * depending on `village`, `village` (positive integer).
  * Unknown extra params are ignored.
  */

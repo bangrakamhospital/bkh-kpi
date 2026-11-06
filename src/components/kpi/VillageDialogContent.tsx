@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -26,9 +26,15 @@ import {
   XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import {
+  meetsTarget,
+  targetOperatorSign,
+  type ScreeningStatusLabels,
+} from "@/lib/kpi/screening-indicators";
 import type {
   ScreeningCode,
   ScreeningPerson,
+  TargetOperator,
   VillageBreakdown,
 } from "@/lib/kpi/types";
 import { ACCENTS, type AccentKey } from "./indicator-theme";
@@ -37,7 +43,13 @@ import { ProgressBar } from "./ProgressBar";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 import { useApiList } from "./useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { LoginForm } from "@/components/auth/LoginForm";
+import { SsoLogin } from "@/components/auth/SsoLogin";
+import {
+  clearPendingLogin,
+  peekPendingLogin,
+  savePendingLogin,
+  type PendingAction,
+} from "./pending-login";
 
 interface Props {
   code: ScreeningCode;
@@ -45,6 +57,7 @@ interface Props {
   title: string;
   fiscalYear: number;
   targetPercent: number;
+  targetOperator: TargetOperator;
   periodLabel: string;
   denominatorFactor: number;
   statusLabels: StatusLabels;
@@ -52,10 +65,7 @@ interface Props {
   onClose: () => void;
 }
 
-interface StatusLabels {
-  screened: string;
-  notScreened: string;
-}
+type StatusLabels = ScreeningStatusLabels;
 
 const btnClass =
   "inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-surface px-3 py-1.5 text-sm font-medium hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:border-zinc-700 dark:hover:bg-brand-900/40";
@@ -68,8 +78,12 @@ const iconCls = "h-4 w-4 shrink-0";
 type Level = "pass" | "near" | "low";
 
 /** เขียว = ผ่านเกณฑ์, ส้ม = 70 ถึงต่ำกว่าเกณฑ์, แดง = ต่ำกว่า 70 */
-function levelOf(percent: number, target: number): Level {
-  if (percent >= target) return "pass";
+function levelOf(
+  percent: number,
+  target: number,
+  operator: TargetOperator,
+): Level {
+  if (meetsTarget(percent, target, operator)) return "pass";
   return percent >= 70 ? "near" : "low";
 }
 
@@ -207,6 +221,8 @@ function StatRow({
   percent,
   targetLabel = "กลุ่มเป้าหมาย",
   percentLabel = "ร้อยละ",
+  doneLabel = "คัดกรองแล้ว",
+  pendingLabel = "ยังไม่คัดกรอง",
 }: {
   accent: AccentKey;
   target: number;
@@ -215,6 +231,8 @@ function StatRow({
   percent: number;
   targetLabel?: string;
   percentLabel?: string;
+  doneLabel?: string;
+  pendingLabel?: string;
 }) {
   const theme = ACCENTS[accent];
   return (
@@ -230,13 +248,13 @@ function StatRow({
       <StatCard
         Icon={CheckCircle2}
         tone="bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-        label="คัดกรองแล้ว"
+        label={doneLabel}
         value={formatNumber(screened)}
       />
       <StatCard
         Icon={UserX}
         tone="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-        label="ยังไม่คัดกรอง"
+        label={pendingLabel}
         value={formatNumber(Math.max(0, unscreened))}
       />
       <StatCard
@@ -259,6 +277,7 @@ export function VillageDialogContent({
   title,
   fiscalYear,
   targetPercent,
+  targetOperator,
   periodLabel,
   denominatorFactor,
   statusLabels,
@@ -266,7 +285,14 @@ export function VillageDialogContent({
   onClose,
 }: Props) {
   const { status, markLoggedOut } = useAuth();
-  const [village, setVillage] = useState<VillageBreakdown | null>(null);
+  // Back from the SSO redirect: the action that asked for login (read once).
+  const [resume] = useState(() =>
+    status === "in" ? peekPendingLogin(code, fiscalYear) : null,
+  );
+  const resumed = useRef(false);
+  const [village, setVillage] = useState<VillageBreakdown | null>(
+    resume?.kind === "persons" ? resume.village : null,
+  );
   const [loginFor, setLoginFor] = useState<LoginRequest | null>(null);
   const [exportState, setExportState] = useState<ExportState>({
     busy: null,
@@ -319,6 +345,20 @@ export function VillageDialogContent({
     [base, requireLogin],
   );
 
+  useEffect(() => {
+    if (!resume) return;
+    clearPendingLogin();
+    if (resume.kind !== "export") return; // persons: initial state above
+    // Deferred (not a synchronous setState in the effect); the ref keeps a
+    // StrictMode re-run / changed deps from downloading twice.
+    const timer = setTimeout(() => {
+      if (resumed.current) return;
+      resumed.current = true;
+      void downloadExport(resume.villageId);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [resume, downloadExport]);
+
   const onExport = useCallback(
     (villageId: number | null) => {
       if (locked) requireLogin({ kind: "export", villageId }, "required");
@@ -342,17 +382,6 @@ export function VillageDialogContent({
     [requireLogin],
   );
 
-  function onLoginSuccess() {
-    const pending = loginFor?.pending;
-    setLoginFor(null);
-    if (!pending) return;
-    if (pending.kind === "persons") {
-      setVillage(pending.village);
-    } else {
-      void downloadExport(pending.villageId);
-    }
-  }
-
   function onLoginCancel() {
     setLoginFor(null);
     // Not logged in -> person list is not reachable; back to villages.
@@ -372,8 +401,10 @@ export function VillageDialogContent({
       <LoginPanel
         request={loginFor}
         accent={accent}
-        onSuccess={onLoginSuccess}
         onCancel={onLoginCancel}
+        onBeforeRedirect={() =>
+          savePendingLogin(code, fiscalYear, loginFor.pending)
+        }
       />
     );
   } else if (village && !locked) {
@@ -397,6 +428,8 @@ export function VillageDialogContent({
         base={base}
         accent={accent}
         targetPercent={targetPercent}
+        targetOperator={targetOperator}
+        statusLabels={statusLabels}
         denominatorFactor={denominatorFactor}
         locked={locked}
         exportProps={exportProps}
@@ -439,9 +472,7 @@ export function VillageDialogContent({
 
 /* ----------------------------- login / export ---------------------------- */
 
-type Pending =
-  | { kind: "persons"; village: VillageBreakdown }
-  | { kind: "export"; villageId: number | null };
+type Pending = PendingAction;
 
 interface LoginRequest {
   pending: Pending;
@@ -526,13 +557,13 @@ function ExportButton({
 function LoginPanel({
   request,
   accent,
-  onSuccess,
   onCancel,
+  onBeforeRedirect,
 }: {
   request: LoginRequest;
   accent: AccentKey;
-  onSuccess: () => void;
   onCancel: () => void;
+  onBeforeRedirect: () => void;
 }) {
   const theme = ACCENTS[accent];
   const { pending, reason } = request;
@@ -554,8 +585,11 @@ function LoginPanel({
           กลับ
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 justify-center overflow-auto p-6">
-        <LoginForm description={description} onSuccess={onSuccess} />
+      <div className="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-auto p-6">
+        <SsoLogin description={description} onBeforeRedirect={onBeforeRedirect} />
+        <p className="max-w-sm text-center text-xs text-zinc-600 dark:text-zinc-400">
+          หลังเข้าสู่ระบบ ระบบจะพากลับมาหน้านี้และทำรายการที่เลือกไว้ต่อให้
+        </p>
       </div>
     </>
   );
@@ -565,6 +599,8 @@ function VillagesView({
   base,
   accent,
   targetPercent,
+  targetOperator,
+  statusLabels,
   denominatorFactor,
   locked,
   exportProps,
@@ -573,6 +609,8 @@ function VillagesView({
   base: string;
   accent: AccentKey;
   targetPercent: number;
+  targetOperator: TargetOperator;
+  statusLabels: StatusLabels;
   denominatorFactor: number;
   locked: boolean;
   exportProps: ExportProps;
@@ -598,7 +636,13 @@ function VillagesView({
           screened={totalN}
           unscreened={(showEligible ? totalE : totalD) - totalN}
           percent={totalP}
-          targetLabel={showEligible ? "เป้าหมาย" : "กลุ่มเป้าหมาย"}
+          targetLabel={
+            showEligible
+              ? "เป้าหมาย"
+              : (statusLabels.targetHeader ?? "กลุ่มเป้าหมาย")
+          }
+          doneLabel={statusLabels.summary?.done}
+          pendingLabel={statusLabels.summary?.pending}
         />
       )}
       <div
@@ -606,7 +650,7 @@ function VillagesView({
       >
         <p className="inline-flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
           <Info aria-hidden="true" className={iconCls} />
-          เกณฑ์ ≥ {formatNumber(targetPercent)}%
+          เกณฑ์ {targetOperatorSign(targetOperator)} {formatNumber(targetPercent)}%
         </p>
         <ExportButton villageId={null} {...exportProps} />
       </div>
@@ -636,7 +680,7 @@ function VillagesView({
             </thead>
             <tbody>
               {rows.map((r) => {
-                const level = levelOf(r.percent, targetPercent);
+                const level = levelOf(r.percent, targetPercent, targetOperator);
                 const L = LEVELS[level];
                 return (
                   <tr
@@ -725,8 +769,8 @@ function VillagesView({
                         </button>
                       ) : (
                         <InfoPopover
-                          label="รายละเอียดเพิ่มเติม ไม่ระบุหมู่บ้าน"
-                          title="ไม่ระบุหมู่บ้าน"
+                          label={`รายละเอียดเพิ่มเติม ${r.villageName}`}
+                          title={r.villageName}
                           items={[
                             {
                               icon: <FileSpreadsheet size={14} />,
@@ -918,6 +962,8 @@ function PersonsView({
           percentLabel={
             denominatorFactor !== 1 ? "ร้อยละของกลุ่มเป้าหมาย" : "ร้อยละ"
           }
+          doneLabel={statusLabels.summary?.done}
+          pendingLabel={statusLabels.summary?.pending}
         />
       )}
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
@@ -999,7 +1045,7 @@ function PersonsView({
                 <th scope="col" className={th}>
                   {denominatorFactor !== 1
                     ? "วันที่คัดกรอง (ใน Phase)"
-                    : "วันที่คัดกรอง"}
+                    : (statusLabels.dateHeader ?? "วันที่คัดกรอง")}
                 </th>
               </tr>
             </thead>

@@ -11,7 +11,7 @@ import { getScreeningExport } from "@/lib/kpi/screening-detail";
 import { buildScreeningWorkbook } from "@/lib/kpi/screening-excel";
 
 /**
- * GET /api/kpi/screening/export?code=DM|HT|CX|BR&fy=2570[&village=12]
+ * GET /api/kpi/screening/export?code=<ScreeningCode>&fy=2570[&village=12]
  * -> .xlsx attachment with sheets "สรุปรายหมู่" and "รายชื่อ".
  * With `village`: only that village.
  *

@@ -10,7 +10,7 @@ const sarabun = Sarabun({
 });
 
 export const metadata: Metadata = {
-  title: "BKH KPI | แดชบอร์ดตัวชี้วัดโรงพยาบาล",
+  title: "โรงพยาบาลบางระกำ KPI | แดชบอร์ดตัวชี้วัดโรงพยาบาล",
   description:
     "แสดงผลตัวชี้วัด KPI ของโรงพยาบาล เช่น การคัดกรองเบาหวาน ความดันโลหิตสูง และมะเร็ง",
 };

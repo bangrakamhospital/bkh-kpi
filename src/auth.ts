@@ -8,7 +8,7 @@ import NextAuth, {
 import Credentials from "next-auth/providers/credentials";
 
 import { auditAuth } from "@/lib/auth/audit";
-import { LOGIN_CODE, rateLimitedCode } from "@/lib/auth/messages";
+import { LOGIN_CODE, rateLimitedCode, SSO_CODE } from "@/lib/auth/messages";
 import { getAuthProvider } from "@/lib/auth/provider";
 import {
   loginRetryAfter,
@@ -21,13 +21,21 @@ import {
   secureCookiesEnabled,
   SESSION_MAX_AGE_SECONDS,
 } from "@/lib/auth/settings";
+import {
+  checkOrg,
+  SSO_PROVIDER_ID,
+  ssoProvider,
+  warnOnRedirectOriginMismatch,
+} from "@/lib/auth/sso";
 import type { AuthUser } from "@/lib/auth/types";
 
 /**
  * Auth.js (next-auth v5) configuration.
  *
- *  - Credentials provider -> existing provider (`AUTH_PROVIDER` local|hosxp)
- *    with the in-memory rate limit and PDPA audit log.
+ *  - Sign-in is SSO only: PLK Health ID / Provider ID (OIDC, src/lib/auth/sso.ts),
+ *    session username = OIDC `sub`, org allow-list AUTH_PLKHEALTH_ALLOWED_ORGS.
+ *  - Credentials provider (`AUTH_PROVIDER` local|hosxp, in-memory rate limit)
+ *    is registered ONLY when AUTH_PASSWORD_LOGIN=true (emergency, API only).
  *  - Stateless JWT session (encrypted cookie, AUTH_SECRET), absolute
  *    lifetime 8 h from login; contains only { username, name }.
  *  - Routes: /api/auth/* (src/app/api/auth/[...nextauth]/route.ts),
@@ -64,6 +72,33 @@ function readCredentials(
   return { username: u, password };
 }
 
+const str = (v: unknown): string =>
+  typeof v === "string" ? v.trim() : "";
+
+/** OIDC `sub` of an SSO sign-in ("" when missing). */
+function ssoSubject(account: { providerAccountId?: unknown } | null | undefined) {
+  return str(account?.providerAccountId);
+}
+
+/**
+ * Origin the browser used (behind nginx: X-Forwarded-Host / -Proto), for
+ * the redirect-URI mismatch warning only.
+ */
+function requestOrigin(headers: Headers | null | undefined): string | null {
+  const host = (headers?.get("x-forwarded-host") ?? headers?.get("host"))
+    ?.split(",")[0]
+    ?.trim();
+  if (!host) return null;
+  const proto =
+    headers?.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+    (process.env.NODE_ENV === "production" ? "https" : "http");
+  try {
+    return new URL(`${proto}://${host}`).origin;
+  } catch {
+    return null;
+  }
+}
+
 /** Session user exposed by `auth()` / `useSession()`. */
 export interface SessionUser {
   username: string;
@@ -80,11 +115,13 @@ export function sessionUser(
   }
   return {
     username: user.username,
-    name: typeof user.name === "string" && user.name ? user.name : user.username,
+    name:
+      typeof user.name === "string" && user.name ? user.name : user.username,
   };
 }
 
 function buildConfig(ip: string): NextAuthConfig {
+  const sso = ssoProvider();
   return {
     // AUTH_SECRET is read by next-auth from env automatically.
     trustHost: true,
@@ -92,60 +129,45 @@ function buildConfig(ip: string): NextAuthConfig {
     session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS },
     pages: { signIn: "/login", error: "/login" },
     providers: [
-      Credentials({
-        credentials: {
-          username: { label: "ชื่อผู้ใช้" },
-          password: { label: "รหัสผ่าน", type: "password" },
-        },
-        async authorize(credentials) {
-          if (!isAuthConfigured()) {
-            console.error(
-              "[auth] login disabled: AUTH_SECRET missing or shorter than 32 characters",
-            );
-            throw new LoginError(LOGIN_CODE.disabled);
-          }
-          const creds = readCredentials(credentials);
-          if (!creds) throw new LoginError(LOGIN_CODE.missing);
-
-          const retryAfter = loginRetryAfter(ip, creds.username);
-          if (retryAfter > 0) {
-            auditAuth("login_rate_limited", creds.username, ip);
-            throw new LoginError(rateLimitedCode(retryAfter));
-          }
-
-          let user: AuthUser | null;
-          try {
-            user = await getAuthProvider().verify(creds.username, creds.password);
-          } catch (err) {
-            const name = err instanceof Error ? err.name : "UnknownError";
-            const code =
-              err && typeof err === "object" && "code" in err
-                ? String((err as { code: unknown }).code ?? "")
-                : "";
-            console.error(
-              `[auth] provider error: ${logSafe(name)}${code ? ` (${logSafe(code)})` : ""}`,
-            );
-            throw new LoginError(LOGIN_CODE.unavailable);
-          }
-
-          if (!user) {
-            recordLoginFailure(ip, creds.username);
-            auditAuth("login_failed", creds.username, ip);
-            return null; // -> CredentialsSignin code "credentials"
-          }
-
-          recordLoginSuccess(ip, creds.username);
-          auditAuth("login_success", user.loginname, ip);
-          return { id: user.loginname, name: user.displayName };
-        },
-      }),
+      // Username/password login is OFF: sign-in is Provider ID (SSO) only.
+      // AUTH_PASSWORD_LOGIN=true re-enables it (API only, no form) for emergencies.
+      ...(process.env.AUTH_PASSWORD_LOGIN?.trim().toLowerCase() === "true"
+        ? [credentialsProvider(ip)]
+        : []),
+      // SSO (Provider ID) — only when AUTH_PLKHEALTH_* is configured.
+      ...(sso ? [sso] : []),
     ],
     callbacks: {
-      jwt({ token, user }) {
+      signIn({ account, profile }) {
+        if (account?.provider !== SSO_PROVIDER_ID) return true;
+        // Stable identity = OIDC `sub` (user.id is a random UUID per sign-in).
+        const who = ssoSubject(account);
+        if (!who || str(profile?.sub) !== who) {
+          auditAuth("login_failed", "-", ip);
+          return false;
+        }
+        const org = checkOrg(profile as Record<string, unknown> | undefined);
+        if (org !== "allowed") {
+          auditAuth("login_failed", who, ip);
+          return `/login?error=AccessDenied&code=${
+            org === "not_configured"
+              ? SSO_CODE.orgNotConfigured
+              : SSO_CODE.orgNotAllowed
+          }`;
+        }
+        auditAuth("login_success", who, ip);
+        return true;
+      },
+      jwt({ token, user, account }) {
         const now = Math.floor(Date.now() / 1000);
         if (user) {
           // Sign-in: fresh minimal token (drops email/picture defaults).
-          const username = user.id ?? "";
+          // SSO: OIDC sub; Credentials: the HOSxP / local loginname.
+          const username =
+            account?.provider === SSO_PROVIDER_ID
+              ? ssoSubject(account)
+              : (user.id ?? "");
+          if (!username) return null;
           return {
             sub: username,
             username,
@@ -167,7 +189,8 @@ function buildConfig(ip: string): NextAuthConfig {
         return token;
       },
       session({ token }) {
-        const username = typeof token.username === "string" ? token.username : "";
+        const username =
+          typeof token.username === "string" ? token.username : "";
         const name = typeof token.name === "string" ? token.name : username;
         const loginAt = typeof token.loginAt === "number" ? token.loginAt : 0;
         return {
@@ -202,6 +225,60 @@ function buildConfig(ip: string): NextAuthConfig {
   };
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth((request) =>
-  buildConfig(clientIp(request?.headers)),
-);
+function credentialsProvider(ip: string) {
+  return Credentials({
+    credentials: {
+      username: { label: "ชื่อผู้ใช้" },
+      password: { label: "รหัสผ่าน", type: "password" },
+    },
+    async authorize(credentials) {
+      if (!isAuthConfigured()) {
+        console.error(
+          "[auth] login disabled: AUTH_SECRET missing or shorter than 32 characters",
+        );
+        throw new LoginError(LOGIN_CODE.disabled);
+      }
+      const creds = readCredentials(credentials);
+      if (!creds) throw new LoginError(LOGIN_CODE.missing);
+
+      const retryAfter = loginRetryAfter(ip, creds.username);
+      if (retryAfter > 0) {
+        auditAuth("login_rate_limited", creds.username, ip);
+        throw new LoginError(rateLimitedCode(retryAfter));
+      }
+
+      let user: AuthUser | null;
+      try {
+        user = await getAuthProvider().verify(creds.username, creds.password);
+      } catch (err) {
+        const name = err instanceof Error ? err.name : "UnknownError";
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? String((err as { code: unknown }).code ?? "")
+            : "";
+        console.error(
+          `[auth] provider error: ${logSafe(name)}${code ? ` (${logSafe(code)})` : ""}`,
+        );
+        throw new LoginError(LOGIN_CODE.unavailable);
+      }
+
+      if (!user) {
+        recordLoginFailure(ip, creds.username);
+        auditAuth("login_failed", creds.username, ip);
+        return null; // -> CredentialsSignin code "credentials"
+      }
+
+      recordLoginSuccess(ip, creds.username);
+      auditAuth("login_success", user.loginname, ip);
+      return { id: user.loginname, name: user.displayName };
+    },
+  });
+}
+
+export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
+  // Diagnostics only on sign-in starts (not on every session read).
+  if (request?.nextUrl?.pathname.startsWith("/api/auth/signin/")) {
+    warnOnRedirectOriginMismatch(requestOrigin(request.headers));
+  }
+  return buildConfig(clientIp(request?.headers));
+});

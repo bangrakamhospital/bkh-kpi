@@ -13,7 +13,11 @@ export function safeNextPath(raw: string | null | undefined): string {
     const url = new URL(raw, base);
     if (url.origin !== base) return "/";
     const path = `${url.pathname}${url.search}${url.hash}`;
-    if (url.pathname === "/login" || url.pathname.startsWith("/api/")) {
+    if (
+      url.pathname === "/login" ||
+      url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/auth/")
+    ) {
       return "/";
     }
     return path;

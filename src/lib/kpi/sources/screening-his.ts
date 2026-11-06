@@ -45,6 +45,8 @@ interface PersonRow extends RowDataPacket {
   sex: string | null;
   age: number | string | null;
   screen_date: string | null;
+  /** Only the HDC 2.1 / 2.2 queries select this column. */
+  suspect_date?: string | null;
 }
 
 function sqlContext(q: ScreeningSourceQuery) {
@@ -128,6 +130,9 @@ export const hisScreeningDetailSource: ScreeningDetailSource = {
       sex: emptyToNull(r.sex),
       age: Number(r.age ?? 0),
       screenDate: emptyToNull(r.screen_date),
+      ...(r.suspect_date !== undefined
+        ? { suspectDate: emptyToNull(r.suspect_date) }
+        : {}),
     }));
   },
 };

@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import type { ScreeningCode } from "@/lib/kpi/types";
+import type { ScreeningStatusLabels } from "@/lib/kpi/screening-indicators";
+import type { ScreeningCode, TargetOperator } from "@/lib/kpi/types";
 import type { AccentKey } from "./indicator-theme";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { peekPendingLogin } from "./pending-login";
 import { VillageDialogContent } from "./VillageDialogContent";
 
 interface Props {
@@ -13,9 +16,10 @@ interface Props {
   title: string;
   fiscalYear: number;
   targetPercent: number;
+  targetOperator: TargetOperator;
   periodLabel: string;
   denominatorFactor: number;
-  statusLabels: { screened: string; notScreened: string };
+  statusLabels: ScreeningStatusLabels;
 }
 
 export function VillageDetailButton({
@@ -25,6 +29,7 @@ export function VillageDetailButton({
   title,
   fiscalYear,
   targetPercent,
+  targetOperator,
   periodLabel,
   denominatorFactor,
   statusLabels,
@@ -33,10 +38,22 @@ export function VillageDetailButton({
   const [open, setOpen] = useState(false);
   const titleId = `dlg-title-${code}`;
 
+  const { status } = useAuth();
+
   function openDialog() {
     setOpen(true);
-    dialogRef.current?.showModal();
+    if (!dialogRef.current?.open) dialogRef.current?.showModal();
   }
+
+  // Back from the SSO redirect: reopen the dialog that asked for login;
+  // VillageDialogContent then resumes the pending action (pending-login.ts).
+  useEffect(() => {
+    if (status !== "in" || !peekPendingLogin(code, fiscalYear)) return;
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return;
+    dialog.showModal();
+    setOpen(true);
+  }, [status, code, fiscalYear]);
 
   return (
     <>
@@ -65,6 +82,7 @@ export function VillageDetailButton({
             title={title}
             fiscalYear={fiscalYear}
             targetPercent={targetPercent}
+            targetOperator={targetOperator}
             periodLabel={periodLabel}
             denominatorFactor={denominatorFactor}
             statusLabels={statusLabels}

@@ -1,5 +1,5 @@
 /**
- * Screening indicator definitions (KPI 1–4): display metadata, target
+ * Screening indicator definitions (KPI 1–4 + HDC 2.1/2.2, 11.3–11.5): display metadata, target
  * group, counting period and target. Pure data / functions, no I/O —
  * safe for server and client (UI may import labels from here).
  *
@@ -8,11 +8,20 @@
  */
 
 import { BE_OFFSET } from "@/lib/kpi/fiscal-year";
-import type { ScreeningCode } from "@/lib/kpi/types";
+import type { ScreeningCode, TargetOperator } from "@/lib/kpi/types";
 
 /** Display / processing order of the indicators. */
-export const SCREENING_CODES = ["DM", "HT", "CX", "BR"] as const satisfies
-  readonly ScreeningCode[];
+export const SCREENING_CODES = [
+  "DM",
+  "HT",
+  "CX",
+  "BR",
+  "DMC",
+  "HTC",
+  "RLU_HBA1C",
+  "RLU_LDL",
+  "RLU_CR",
+] as const satisfies readonly ScreeningCode[];
 
 export function isScreeningCode(value: unknown): value is ScreeningCode {
   return (
@@ -48,14 +57,21 @@ export type ScreeningPeriodRule =
 
 export interface ScreeningIndicatorMeta {
   code: ScreeningCode;
-  /** KPI number on the dashboard (1–4). */
+  /** KPI number on the dashboard (1–4, or the HDC number, e.g. 2.1, 11.3). */
   no: number;
   /** Full Thai name. */
   name: string;
   /** Short Thai title for tables / cards. */
   shortName: string;
-  /** Target in percent (>=). */
+  /** Target in percent; used when targetPercentByFiscalYear has no entry. */
   targetPercent: number;
+  /** ">=" (default) or ">" (strictly above the target). */
+  targetOperator?: TargetOperator;
+  /**
+   * Per-fiscal-year (BE) targets. A year without an entry uses the latest
+   * earlier entry, else targetPercent (see screeningTargetPercent).
+   */
+  targetPercentByFiscalYear?: Record<number, number>;
   /**
    * Fiscal year (BE) whose official document sets targetPercent, or null
    * when the target has no fiscal-year-specific source (DM/HT). When it
@@ -78,7 +94,130 @@ export interface ScreeningIndicatorMeta {
   denominatorFactor: number;
   period: ScreeningPeriodRule;
   /** Status labels for the person list / Excel. */
-  statusLabels: { screened: string; notScreened: string };
+  statusLabels: ScreeningStatusLabels;
+  /** Extra remark appended to the indicator note. */
+  note?: string;
+  /** Name of village id 0 when it differs from "ไม่ระบุหมู่บ้าน". */
+  unknownVillageName?: string;
+}
+
+export interface ScreeningStatusLabels {
+  screened: string;
+  notScreened: string;
+  /** Summary cards / Excel A; default "คัดกรองแล้ว" / "ยังไม่คัดกรอง". */
+  summary?: { done: string; pending: string };
+  /** Header of the person-list date column; default "วันที่คัดกรอง". */
+  dateHeader?: string;
+  /** Name of the B group; default "กลุ่มเป้าหมาย". */
+  targetHeader?: string;
+}
+
+/** Target (percent) of `code` in the fiscal year `fiscalYear` (BE). */
+export function screeningTargetPercent(
+  code: ScreeningCode,
+  fiscalYear: number,
+): number {
+  const meta = SCREENING_INDICATORS[code];
+  const byYear = meta.targetPercentByFiscalYear;
+  if (!byYear) return meta.targetPercent;
+  const years = Object.keys(byYear)
+    .map(Number)
+    .filter((y) => y <= fiscalYear)
+    .sort((a, b) => b - a);
+  return years.length > 0 ? byYear[years[0]] : meta.targetPercent;
+}
+
+/** true when `percent` meets the target under the operator (">=" or ">"). */
+export function meetsTarget(
+  percent: number,
+  targetPercent: number,
+  operator: TargetOperator,
+): boolean {
+  return operator === ">" ? percent > targetPercent : percent >= targetPercent;
+}
+
+/** Sign for display: "≥" or ">". */
+export function targetOperatorSign(operator: TargetOperator): string {
+  return operator === ">" ? ">" : "≥";
+}
+
+/**
+ * HDC 11.3–11.5 (RLU): diabetes clinic patients with >= 1 lab result per
+ * fiscal year. Hospital level, no age limit. Target > 70 (FY2569), > 80
+ * (FY2570+). Definitions: docs/kpi/hdc-phase1-definitions.md section 11.3–11.5.
+ */
+function rluMeta(
+  code: ScreeningCode,
+  no: number,
+  test: string,
+  shortName: string,
+): ScreeningIndicatorMeta {
+  return {
+    code,
+    no,
+    name: `ร้อยละผู้ป่วยโรคเบาหวาน ได้รับการตรวจ ${test} อย่างน้อยปีละ 1 ครั้ง`,
+    shortName,
+    targetPercent: 70,
+    targetOperator: ">",
+    targetPercentByFiscalYear: { 2569: 70, 2570: 80 },
+    targetSourceFiscalYear: null,
+    targetSource: null,
+    population: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน",
+    sex: "all",
+    thaiOnly: false,
+    minAge: 0,
+    maxAge: null,
+    ageRange: "ไม่จำกัดอายุ",
+    denominatorFactor: 1,
+    period: { kind: "fiscalYear" },
+    statusLabels: {
+      screened: "ได้รับการตรวจแล้ว",
+      notScreened: "ยังไม่ได้รับการตรวจ",
+      summary: { done: "ได้รับการตรวจแล้ว", pending: "ยังไม่ได้รับการตรวจ" },
+      dateHeader: "วันที่ตรวจครั้งแรก",
+    },
+    note: "ระดับโรงพยาบาล รวมผู้ป่วยนอกเขต / นับเฉพาะ lab ที่มีผลใน HOSxP ของ รพ.",
+    unknownVillageName: "นอกเขตรับผิดชอบ / ไม่ระบุหมู่บ้าน",
+  };
+}
+
+/**
+ * HDC 2.1 / 2.2: confirmation of suspected DM / HT (Thai people >= 35).
+ * B = suspected group, A = confirmed after the suspect screening.
+ */
+function confirmMeta(
+  code: ScreeningCode,
+  no: number,
+  disease: string,
+  targetPercent: number,
+  note: string,
+): ScreeningIndicatorMeta {
+  return {
+    code,
+    no,
+    name: `ร้อยละการตรวจติดตามยืนยันวินิจฉัยกลุ่มสงสัยป่วยโรค${disease}`,
+    shortName: `ยืนยันวินิจฉัยกลุ่มสงสัยป่วย${disease}`,
+    targetPercent,
+    targetOperator: ">=",
+    targetSourceFiscalYear: null,
+    targetSource: null,
+    population: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย",
+    sex: "all",
+    thaiOnly: true,
+    minAge: 35,
+    maxAge: null,
+    ageRange: "35 ปีขึ้นไป",
+    denominatorFactor: 1,
+    period: { kind: "fiscalYear" },
+    statusLabels: {
+      screened: "ยืนยันแล้ว",
+      notScreened: "ยังไม่ยืนยัน",
+      summary: { done: "ได้รับการยืนยัน", pending: "ยังไม่ยืนยัน" },
+      dateHeader: "วันที่ยืนยัน",
+      targetHeader: "กลุ่มสงสัยป่วย",
+    },
+    note,
+  };
 }
 
 export const SCREENING_INDICATORS: Record<ScreeningCode, ScreeningIndicatorMeta> =
@@ -165,6 +304,23 @@ export const SCREENING_INDICATORS: Record<ScreeningCode, ScreeningIndicatorMeta>
       period: { kind: "fiscalYear" },
       statusLabels: { screened: "ตรวจ CBE แล้ว", notScreened: "ยังไม่ได้ตรวจ CBE" },
     },
+    DMC: confirmMeta(
+      "DMC",
+      2.1,
+      "เบาหวาน",
+      70,
+      "B = คัดกรอง 1 ต.ค.–30 มิ.ย. ค่าน้ำตาลอดอาหาร ≥126; A = ตรวจ FPG ทางห้องปฏิบัติการหลังวันคัดกรอง",
+    ),
+    HTC: confirmMeta(
+      "HTC",
+      2.2,
+      "ความดันโลหิตสูง",
+      80,
+      "นับเฉพาะการวัดซ้ำที่ รพ. (OBPM) ไม่รวมวัดที่บ้าน (HBPM) ผลอาจต่ำกว่า HDC",
+    ),
+    RLU_HBA1C: rluMeta("RLU_HBA1C", 11.3, "HbA1c", "ตรวจ HbA1c ผู้ป่วยเบาหวาน"),
+    RLU_LDL: rluMeta("RLU_LDL", 11.4, "LDL", "ตรวจ LDL ผู้ป่วยเบาหวาน"),
+    RLU_CR: rluMeta("RLU_CR", 11.5, "Creatinine", "ตรวจ Creatinine ผู้ป่วยเบาหวาน"),
   };
 
 /* ------------------------------ periods ---------------------------------- */
@@ -253,6 +409,7 @@ export function screeningIndicatorNote(
       `เกณฑ์ปี ${fiscalYear} รอยืนยัน (ใช้เกณฑ์ ${meta.targetSource ?? `ปี ${meta.targetSourceFiscalYear}`})`,
     );
   }
+  if (meta.note) notes.push(meta.note);
   return notes.length > 0 ? notes.join(" · ") : undefined;
 }
 

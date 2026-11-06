@@ -9,7 +9,7 @@ import { getScreeningVillages } from "@/lib/kpi/screening-detail";
 import type { VillageBreakdown } from "@/lib/kpi/types";
 
 /**
- * GET /api/kpi/screening/villages?code=DM|HT|CX|BR&fy=2570
+ * GET /api/kpi/screening/villages?code=<ScreeningCode>&fy=2570
  * -> 200 VillageBreakdown[] (aggregates only, ordered by village number).
  * Data is cached server-side for ~1 hour ("use cache" in the data layer).
  * Node.js runtime (default; `runtime` config is not allowed with Cache Components).

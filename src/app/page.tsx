@@ -14,7 +14,7 @@ export default function Home(props: PageProps<"/">) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-base font-bold tracking-wide text-brand-100">
-              BKH KPI
+              โรงพยาบาลบางระกำ KPI
             </p>
             <h1 className="mt-0.5 text-sm font-semibold leading-5">
               แดชบอร์ดตัวชี้วัดการคัดกรองสุขภาพ

@@ -15,6 +15,7 @@ import {
   SCREENING_INDICATORS,
   screeningCountWindow,
   screeningIndicatorNote,
+  screeningTargetPercent,
 } from "@/lib/kpi/screening-indicators";
 import type {
   KpiDataSource,
@@ -31,7 +32,7 @@ import { hisScreeningSource } from "./sources/screening-his";
 import { mockScreeningSource } from "./sources/screening-mock";
 
 /**
- * Screening KPIs 1–4 (DM, HT, CX, BR). Definitions:
+ * Screening KPIs (SCREENING_CODES: DM, HT, CX, BR, HDC 2.1/2.2, 11.3–11.5). Definitions:
  * docs/kpi/01-screening-dm-ht.md, 03-screening-cervical.md, 04-screening-breast.md
  */
 
@@ -140,7 +141,8 @@ function describeIndicator(code: ScreeningCode, fy: number) {
   return {
     code,
     name: meta.name,
-    targetPercent: meta.targetPercent,
+    targetPercent: screeningTargetPercent(code, fy),
+    targetOperator: meta.targetOperator ?? ">=",
     ageRange: meta.ageRange,
     population: meta.population,
     periodLabel: window.periodLabel,
@@ -199,7 +201,7 @@ function logIndicatorError(code: ScreeningCode, err: unknown): void {
 }
 
 /**
- * Returns the screening KPIs (DM, HT, CX, BR in this order) for a fiscal
+ * Returns the screening KPIs (SCREENING_CODES order) for a fiscal
  * year (BE). Defaults to the current fiscal year (Asia/Bangkok).
  *
  * Rendering contract (Cache Components):

@@ -8,6 +8,8 @@ export interface SearchableRow {
   no: number;
   /** ข้อความที่ใช้ค้นหา (เลขข้อ ชื่อ กลุ่มเป้าหมาย code คำพ้อง) */
   keywords: string;
+  /** ชื่อกลุ่ม: แสดงแถวหัวกลุ่มก่อนแถวแรกของกลุ่ม (แถวของกลุ่มเดียวกันต้องอยู่ติดกัน) */
+  group?: string;
   /** แถว <tr> ที่ server เตรียมไว้แล้ว */
   node: React.ReactNode;
 }
@@ -105,7 +107,22 @@ export function IndicatorSearch({
           </thead>
           <tbody>
             {visible.length > 0 ? (
-              visible.map((r) => <Fragment key={r.no}>{r.node}</Fragment>)
+              visible.map((r, i) => (
+                <Fragment key={r.no}>
+                  {r.group && r.group !== visible[i - 1]?.group && (
+                    <tr className="border-t border-zinc-200 bg-brand-100 text-brand-900 dark:border-zinc-800 dark:bg-brand-900/60 dark:text-brand-100">
+                      <th
+                        scope="colgroup"
+                        colSpan={6}
+                        className="px-3 py-2 text-left text-sm font-semibold"
+                      >
+                        {r.group}
+                      </th>
+                    </tr>
+                  )}
+                  {r.node}
+                </Fragment>
+              ))
             ) : (
               <tr>
                 <td colSpan={6} className="px-3 py-8 text-center">

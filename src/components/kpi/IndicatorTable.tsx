@@ -11,7 +11,11 @@ import {
   XCircle,
 } from "lucide-react";
 import type { ScreeningCode, ScreeningIndicator } from "@/lib/kpi/types";
-import { SCREENING_INDICATORS } from "@/lib/kpi/screening-indicators";
+import {
+  meetsTarget,
+  SCREENING_INDICATORS,
+  targetOperatorSign,
+} from "@/lib/kpi/screening-indicators";
 import { ACCENTS, type AccentKey } from "./indicator-theme";
 import { InfoPopover, type InfoItem } from "./InfoPopover";
 import { IndicatorSearch, type SearchableRow } from "./IndicatorSearch";
@@ -28,9 +32,13 @@ interface IndicatorRowConfig {
   /** คำพ้อง/คำค้นเพิ่มเติม */
   keywords: string[];
   accent: AccentKey;
+  /** ชื่อกลุ่ม (แถวหัวกลุ่มในตาราง) — แถวของกลุ่มเดียวกันต้องอยู่ติดกัน */
+  group?: string;
   /** undefined = ยังไม่มีข้อมูล/นิยาม */
   code?: ScreeningCode;
 }
+
+const HDC_GROUP = "ตัวชี้วัด HDC";
 
 /** เพิ่มตัวชี้วัดใหม่ที่นี่ (ไม่ใส่ code = แสดงเป็นรอกำหนดนิยาม) */
 const INDICATOR_ROWS: IndicatorRowConfig[] = [
@@ -38,6 +46,12 @@ const INDICATOR_ROWS: IndicatorRowConfig[] = [
   { no: 2, code: "HT", accent: "ht", title: "คัดกรองความดันโลหิตสูง", subtitle: "ประชาชนอายุ 35 ปีขึ้นไป", keywords: ["ความดัน","HT","ความดันโลหิตสูง"] },
   { no: 3, code: "CX", accent: "cervix", title: "คัดกรองมะเร็งปากมดลูก", subtitle: "หญิงไทย 30–60 ปี", keywords: ["ปากมดลูก","HPV","Pap","มะเร็ง","CA cervix"] },
   { no: 4, code: "BR", accent: "breast", title: "คัดกรองมะเร็งเต้านม", subtitle: "หญิง 40–70 ปี", keywords: ["เต้านม","CBE","มะเร็ง","breast"] },
+  // กลุ่ม HDC: เพิ่มข้อใหม่ต่อในกลุ่มนี้โดยใส่ group: HDC_GROUP (เรียงตามเลข HDC)
+  { no: 2.1, group: HDC_GROUP, code: "DMC", accent: "confirmDm", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยเบาหวาน", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["เบาหวาน","ยืนยัน","สงสัยป่วย","FPG","DM","HDC","diabetes"] },
+  { no: 2.2, group: HDC_GROUP, code: "HTC", accent: "confirmHt", title: "ยืนยันวินิจฉัยกลุ่มสงสัยป่วยความดันโลหิตสูง", subtitle: "ประชาชนไทยอายุ 35 ปีขึ้นไป กลุ่มสงสัยป่วย", keywords: ["ความดัน","ความดันโลหิตสูง","ยืนยัน","สงสัยป่วย","OBPM","HT","HDC"] },
+  { no: 11.3, group: HDC_GROUP, code: "RLU_HBA1C", accent: "hba1c", title: "ผู้ป่วยเบาหวานได้รับการตรวจ HbA1c", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["HbA1c","เบาหวาน","lab","RLU","HDC","diabetes"] },
+  { no: 11.4, group: HDC_GROUP, code: "RLU_LDL", accent: "ldl", title: "ผู้ป่วยเบาหวานได้รับการตรวจ LDL", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["LDL","ไขมัน","เบาหวาน","lab","RLU","HDC"] },
+  { no: 11.5, group: HDC_GROUP, code: "RLU_CR", accent: "creatinine", title: "ผู้ป่วยเบาหวานได้รับการตรวจ Creatinine", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["Creatinine","ครีเอตินีน","ไต","เบาหวาน","lab","RLU","HDC"] },
 ];
 
 const disabledButtonClass =
@@ -86,13 +100,14 @@ export function IndicatorTable({
     const ind = row.code
       ? indicators.find((i) => i.code === row.code)
       : undefined;
-    return ind && !ind.error ? [ind] : [];
+    // ไม่มีกลุ่มเป้าหมาย (B = 0) ไม่นับเป็นผ่าน/ไม่ผ่าน
+    return ind && !ind.error && ind.denominator > 0 ? [ind] : [];
   });
   const pendingCount = INDICATOR_ROWS.filter(
     (row) => !row.code || !indicators.some((i) => i.code === row.code),
   ).length;
-  const passedCount = measured.filter(
-    (i) => i.percent >= i.targetPercent,
+  const passedCount = measured.filter((i) =>
+    meetsTarget(i.percent, i.targetPercent, i.targetOperator),
   ).length;
   const belowCount = measured.length - passedCount;
   const avg =
@@ -118,7 +133,7 @@ export function IndicatorTable({
                 details.push({
                   icon: <Target size={14} />,
                   label: "เกณฑ์",
-                  value: `ร้อยละ ≥ ${formatNumber(ind.targetPercent)}`,
+                  value: `ร้อยละ ${targetOperatorSign(ind.targetOperator)} ${formatNumber(ind.targetPercent)}`,
                 });
                 if (ind.denominatorFactor !== 1) {
                   details.push({
@@ -217,7 +232,10 @@ export function IndicatorTable({
                 );
               }
 
-              const passed = ind.percent >= ind.targetPercent;
+              const noTarget = ind.denominator === 0;
+              const passed =
+                !noTarget &&
+                meetsTarget(ind.percent, ind.targetPercent, ind.targetOperator);
               const StatusIcon = passed ? CheckCircle2 : XCircle;
               const meta = SCREENING_INDICATORS[row.code];
               return (
@@ -233,17 +251,23 @@ export function IndicatorTable({
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <span className="w-16 text-right text-sm font-bold tabular-nums">
-                        {formatPercent(ind.percent)}
+                        {noTarget ? "—" : formatPercent(ind.percent)}
                       </span>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          passed
-                            ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                            : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                          noTarget
+                            ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300"
+                            : passed
+                              ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                              : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
                         }`}
                       >
-                        <StatusIcon aria-hidden="true" className="h-3.5 w-3.5" />
-                        {passed ? "ผ่าน" : "ไม่ผ่าน"}
+                        {noTarget ? (
+                          <Info aria-hidden="true" className="h-3.5 w-3.5" />
+                        ) : (
+                          <StatusIcon aria-hidden="true" className="h-3.5 w-3.5" />
+                        )}
+                        {noTarget ? "ยังไม่มีกลุ่มเป้าหมาย" : passed ? "ผ่าน" : "ไม่ผ่าน"}
                       </span>
                     </div>
                     <div className="mt-2">
@@ -255,7 +279,7 @@ export function IndicatorTable({
                       />
                     </div>
                     <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-400">
-                      เกณฑ์ ≥ {formatNumber(ind.targetPercent)}%
+                      เกณฑ์ {targetOperatorSign(ind.targetOperator)} {formatNumber(ind.targetPercent)}%
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-center">
@@ -266,6 +290,7 @@ export function IndicatorTable({
                       title={row.title}
                       fiscalYear={fiscalYear}
                       targetPercent={ind.targetPercent}
+                      targetOperator={ind.targetOperator}
                       periodLabel={ind.periodLabel}
                       denominatorFactor={ind.denominatorFactor}
                       statusLabels={meta.statusLabels}
@@ -277,11 +302,13 @@ export function IndicatorTable({
 
   const rows: SearchableRow[] = INDICATOR_ROWS.map((row) => ({
     no: row.no,
+    group: row.group,
     keywords: [
       `ข้อ ${row.no}`,
       row.title,
       row.subtitle,
       row.code ?? "",
+      row.group ?? "",
       ...row.keywords,
     ].join(" "),
     node: renderRow(row),

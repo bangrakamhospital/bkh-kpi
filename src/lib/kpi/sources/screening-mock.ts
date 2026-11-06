@@ -44,6 +44,13 @@ const BASE: Record<ScreeningCode, MockBase> = {
   CX: { eligible: 7_860, yearRate: 0.135, rateJitter: [0.02, 0.02] },
   // Women 40–70 without known breast cancer; CBE coverage near the 80% target.
   BR: { eligible: 8_940, yearRate: 0.79, rateJitter: [0.05, 0.04] },
+  // HDC 2.1 / 2.2: suspected DM / HT people and the share confirmed.
+  DMC: { eligible: 31, yearRate: 0.87, rateJitter: [0.05, 0.05] },
+  HTC: { eligible: 193, yearRate: 0.93, rateJitter: [0.03, 0.03] },
+  // HDC 11.3–11.5: hospital DM clinic registry (~7,100), >= 1 lab per year.
+  RLU_HBA1C: { eligible: 7_100, yearRate: 0.8, rateJitter: [0.03, 0.03] },
+  RLU_LDL: { eligible: 7_100, yearRate: 0.8, rateJitter: [0.03, 0.03] },
+  RLU_CR: { eligible: 7_100, yearRate: 0.83, rateJitter: [0.03, 0.03] },
 };
 
 /** FNV-1a string hash -> 32-bit seed. */

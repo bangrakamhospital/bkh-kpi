@@ -11,7 +11,7 @@ import { getScreeningPersons } from "@/lib/kpi/screening-detail";
 import type { ScreeningPerson } from "@/lib/kpi/types";
 
 /**
- * GET /api/kpi/screening/persons?code=DM|HT|CX|BR&fy=2570&village=12
+ * GET /api/kpi/screening/persons?code=<ScreeningCode>&fy=2570&village=12
  * -> 200 ScreeningPerson[]: whole target group (eligible; for CX all women
  *    30–60, not only the 70% target) of the village with
  *    screening status, unscreened first then by name (max 5000 rows; header

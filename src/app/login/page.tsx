@@ -4,7 +4,7 @@ import Image from "next/image";
 import { LoginPageClient } from "@/components/auth/LoginPageClient";
 
 export const metadata: Metadata = {
-  title: "เข้าสู่ระบบ | BKH KPI",
+  title: "เข้าสู่ระบบ | โรงพยาบาลบางระกำ KPI",
   robots: { index: false, follow: false },
 };
 
@@ -18,7 +18,7 @@ export default function LoginPage() {
           </span>
           <div>
             <p className="text-base font-bold tracking-wide text-brand-100">
-              BKH KPI
+              โรงพยาบาลบางระกำ KPI
             </p>
             <h1 className="mt-0.5 text-sm font-semibold leading-5">
               เข้าสู่ระบบสำหรับเจ้าหน้าที่

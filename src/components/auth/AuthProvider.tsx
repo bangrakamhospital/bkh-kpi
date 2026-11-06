@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import {
-  SessionProvider,
-  signIn,
-  signOut,
-  useSession,
-} from "next-auth/react";
-import { GENERIC_LOGIN_ERROR, loginErrorMessage } from "@/lib/auth/messages";
+import { SessionProvider, signOut, useSession } from "next-auth/react";
 
 /**
  * Client-side login state from Auth.js (`SessionProvider` fetches
@@ -16,16 +10,14 @@ import { GENERIC_LOGIN_ERROR, loginErrorMessage } from "@/lib/auth/messages";
  * handler re-checks the session with `auth()`.
  *
  * `useAuth()` keeps the small API used by the dashboard components.
+ * Sign-in itself is a full-page SSO redirect (components/auth/SsoLogin.tsx).
  */
 
 export type AuthStatus = "loading" | "in" | "out";
 
-export type LoginResult = { ok: true } | { ok: false; error: string };
-
 interface AuthState {
   status: AuthStatus;
   displayName: string | null;
-  login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
   /** Call when a protected API answered 401 (session expired). */
   markLoggedOut: () => void;
@@ -41,26 +33,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth(): AuthState {
   const { data, status } = useSession();
-  const login = useCallback(
-    async (username: string, password: string): Promise<LoginResult> => {
-      try {
-        const res = await signIn("credentials", {
-          username,
-          password,
-          redirect: false,
-        });
-        if (!res) return { ok: false, error: GENERIC_LOGIN_ERROR };
-        if (res.error) {
-          return { ok: false, error: loginErrorMessage(res.error, res.code) };
-        }
-        return { ok: true };
-      } catch {
-        return { ok: false, error: GENERIC_LOGIN_ERROR };
-      }
-    },
-    [],
-  );
-
   const logout = useCallback(async () => {
     try {
       await signOut({ redirect: false });
@@ -82,7 +54,7 @@ export function useAuth(): AuthState {
     mapped === "in" && typeof user?.name === "string" ? user.name : null;
 
   return useMemo(
-    () => ({ status: mapped, displayName, login, logout, markLoggedOut }),
-    [mapped, displayName, login, logout, markLoggedOut],
+    () => ({ status: mapped, displayName, logout, markLoggedOut }),
+    [mapped, displayName, logout, markLoggedOut],
   );
 }

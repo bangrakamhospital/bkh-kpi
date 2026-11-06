@@ -77,6 +77,8 @@ export interface ScreeningPersonRaw {
   age: number;
   /** "YYYY-MM-DD" of first valid screening in the counting window; null if not screened. */
   screenDate: string | null;
+  /** HDC 2.1 / 2.2 only: "YYYY-MM-DD" of the first suspect screening. */
+  suspectDate?: string | null;
 }
 
 export type ScreeningPersonFilter =
