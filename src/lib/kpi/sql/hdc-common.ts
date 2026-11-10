@@ -1,10 +1,7 @@
 import "server-only";
 
 import type { QueryParams } from "@/lib/db/read-only-pool";
-import {
-  DISTRICT_TAMBONS,
-  HDC_UNIT_HOSPCODES,
-} from "@/lib/kpi/district-areas";
+import { DISTRICT_TAMBONS, HDC_UNIT_HOSPCODES } from "@/lib/kpi/district-areas";
 import { sqlCodeList } from "./screening-common";
 
 /**
@@ -218,7 +215,9 @@ const UNIT_CODE = (col: string) =>
  * HN / birth date to the client (birth is used server-side for the age).
  * screened.first_key = MIN(CONCAT(date_serv, hospcode)) -> date + unit of
  * the first counted service.
- * -> rows { vid, full_name, sort_name, sex, birth, unit_code, unit_name,
+ * PERSON.lname is AES-256-GCM encrypted in HDC: returned as lname_enc and
+ * decrypted server-side (hdc-crypto.ts); final ordering is done in JS.
+ * -> rows { vid, prename, first_name, lname_enc, sex, birth, unit_code, unit_name,
  *           screen_date, screen_unit_code, screen_unit_name[, suspect_date] }
  */
 export function personsSql(
@@ -234,9 +233,9 @@ export function personsSql(
       : HDC_PERSONS_PER_TAMBON_LIMIT;
   return `${withClause}
 SELECT t.vid AS vid,
-       TRIM(CONCAT(COALESCE(pn.prename, ''), COALESCE(p.name, ''), ' ',
-                   COALESCE(p.lname, ''))) AS full_name,
-       TRIM(CONCAT(COALESCE(p.name, ''), ' ', COALESCE(p.lname, ''))) AS sort_name,
+       pn.prename AS prename,
+       p.name AS first_name,
+       p.lname AS lname_enc,
        t.sex AS sex,
        t.birth AS birth,
        ${UNIT_CODE("t.hospcode")} AS unit_code,
@@ -256,7 +255,7 @@ LEFT JOIN screened s
 LEFT JOIN c_hospital sh
   ON sh.hospcode = ${UNIT_CODE("SUBSTRING(s.first_key, 9)")}
 WHERE ${filter}
-ORDER BY t.vid, (s.cid IS NULL) DESC, p.name, p.lname
+ORDER BY t.vid, (s.cid IS NULL) DESC, p.name
 LIMIT ${limit + 1}
 `;
 }
