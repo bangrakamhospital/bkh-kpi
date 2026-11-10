@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { ScreeningDashboard } from "@/components/kpi/ScreeningDashboard";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
+import { KpiTabs } from "@/components/kpi/KpiTabs";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 
 export default function Home(props: PageProps<"/">) {
@@ -25,6 +26,9 @@ export default function Home(props: PageProps<"/">) {
           </div>
           {/* Client-side (Auth.js useSession): keeps "/" a Partial Prerender. */}
           <HeaderAuth />
+        </div>
+        <div className="mx-auto mt-4 w-full max-w-6xl px-4 sm:px-6">
+          <KpiTabs />
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
