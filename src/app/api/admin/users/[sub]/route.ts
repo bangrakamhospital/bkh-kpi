@@ -7,7 +7,7 @@ import {
   adminMutationGate,
   readJsonBody,
 } from "@/lib/auth/admin-gate";
-import { authJson, clientIp } from "@/lib/auth/request";
+import { authJson, requestMeta } from "@/lib/auth/request";
 import { toAdminUser } from "@/lib/users/admin-api";
 import { isEnvAdmin, logStoreError } from "@/lib/users/policy";
 import { updateUser } from "@/lib/users/store";
@@ -105,10 +105,11 @@ export async function PATCH(
   if (result.changed) {
     auditUserUpdate({
       actor: admin.username,
+      actorName: admin.name,
       target: result.user.sub,
       from: { status: result.before.status, role: result.before.role },
       to: { status: result.user.status, role: result.user.role },
-      ip: clientIp(request.headers),
+      meta: requestMeta(request.headers),
     });
   }
   const body: AdminUserPatchResponse = { user: toAdminUser(result.user) };

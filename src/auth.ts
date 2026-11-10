@@ -15,7 +15,7 @@ import {
   recordLoginFailure,
   recordLoginSuccess,
 } from "@/lib/auth/rate-limit";
-import { clientIp, logSafe } from "@/lib/auth/request";
+import { logSafe, requestMeta, type RequestMeta } from "@/lib/auth/request";
 import {
   isAuthConfigured,
   secureCookiesEnabled,
@@ -157,7 +157,7 @@ export function sessionUser(
 async function ssoAdmission(
   sub: string,
   profile: Record<string, unknown> | undefined,
-  ip: string,
+  meta: RequestMeta,
 ): Promise<true | string> {
   const info = ssoUserInfo(profile);
   let result;
@@ -177,26 +177,26 @@ async function ssoAdmission(
     );
   } catch (err) {
     logStoreError(err);
-    auditAuth("login_store_error", sub, ip);
+    auditAuth("login_store_error", sub, meta, { name: info.name });
     return `/login?error=AccessDenied&code=${SSO_CODE.userStoreUnavailable}`;
   }
   const { user, created, promoted } = result;
-  if (created) auditAuth("user_created", sub, ip);
-  if (promoted === "bootstrap") auditAuth("user_bootstrap_admin", sub, ip);
-  if (promoted === "env") auditAuth("user_env_admin", sub, ip);
+  if (created) auditAuth("user_created", sub, meta, { name: info.name });
+  if (promoted === "bootstrap") auditAuth("user_bootstrap_admin", sub, meta, { name: info.name });
+  if (promoted === "env") auditAuth("user_env_admin", sub, meta, { name: info.name });
   if (user.status === "approved") {
-    auditAuth("login_success", sub, ip);
+    auditAuth("login_success", sub, meta, { name: info.name });
     return true;
   }
   if (user.status === "rejected") {
-    auditAuth("login_rejected", sub, ip);
+    auditAuth("login_rejected", sub, meta, { name: info.name });
     return `/login?error=AccessDenied&code=${SSO_CODE.rejected}`;
   }
-  auditAuth("login_pending", sub, ip);
+  auditAuth("login_pending", sub, meta, { name: info.name });
   return `/login?error=AccessDenied&code=${SSO_CODE.pending}`;
 }
 
-function buildConfig(ip: string): NextAuthConfig {
+function buildConfig(meta: RequestMeta): NextAuthConfig {
   const sso = ssoProvider();
   return {
     // AUTH_SECRET is read by next-auth from env automatically.
@@ -209,7 +209,7 @@ function buildConfig(ip: string): NextAuthConfig {
       // AUTH_PASSWORD_LOGIN=true re-enables it (API only, no form) for emergencies.
       // The emergency account counts as an ADMIN (break-glass).
       ...(passwordLoginEnabled()
-        ? [credentialsProvider(ip)]
+        ? [credentialsProvider(meta)]
         : []),
       // SSO (Provider ID) — only when AUTH_PLKHEALTH_* is configured.
       ...(sso ? [sso] : []),
@@ -220,12 +220,15 @@ function buildConfig(ip: string): NextAuthConfig {
         // Stable identity = OIDC `sub` (user.id is a random UUID per sign-in).
         const who = ssoSubject(account);
         if (!who || str(profile?.sub) !== who) {
-          auditAuth("login_failed", "-", ip);
+          auditAuth("login_failed", "-", meta, { detail: "invalid_sso_profile" });
           return false;
         }
         const org = checkOrg(profile as Record<string, unknown> | undefined);
         if (org !== "allowed") {
-          auditAuth("login_failed", who, ip);
+          auditAuth("login_failed", who, meta, {
+            name: ssoUserInfo(profile as Record<string, unknown> | undefined).name,
+            detail: org === "not_configured" ? "org_not_configured" : "org_not_allowed",
+          });
           return `/login?error=AccessDenied&code=${
             org === "not_configured"
               ? SSO_CODE.orgNotConfigured
@@ -236,7 +239,7 @@ function buildConfig(ip: string): NextAuthConfig {
         return ssoAdmission(
           who,
           profile as Record<string, unknown> | undefined,
-          ip,
+          meta,
         );
       },
       async jwt({ token, user, account }) {
@@ -298,7 +301,11 @@ function buildConfig(ip: string): NextAuthConfig {
         const token = "token" in message ? message.token : null;
         const username =
           token && typeof token.username === "string" ? token.username : "";
-        if (username) auditAuth("logout", username, ip);
+        if (username) {
+          auditAuth("logout", username, meta, {
+            name: typeof token?.name === "string" ? token.name : undefined,
+          });
+        }
       },
     },
     logger: {
@@ -317,7 +324,7 @@ function buildConfig(ip: string): NextAuthConfig {
   };
 }
 
-function credentialsProvider(ip: string) {
+function credentialsProvider(meta: RequestMeta) {
   return Credentials({
     credentials: {
       username: { label: "ชื่อผู้ใช้" },
@@ -333,9 +340,9 @@ function credentialsProvider(ip: string) {
       const creds = readCredentials(credentials);
       if (!creds) throw new LoginError(LOGIN_CODE.missing);
 
-      const retryAfter = loginRetryAfter(ip, creds.username);
+      const retryAfter = loginRetryAfter(meta.ip, creds.username);
       if (retryAfter > 0) {
-        auditAuth("login_rate_limited", creds.username, ip);
+        auditAuth("login_rate_limited", creds.username, meta, { detail: "password" });
         throw new LoginError(rateLimitedCode(retryAfter));
       }
 
@@ -355,13 +362,16 @@ function credentialsProvider(ip: string) {
       }
 
       if (!user) {
-        recordLoginFailure(ip, creds.username);
-        auditAuth("login_failed", creds.username, ip);
+        recordLoginFailure(meta.ip, creds.username);
+        auditAuth("login_failed", creds.username, meta, { detail: "password" });
         return null; // -> CredentialsSignin code "credentials"
       }
 
-      recordLoginSuccess(ip, creds.username);
-      auditAuth("login_success", user.loginname, ip);
+      recordLoginSuccess(meta.ip, creds.username);
+      auditAuth("login_success", user.loginname, meta, {
+        name: user.displayName,
+        detail: "password",
+      });
       return { id: user.loginname, name: user.displayName };
     },
   });
@@ -372,5 +382,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
   if (request?.nextUrl?.pathname.startsWith("/api/auth/signin/")) {
     warnOnRedirectOriginMismatch(requestOrigin(request.headers));
   }
-  return buildConfig(clientIp(request?.headers));
+  return buildConfig(requestMeta(request?.headers));
 });

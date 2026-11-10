@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AdminTabs } from "@/components/admin/AdminTabs";
+import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 import { AdminUsersClient } from "@/components/admin/AdminUsersClient";
 
@@ -38,6 +39,7 @@ export default function AdminUsersPage() {
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
+        <PageViewAudit path="/admin/users" />
         <AdminTabs active="users" />
         <AdminUsersClient />
       </main>
