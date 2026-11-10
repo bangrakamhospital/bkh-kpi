@@ -16,6 +16,7 @@ import {
   hdcCkd5Params,
 } from "@/lib/kpi/sql/hdc-ckd5";
 import type { DistrictCode } from "@/lib/kpi/types";
+import { decryptHdc } from "@/lib/kpi/hdc-crypto";
 
 /**
  * District HDC source (all 11 sub-districts 650401–650411). Returns raw counts
@@ -251,8 +252,10 @@ export type HdcPersonScope =
 
 interface PersonRow extends RowDataPacket {
   vid: string;
-  full_name: string | null;
-  sort_name: string | null;
+  prename: string | null;
+  first_name: string | null;
+  /** AES-256-GCM hex (see hdc-crypto.ts). */
+  lname_enc: string | null;
   sex: string | null;
   birth: string | null;
   unit_code: string | null;
@@ -286,19 +289,25 @@ export async function hisHdcPersonsSource(
           ...params,
           tambon: scope.tambonCode,
         });
-  return rows.map((r) => ({
-    vid: r.vid,
-    fullName: trimOrNull(r.full_name) ?? "",
-    sortName: trimOrNull(r.sort_name) ?? "",
-    sex: trimOrNull(r.sex),
-    birth: trimOrNull(r.birth),
-    unitCode: trimOrNull(r.unit_code),
-    unitName: trimOrNull(r.unit_name),
-    screenDate: hdcDateToIso(r.screen_date),
-    screenUnitCode: trimOrNull(r.screen_unit_code),
-    screenUnitName: trimOrNull(r.screen_unit_name),
-    ...(sql.withSuspect ? { suspectDate: hdcDateToIso(r.suspect_date) } : {}),
-  }));
+  return rows.map((r) => {
+    const first = trimOrNull(r.first_name) ?? "";
+    const last = decryptHdc(r.lname_enc) ?? "";
+    return {
+      vid: r.vid,
+      fullName: `${trimOrNull(r.prename) ?? ""}${first} ${last}`.trim(),
+      sortName: `${first} ${last}`.trim(),
+      sex: trimOrNull(r.sex),
+      birth: trimOrNull(r.birth),
+      unitCode: trimOrNull(r.unit_code),
+      unitName: trimOrNull(r.unit_name),
+      screenDate: hdcDateToIso(r.screen_date),
+      screenUnitCode: trimOrNull(r.screen_unit_code),
+      screenUnitName: trimOrNull(r.screen_unit_name),
+      ...(sql.withSuspect
+        ? { suspectDate: hdcDateToIso(r.suspect_date) }
+        : {}),
+    };
+  });
 }
 
 const MOCK_FIRST = ["สมชาย", "สมหญิง", "มานี", "มานะ", "ปิติ", "ชูใจ", "วีระ", "สุดา"];
