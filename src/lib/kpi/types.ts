@@ -227,3 +227,219 @@ export interface ScreeningPerson {
    */
   suspectDate?: string | null;
 }
+
+/* ---------------- district level (อ.บางระกำ, aggregates only) ---------------- */
+
+/**
+ * Ratio indicators of the district page (HDC only, per sub-district):
+ * DM / HT = KPI 1–2, CX / BR = KPI 3–4, DMC / HTC = HDC 2.1 / 2.2,
+ * RLU_* = HDC 11.3–11.5. CKD5 has its own result shape
+ * (DistrictCkd5Result), see DistrictKpiCode.
+ */
+export type DistrictCode =
+  | "DM"
+  | "HT"
+  | "CX"
+  | "BR"
+  | "DMC"
+  | "HTC"
+  | "RLU_HBA1C"
+  | "RLU_LDL"
+  | "RLU_CR";
+
+/** Raw counts + derived B / percent of one area (same maths as the headline). */
+export interface AreaCounts {
+  /** People in the target group. */
+  eligible: number;
+  /** B (= eligible for DM / HT). */
+  denominator: number;
+  /** A: screened in the fiscal year up to the data cutoff. */
+  numerator: number;
+  /** A / B * 100 (2 decimals); 0 when B is 0. */
+  percent: number;
+}
+
+export interface DistrictVillageRow extends AreaCounts {
+  /** Stable key: 8-digit HDC village code (vid), e.g. "65040203". */
+  key: string;
+  /** Village number as text ("3"); "-" when unknown. */
+  moo: string;
+  /** Always null: the 43 files have no village names -> show "หมู่ {moo}". */
+  villageName: string | null;
+}
+
+/** Last data received from one health unit (HDC lag differs per unit). */
+export interface DistrictUnitStatus {
+  hospcode: string;
+  name: string;
+  /** "YYYY-MM-DD" latest SERVICE date sent (<= dataAsOf); null = none. */
+  lastServiceDate: string | null;
+  /** "YYYY-MM-DD" latest NCDSCREEN date sent; null = none. */
+  lastScreenDate: string | null;
+}
+
+export interface DistrictTambonRow extends AreaCounts {
+  /** 6-digit sub-district code, e.g. "650402". */
+  tambonCode: string;
+  tambonName: string;
+  /**
+   * "YYYY-MM-DD" data is complete up to (at least) this day: the OLDEST
+   * lastServiceDate among the sub-district's units (null when no unit has
+   * sent data).
+   */
+  dataAsOf: string | null;
+  units: DistrictUnitStatus[];
+  /** Ordered by village number (unknown last). */
+  villages: DistrictVillageRow[];
+  /** Set when loading failed (generic Thai text); counts are then 0. */
+  error?: string;
+}
+
+/**
+ * GET /api/kpi/district/screening?code=<DistrictCode>&fy=<BE>
+ * Source: district HDC database only (all 11 sub-districts). District
+ * total = sum of the raw counts of the sub-districts, percent computed
+ * once from the sums. May differ from the hospital (HOSxP) page.
+ */
+export interface DistrictScreeningResult {
+  kind: "ratio";
+  code: DistrictCode;
+  /** Thai indicator name (SCREENING_INDICATORS[code].name). */
+  name: string;
+  /** Short Thai name for buttons / headings (SCREENING_INDICATORS[code].shortName). */
+  shortName: string;
+  /** Target group as display text (district definition, see note). */
+  population: string;
+  /** District-level remarks (definition differences between sources). */
+  note?: string;
+  targetPercent: number;
+  targetOperator: TargetOperator;
+  fiscalYear: number;
+  periodStart: string;
+  periodEnd: string;
+  /** "YYYY-MM-DD" KPI cutoff (today for the current FY, else 30 Sep). */
+  dataAsOf: string;
+  /** ISO timestamp of this response. */
+  updatedAt: string;
+  district: AreaCounts & {
+    code: string;
+    name: string;
+    /** Always true (HDC is the only source; a load failure is an HTTP 500). Kept for compatibility. */
+    complete: boolean;
+  };
+  /** Always 11 rows in sub-district code order (650401 first). */
+  tambons: DistrictTambonRow[];
+}
+
+/** Every indicator of the district page (ratio + CKD5). */
+export type DistrictKpiCode = DistrictCode | "CKD5";
+
+/** Fields shared by every district result. */
+interface DistrictResultBase {
+  name: string;
+  shortName: string;
+  population: string;
+  note: string;
+  targetPercent: number;
+  targetOperator: TargetOperator;
+  fiscalYear: number;
+  periodStart: string;
+  periodEnd: string;
+  dataAsOf: string;
+  updatedAt: string;
+}
+
+export interface DistrictCkd5Village {
+  /** 8-digit HDC vid. */
+  key: string;
+  moo: string;
+  /** New cases in the selected fiscal year. */
+  currentCases: number;
+  /** New cases in the whole previous fiscal year. */
+  previousCases: number;
+}
+
+export interface DistrictCkd5TambonRow {
+  tambonCode: string;
+  tambonName: string;
+  currentCases: number;
+  previousCases: number;
+  previousSamePeriod: number;
+  dataAsOf: string | null;
+  units: DistrictUnitStatus[];
+  /** Only villages with at least one case. */
+  villages: DistrictCkd5Village[];
+}
+
+/**
+ * KPI 10 CKD5 (lower is better): reduction% = (B − A) / B × 100 with
+ * A = new cases this FY, B = new cases of the previous FY.
+ * When previousYearComparable is false (FY 2569: HDC has no FY 2568
+ * diagnoses) previous counts are 0 and reductionPercent is null — show
+ * "ข้อมูลปีก่อนไม่พอ" instead of a number.
+ */
+export interface DistrictCkd5Result extends DistrictResultBase {
+  kind: "reduction";
+  code: "CKD5";
+  previousYearComparable: boolean;
+  district: {
+    code: string;
+    name: string;
+    currentCases: number;
+    previousCases: number;
+    previousSamePeriod: number;
+    /** null when previous FY is 0 or not comparable. Negative = increased. */
+    reductionPercent: number | null;
+  };
+  tambons: DistrictCkd5TambonRow[];
+}
+
+/** GET /api/kpi/district/screening response, discriminated by `kind`. */
+export type DistrictKpiResult = DistrictScreeningResult | DistrictCkd5Result;
+
+/* ---------------- district person list (HDC, login required) ---------------- */
+
+/**
+ * One person of a district indicator's target group (HDC 43 files).
+ * Patient-identifiable: only returned by GET /api/kpi/district/persons
+ * (login required, `Cache-Control: private, no-store`) and the district
+ * Excel export. Never embed in pages, shared caches, or logs.
+ * Deliberately excludes CID (hashed or not), pid, phone, address.
+ * Ratio codes only (DistrictCode) — no person list for CKD5.
+ */
+export interface DistrictPerson {
+  /** Opaque row key, stable within one response (React key); not an identifier. */
+  key: string;
+  /** prename + name + lname as in HDC PERSON. */
+  fullName: string;
+  sex: "ชาย" | "หญิง" | "ไม่ระบุ";
+  /** Age in full years on 1 Oct of the fiscal year. */
+  age: number;
+  /** 8-digit village code (changwat+ampur+tambon+moo). */
+  vid: string;
+  /** Village number as text ("1".."27"). */
+  moo: string;
+  /** Name of the responsible unit (hospcode of the chosen PERSON record). */
+  unitName: string;
+  /** true when counted in A. */
+  screened: boolean;
+  /** "YYYY-MM-DD" of the first valid service counted in A; null if not. */
+  screenDate: string | null;
+  /** Name of the unit that provided that service; null if not screened. */
+  screenUnitName: string | null;
+  /** DMC / HTC only: "YYYY-MM-DD" of the first suspect screening. */
+  suspectDate?: string | null;
+}
+
+/** GET /api/kpi/district/persons response. */
+export interface DistrictPersonsResponse {
+  code: DistrictCode;
+  fiscalYear: number;
+  /** Filter echoed back: one village (vid) or one tambon (6 digits). */
+  scope: { kind: "village"; vid: string } | { kind: "tambon"; tambonCode: string };
+  /** HDC data cutoff of this tambon (oldest unit's last service date). */
+  dataAsOf: string | null;
+  persons: DistrictPerson[];
+  /** true when more rows exist than the server limit returned. */
+  truncated: boolean;
+}

@@ -5,6 +5,8 @@ interface Props {
   fiscalYear: number;
   minYear: number;
   maxYear: number;
+  /** สร้าง href ของปีงบที่เลือก (ค่าเริ่มต้น: `/?fy=ปี`) */
+  buildHref?: (fiscalYear: number) => string;
 }
 
 const linkClass =
@@ -12,14 +14,19 @@ const linkClass =
 const disabledClass =
   "inline-flex items-center gap-1 rounded-full border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 dark:border-zinc-800";
 
-export function FiscalYearSelect({ fiscalYear, minYear, maxYear }: Props) {
+export function FiscalYearSelect({
+  fiscalYear,
+  minYear,
+  maxYear,
+  buildHref = (fy) => `/?fy=${fy}`,
+}: Props) {
   const hasPrev = fiscalYear > minYear;
   const hasNext = fiscalYear < maxYear;
 
   return (
     <nav aria-label="เลือกปีงบประมาณ" className="flex items-center gap-2">
       {hasPrev ? (
-        <Link href={`/?fy=${fiscalYear - 1}`} className={linkClass}>
+        <Link href={buildHref(fiscalYear - 1)} className={linkClass}>
           <ChevronLeft aria-hidden="true" className="h-4 w-4" />
           ปีงบฯ {fiscalYear - 1}
         </Link>
@@ -36,7 +43,7 @@ export function FiscalYearSelect({ fiscalYear, minYear, maxYear }: Props) {
         ปีงบฯ {fiscalYear}
       </span>
       {hasNext ? (
-        <Link href={`/?fy=${fiscalYear + 1}`} className={linkClass}>
+        <Link href={buildHref(fiscalYear + 1)} className={linkClass}>
           ปีงบฯ {fiscalYear + 1}
           <ChevronRight aria-hidden="true" className="h-4 w-4" />
         </Link>
