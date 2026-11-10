@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { auditDataAccess } from "@/lib/auth/audit";
+import { requestMeta } from "@/lib/auth/request";
 import { requireSession } from "@/lib/auth/guard";
 import {
   jsonError,
@@ -48,14 +49,18 @@ export async function GET(request: NextRequest): Promise<Response> {
       const moo = data.villages[0]?.moo ?? "";
       suffix = /^\d{1,4}$/.test(moo) ? `-moo${moo}` : `-village${villageId}`;
     }
-    auditDataAccess({
-      action: "export",
-      loginname: auth.user.username,
-      code,
-      fiscalYear,
-      villageId,
-      rows: data.persons.length,
-    });
+    auditDataAccess(
+      {
+        action: "export",
+        loginname: auth.user.username,
+        name: auth.user.name,
+        code,
+        fiscalYear,
+        villageId,
+        rows: data.persons.length,
+      },
+      requestMeta(request.headers),
+    );
     const filename = `kpi-${code}-${fiscalYear}${suffix}.xlsx`;
 
     return new Response(new Uint8Array(buffer), {

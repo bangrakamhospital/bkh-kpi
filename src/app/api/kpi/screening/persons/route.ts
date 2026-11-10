@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { auditDataAccess } from "@/lib/auth/audit";
+import { requestMeta } from "@/lib/auth/request";
 import { requireSession } from "@/lib/auth/guard";
 import {
   jsonError,
@@ -43,14 +44,18 @@ export async function GET(request: NextRequest): Promise<Response> {
       fiscalYear,
       villageId as number,
     );
-    auditDataAccess({
-      action: "persons",
-      loginname: auth.user.username,
-      code,
-      fiscalYear,
-      villageId,
-      rows: persons.length,
-    });
+    auditDataAccess(
+      {
+        action: "persons",
+        loginname: auth.user.username,
+        name: auth.user.name,
+        code,
+        fiscalYear,
+        villageId,
+        rows: persons.length,
+      },
+      requestMeta(request.headers),
+    );
     const body: ScreeningPerson[] = persons;
     const headers: Record<string, string> = {
       "Cache-Control": "private, no-store",

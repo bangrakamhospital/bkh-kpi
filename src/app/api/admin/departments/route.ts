@@ -4,7 +4,7 @@ import {
   adminMutationGate,
   readJsonBody,
 } from "@/lib/auth/admin-gate";
-import { authJson, clientIp } from "@/lib/auth/request";
+import { authJson, requestMeta } from "@/lib/auth/request";
 import {
   DEPARTMENT_MESSAGES,
   departmentStoreFailure,
@@ -49,9 +49,10 @@ export async function POST(request: Request): Promise<Response> {
   auditDepartment({
     action: "department_create",
     actor: gate.admin.username,
+    actorName: gate.admin.name,
     id: result.department.id,
     name: result.department.name,
-    ip: clientIp(request.headers),
+    meta: requestMeta(request.headers),
   });
   const body: DepartmentResponse = { department: result.department };
   return authJson(body, 201);
