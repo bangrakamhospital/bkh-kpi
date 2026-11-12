@@ -4,6 +4,14 @@ import { Fragment, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Building2, Search, SearchX, Users, X } from "lucide-react";
 import type { ScreeningCode } from "@/lib/kpi/types";
+import {
+  categoryAnchorId,
+  EMPTY_CATEGORY_NOTE,
+  KPI_CATEGORIES,
+  SHOW_EMPTY_CATEGORIES,
+  type CategoryId,
+} from "@/lib/kpi/categories";
+import { CategoryChipBar } from "./CategoryChipBar";
 import { toneFor, type Department } from "./department-theme";
 
 export interface SearchableRow {
@@ -12,6 +20,8 @@ export interface SearchableRow {
   code?: ScreeningCode;
   /** ข้อความที่ใช้ค้นหา (เลขข้อ ชื่อ กลุ่มเป้าหมาย code คำพ้อง) */
   keywords: string;
+  /** หมวดตัวชี้วัด (lib/kpi/categories) */
+  categoryId: CategoryId;
   /** แถว <tr> ที่ server เตรียมไว้แล้ว */
   node: React.ReactNode;
 }
@@ -89,8 +99,21 @@ export function IndicatorSearch({
       (!q || normalize(r.keywords).includes(q)),
   );
 
+  // Group by category (number order). Empty categories are only shown when
+  // no search / department filter is active (and SHOW_EMPTY_CATEGORIES).
+  const filtering = Boolean(q) || Boolean(activeDept);
+  const sections = KPI_CATEGORIES.map((category) => ({
+    category,
+    rows: visible.filter((r) => r.categoryId === category.id),
+  })).filter(
+    (s) => s.rows.length > 0 || (SHOW_EMPTY_CATEGORIES && !filtering),
+  );
+
   return (
     <div className="space-y-2">
+      {visible.length > 0 && (
+        <CategoryChipBar categories={sections.map((s) => s.category)} />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="relative w-full max-w-sm">
           <label htmlFor="indicator-search" className="sr-only">
@@ -185,7 +208,34 @@ export function IndicatorSearch({
           </thead>
           <tbody>
             {visible.length > 0 ? (
-              visible.map((r) => <Fragment key={r.no}>{r.node}</Fragment>)
+              sections.map((s) => (
+                <Fragment key={s.category.id}>
+                  <tr
+                    id={categoryAnchorId(s.category.id)}
+                    className="scroll-mt-4 border-t border-zinc-200 bg-brand-100 dark:border-zinc-800 dark:bg-brand-900/50"
+                  >
+                    <th
+                      scope="colgroup"
+                      colSpan={6}
+                      className="px-3 py-2 text-left text-sm font-semibold text-brand-900 dark:text-brand-100"
+                    >
+                      {s.category.number}. {s.category.name}
+                    </th>
+                  </tr>
+                  {s.rows.length > 0 ? (
+                    s.rows.map((r) => <Fragment key={r.no}>{r.node}</Fragment>)
+                  ) : (
+                    <tr className="border-t border-zinc-200 dark:border-zinc-800">
+                      <td
+                        colSpan={6}
+                        className="px-3 py-2.5 text-xs text-zinc-500 dark:text-zinc-400"
+                      >
+                        {EMPTY_CATEGORY_NOTE}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))
             ) : (
               <tr>
                 <td colSpan={6} className="px-3 py-8 text-center">

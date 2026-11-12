@@ -1,4 +1,5 @@
 import type { DistrictKpiCode } from "@/lib/kpi/types";
+import { KPI_CATEGORIES, type KpiCategory } from "@/lib/kpi/categories";
 import { INDICATOR_ROWS } from "./indicator-rows";
 import type { AccentKey } from "./indicator-theme";
 
@@ -26,16 +27,19 @@ export function districtLabel(code: DistrictKpiCode): string {
   return row ? `${row.no}. ${row.title}` : code;
 }
 
-/** Button groups of the district page (reading aid on small screens). */
-export const DISTRICT_CODE_GROUPS: readonly {
-  label: string;
+/**
+ * District indicator buttons grouped by the shared 16 categories
+ * (category-number order, indicator order = hospital-page order).
+ */
+export const DISTRICT_CATEGORY_GROUPS: readonly {
+  category: KpiCategory;
   codes: readonly DistrictKpiCode[];
-}[] = [
-  { label: "คัดกรอง / ยืนยัน NCD", codes: ["DM", "HT", "DMC", "HTC"] },
-  { label: "คัดกรองมะเร็ง", codes: ["CX", "BR"] },
-  { label: "ผลตรวจผู้ป่วยเบาหวาน", codes: ["RLU_HBA1C", "RLU_LDL", "RLU_CR"] },
-  { label: "อื่น ๆ", codes: ["CKD5", "STEMI"] },
-];
+}[] = KPI_CATEGORIES.map((category) => ({
+  category,
+  codes: INDICATOR_ROWS.flatMap((r) =>
+    r.code && r.categoryId === category.id ? [r.code] : [],
+  ),
+}));
 
 /** RLU = lab test indicators (A = "ได้รับการตรวจ"). */
 export function isLabIndicator(code: DistrictKpiCode): boolean {

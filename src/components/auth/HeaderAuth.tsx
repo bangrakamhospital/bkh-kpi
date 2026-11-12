@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Loader2, LogIn, LogOut, Settings, UserCircle2 } from "lucide-react";
+import {
+  isLoginRequiredPath,
+  loginRedirectPath,
+} from "@/lib/auth/protected-paths";
 import { useAuth } from "./AuthProvider";
 
 const pillClass =
@@ -19,6 +23,18 @@ export function HeaderAuth() {
   const isAdmin =
     (session?.user as { role?: unknown } | undefined)?.role === "admin";
   const [busy, setBusy] = useState(false);
+  const pathname = usePathname();
+
+  // Login-required page (/hospital, /pp) and the session ended in this tab
+  // (logout, expiry, revoked approval): leave the page instead of keeping
+  // the already-rendered KPI data on screen. The server gates (proxy.ts,
+  // RequireLogin) decide access; this is UI only.
+  useEffect(() => {
+    if (status !== "out" || !isLoginRequiredPath(pathname)) return;
+    router.replace(
+      loginRedirectPath(`${window.location.pathname}${window.location.search}`),
+    );
+  }, [status, pathname, router]);
 
   if (status === "loading") {
     return (

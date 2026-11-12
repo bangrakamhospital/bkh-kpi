@@ -17,6 +17,12 @@ import type {
   DistrictKpiCode,
   DistrictScreeningResult,
 } from "@/lib/kpi/types";
+import {
+  categoryAnchorId,
+  EMPTY_CATEGORY_NOTE,
+  SHOW_EMPTY_CATEGORIES,
+} from "@/lib/kpi/categories";
+import { CategoryChipBar } from "./CategoryChipBar";
 import { FiscalYearSelect } from "./FiscalYearSelect";
 import { DistrictCkd5Table } from "./DistrictCkd5Table";
 import { DistrictScreeningTable } from "./DistrictScreeningTable";
@@ -24,7 +30,7 @@ import { DistrictStemiPanel } from "./DistrictStemiPanel";
 import { ACCENTS } from "./indicator-theme";
 import {
   DISTRICT_ACCENT,
-  DISTRICT_CODE_GROUPS,
+  DISTRICT_CATEGORY_GROUPS,
   districtLabel,
   numeratorLabel,
 } from "./district-codes";
@@ -74,6 +80,10 @@ function AlertBox({ message }: { message: string }) {
   );
 }
 
+const visibleGroups = DISTRICT_CATEGORY_GROUPS.filter(
+  (g) => g.codes.length > 0 || SHOW_EMPTY_CATEGORIES,
+);
+
 function indicatorName(code: DistrictKpiCode): string {
   return code === "CKD5" ? CKD5_INDICATOR.name : SCREENING_INDICATORS[code].name;
 }
@@ -93,12 +103,22 @@ export async function DistrictScreening({
 
   const selectors = (fy: number) => (
     <div className="flex w-full flex-col gap-3">
+      <CategoryChipBar categories={visibleGroups.map((g) => g.category)} />
       <nav aria-label="เลือกตัวชี้วัด" className="flex flex-col gap-2">
-        {DISTRICT_CODE_GROUPS.map((g) => (
-          <div key={g.label} className="flex flex-wrap items-center gap-2">
-            <span className="w-full text-xs font-semibold text-zinc-600 sm:w-40 dark:text-zinc-400">
-              {g.label}
+        {visibleGroups.map((g) => (
+          <div
+            key={g.category.id}
+            id={categoryAnchorId(g.category.id)}
+            className="flex scroll-mt-4 flex-wrap items-center gap-2"
+          >
+            <span className="w-full text-sm font-semibold text-zinc-700 sm:w-64 dark:text-zinc-300">
+              {g.category.number}. {g.category.name}
             </span>
+            {g.codes.length === 0 && (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {EMPTY_CATEGORY_NOTE}
+              </span>
+            )}
             {g.codes.map((c) => (
               <Link
                 key={c}

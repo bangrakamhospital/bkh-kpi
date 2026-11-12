@@ -5,6 +5,7 @@ import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
 import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
+import { RequireLogin } from "@/components/auth/RequireLogin";
 
 export const metadata = {
   title: "ตัวชี้วัดในโรงพยาบาล | โรงพยาบาลบางระกำ KPI",
@@ -39,7 +40,9 @@ export default function HospitalPage(props: PageProps<"/hospital">) {
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
         <PageViewAudit path="/hospital" searchParams={props.searchParams} />
         <Suspense fallback={<DashboardSkeleton />}>
-          <ScreeningDashboard searchParams={props.searchParams} />
+          <RequireLogin path="/hospital" searchParams={props.searchParams}>
+            <ScreeningDashboard searchParams={props.searchParams} />
+          </RequireLogin>
         </Suspense>
       </main>
     </>
