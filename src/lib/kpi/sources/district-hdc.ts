@@ -11,10 +11,8 @@ import {
   hdcDateToIso,
   type HdcScreeningSqlContext,
 } from "@/lib/kpi/sql/hdc-screening";
-import {
-  HDC_CKD5_VILLAGE_SQL,
-  hdcCkd5Params,
-} from "@/lib/kpi/sql/hdc-ckd5";
+import { HDC_CKD5_VILLAGE_SQL, hdcCkd5Params } from "@/lib/kpi/sql/hdc-ckd5";
+import { HDC_STEMI_TOTALS_SQL, hdcStemiParams } from "@/lib/kpi/sql/hdc-stemi";
 import type { DistrictCode } from "@/lib/kpi/types";
 import { decryptHdc } from "@/lib/kpi/hdc-crypto";
 
@@ -141,13 +139,14 @@ export const mockHdcDistrictSource: HdcDistrictSource = async (code, ctx) => {
     ...new Set(DISTRICT_TAMBONS.flatMap((t) => t.units.map((u) => u.hospcode))),
   ].map((hospcode, i) => ({
     hospcode,
-    lastServiceDate: i % 3 === 0 ? `${ctx.dataAsOf.slice(0, 8)}01` : ctx.dataAsOf,
+    lastServiceDate:
+      i % 3 === 0 ? `${ctx.dataAsOf.slice(0, 8)}01` : ctx.dataAsOf,
     lastScreenDate: null,
   }));
   return { villages, units };
 };
 
-/* ---------------------------------- CKD5 ---------------------------------- */
+/* ------------------------------ CKD5 / STEMI ------------------------------ */
 
 export interface HdcCkd5VillageRaw {
   vid: string;
@@ -159,6 +158,11 @@ export interface HdcCkd5VillageRaw {
 export interface HdcCkd5Raw {
   villages: HdcCkd5VillageRaw[];
   units: HdcUnitFreshnessRaw[];
+}
+
+export interface HdcStemiRaw {
+  episodes: number;
+  deaths: number;
 }
 
 export interface HdcPeriodContext {
@@ -173,6 +177,11 @@ interface Ckd5Row extends RowDataPacket {
   current_cases: number | string | null;
   previous_cases: number | string | null;
   previous_same_period: number | string | null;
+}
+
+interface StemiRow extends RowDataPacket {
+  episodes: number | string | null;
+  deaths: number | string | null;
 }
 
 async function loadFreshness(dataAsOf: string): Promise<HdcUnitFreshnessRaw[]> {
@@ -202,6 +211,19 @@ export async function hisHdcCkd5Source(
   };
 }
 
+export async function hisHdcStemiSource(
+  ctx: HdcPeriodContext,
+): Promise<HdcStemiRaw> {
+  const rows = await hdcQuery<StemiRow>(
+    HDC_STEMI_TOTALS_SQL,
+    hdcStemiParams(ctx),
+  );
+  return {
+    episodes: Number(rows[0]?.episodes ?? 0),
+    deaths: Number(rows[0]?.deaths ?? 0),
+  };
+}
+
 export async function mockHdcCkd5Source(
   ctx: HdcPeriodContext,
 ): Promise<HdcCkd5Raw> {
@@ -219,6 +241,10 @@ export async function mockHdcCkd5Source(
     dataAsOf: ctx.dataAsOf,
   });
   return { villages, units };
+}
+
+export async function mockHdcStemiSource(): Promise<HdcStemiRaw> {
+  return { episodes: 12, deaths: 1 };
 }
 
 /* ------------------- person list (patient-identifiable) ------------------- */
@@ -247,8 +273,7 @@ export interface HdcPersonRaw {
 }
 
 export type HdcPersonScope =
-  | { kind: "village"; vid: string }
-  | { kind: "tambon"; tambonCode: string };
+  { kind: "village"; vid: string } | { kind: "tambon"; tambonCode: string };
 
 interface PersonRow extends RowDataPacket {
   vid: string;
@@ -303,14 +328,21 @@ export async function hisHdcPersonsSource(
       screenDate: hdcDateToIso(r.screen_date),
       screenUnitCode: trimOrNull(r.screen_unit_code),
       screenUnitName: trimOrNull(r.screen_unit_name),
-      ...(sql.withSuspect
-        ? { suspectDate: hdcDateToIso(r.suspect_date) }
-        : {}),
+      ...(sql.withSuspect ? { suspectDate: hdcDateToIso(r.suspect_date) } : {}),
     };
   });
 }
 
-const MOCK_FIRST = ["สมชาย", "สมหญิง", "มานี", "มานะ", "ปิติ", "ชูใจ", "วีระ", "สุดา"];
+const MOCK_FIRST = [
+  "สมชาย",
+  "สมหญิง",
+  "มานี",
+  "มานะ",
+  "ปิติ",
+  "ชูใจ",
+  "วีระ",
+  "สุดา",
+];
 const MOCK_LAST = ["ตัวอย่าง", "ทดสอบ", "สมมติ", "จำลอง"];
 
 /** Fake people (KPI_DATA_SOURCE=mock) — clearly fictitious names. */
@@ -322,7 +354,9 @@ export async function mockHdcPersonsSource(
   const vids =
     scope.kind === "village"
       ? [scope.vid]
-      : [1, 2, 3].map((m) => `${scope.tambonCode}${String(m).padStart(2, "0")}`);
+      : [1, 2, 3].map(
+          (m) => `${scope.tambonCode}${String(m).padStart(2, "0")}`,
+        );
   const year = Number(ctx.periodStart.slice(0, 4));
   return vids.flatMap((vid, vi) =>
     Array.from({ length: 12 }, (_, i): HdcPersonRaw => {

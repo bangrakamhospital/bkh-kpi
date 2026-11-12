@@ -140,10 +140,11 @@ export function isDistrictCode(value: unknown): value is DistrictCode {
   return (DISTRICT_CODES as readonly unknown[]).includes(value);
 }
 
-/** Every district indicator in hospital-page order (ratio + CKD5). */
+/** Every district indicator in hospital-page order (ratio + CKD5 + STEMI). */
 export const DISTRICT_KPI_CODES: readonly DistrictKpiCode[] = [
   ...DISTRICT_CODES,
   "CKD5",
+  "STEMI",
 ];
 
 export function isDistrictKpiCode(value: unknown): value is DistrictKpiCode {

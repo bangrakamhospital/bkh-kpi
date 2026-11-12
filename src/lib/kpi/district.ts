@@ -27,6 +27,7 @@ import type {
   DistrictCkd5Result,
   DistrictKpiCode,
   DistrictKpiResult,
+  DistrictStemiResult,
   DistrictUnitStatus,
   DistrictCode,
   DistrictScreeningResult,
@@ -40,10 +41,13 @@ import {
 import {
   hisHdcCkd5Source,
   hisHdcDistrictSource,
+  hisHdcStemiSource,
   mockHdcCkd5Source,
   mockHdcDistrictSource,
+  mockHdcStemiSource,
   type HdcCkd5Raw,
   type HdcDistrictRaw,
+  type HdcStemiRaw,
   type HdcUnitFreshnessRaw,
 } from "./sources/district-hdc";
 import { previousYearComparable } from "./sql/hdc-ckd5";
@@ -358,13 +362,66 @@ export async function getDistrictCkd5(
   };
 }
 
+/* --------------------------------- STEMI --------------------------------- */
+
+async function loadStemiRaw(fiscalYear: number): Promise<HdcStemiRaw> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(SCREENING_CACHE_TAG, DISTRICT_CACHE_TAG);
+  const period = resolveScreeningPeriod(fiscalYear, new Date());
+  return resolveDataSourceKind() === "mock"
+    ? mockHdcStemiSource()
+    : hisHdcStemiSource({
+        periodStart: period.range.start,
+        dataAsOf: period.dataAsOf,
+      });
+}
+
 /**
- * Dispatcher for the district API / page.
+ * KPI 11 district total only. Callers MUST check the session first
+ * (route: requireSession) — small numbers can identify a patient.
+ */
+export async function getDistrictStemi(
+  fiscalYear: number,
+): Promise<DistrictStemiResult> {
+  await io();
+  const now = new Date();
+  const period = resolveScreeningPeriod(fiscalYear, now);
+  const meta = SCREENING_INDICATORS.STEMI;
+  const raw = await loadStemiRaw(period.fy);
+  return {
+    kind: "mortality",
+    code: "STEMI",
+    name: meta.name,
+    shortName: meta.shortName,
+    population: "ผู้ป่วย STEMI ที่มารับบริการที่หน่วยบริการในอำเภอ (ระดับอำเภอ)",
+    note: `${HDC_NOTE} / B = จำนวนครั้งการเจ็บป่วย STEMI (I21.0–I21.3) ที่รับไว้ ส่งต่อ เสียชีวิต มาโดย EMS หรือรับส่งต่อ / A = เสียชีวิตที่หน่วยบริการในอำเภอภายใน 28 วัน ไม่รวมเสียชีวิตหลังส่งต่อ / แสดงเฉพาะยอดรวมอำเภอ`,
+    targetPercent: screeningTargetPercent("STEMI", period.fy),
+    targetOperator: meta.targetOperator ?? "<",
+    fiscalYear: period.fy,
+    periodStart: period.range.start,
+    periodEnd: period.range.end,
+    dataAsOf: period.dataAsOf,
+    updatedAt: now.toISOString(),
+    district: {
+      code: DISTRICT_CODE,
+      name: DISTRICT_NAME,
+      episodes: raw.episodes,
+      deaths: raw.deaths,
+      percent: toPercent(raw.deaths, raw.episodes),
+    },
+  };
+}
+
+/**
+ * Dispatcher for the district API / page. STEMI requires a session check
+ * by the caller BEFORE calling this.
  */
 export async function getDistrictKpi(
   code: DistrictKpiCode,
   fiscalYear: number,
 ): Promise<DistrictKpiResult> {
   if (code === "CKD5") return getDistrictCkd5(fiscalYear);
+  if (code === "STEMI") return getDistrictStemi(fiscalYear);
   return getDistrictScreening(code, fiscalYear);
 }

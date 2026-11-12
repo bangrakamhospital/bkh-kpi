@@ -1,5 +1,5 @@
 /**
- * Screening indicator definitions (KPI 1–9; 5–9 = HDC 2.1/2.2, 11.3–11.5): display metadata, target
+ * Screening indicator definitions (KPI 1–9, 11; 5–9 = HDC 2.1/2.2, 11.3–11.5; 11 = STEMI mortality): display metadata, target
  * group, counting period and target. Pure data / functions, no I/O —
  * safe for server and client (UI may import labels from here).
  *
@@ -26,6 +26,7 @@ export const SCREENING_CODES = [
   "RLU_HBA1C",
   "RLU_LDL",
   "RLU_CR",
+  "STEMI",
 ] as const satisfies readonly RatioCode[];
 
 /** Reduction-kind indicators (lower is better), processed separately. */
@@ -189,18 +190,41 @@ export function screeningTargetPercent(
   return years.length > 0 ? byYear[years[0]] : meta.targetPercent;
 }
 
-/** true when `percent` meets the target under the operator (">=" or ">"). */
+/** true when LOWER values are better ("<" / "<=", e.g. STEMI mortality). */
+export function isLowerBetter(operator: TargetOperator): boolean {
+  return operator === "<" || operator === "<=";
+}
+
+/** true when `percent` meets the target under the operator. */
 export function meetsTarget(
   percent: number,
   targetPercent: number,
   operator: TargetOperator,
 ): boolean {
-  return operator === ">" ? percent > targetPercent : percent >= targetPercent;
+  switch (operator) {
+    case ">":
+      return percent > targetPercent;
+    case "<":
+      return percent < targetPercent;
+    case "<=":
+      return percent <= targetPercent;
+    default:
+      return percent >= targetPercent;
+  }
 }
 
-/** Sign for display: "≥" or ">". */
+/** Sign for display: "≥", ">", "<" or "≤". */
 export function targetOperatorSign(operator: TargetOperator): string {
-  return operator === ">" ? ">" : "≥";
+  switch (operator) {
+    case ">":
+      return ">";
+    case "<":
+      return "<";
+    case "<=":
+      return "≤";
+    default:
+      return "≥";
+  }
 }
 
 /**
@@ -383,6 +407,36 @@ export const SCREENING_INDICATORS: Record<RatioCode, ScreeningIndicatorMeta> =
     RLU_HBA1C: rluMeta("RLU_HBA1C", 7, "HbA1c", "ตรวจ HbA1c ผู้ป่วยเบาหวาน"),
     RLU_LDL: rluMeta("RLU_LDL", 8, "LDL", "ตรวจ LDL ผู้ป่วยเบาหวาน"),
     RLU_CR: rluMeta("RLU_CR", 9, "Creatinine", "ตรวจ Creatinine ผู้ป่วยเบาหวาน"),
+    // KPI 11: STEMI mortality (KPI Template 2569 no. 19). LOWER is better.
+    // docs/kpi/stemi-mortality.md. Unit = episode (the same hn can repeat).
+    STEMI: {
+      code: "STEMI",
+      no: 11,
+      name: "อัตราตายของผู้ป่วยโรคกล้ามเนื้อหัวใจตายเฉียบพลันชนิด STEMI",
+      shortName: "อัตราตายผู้ป่วย STEMI",
+      targetPercent: 9,
+      targetOperator: "<",
+      targetPercentByFiscalYear: { 2569: 9, 2570: 9 },
+      targetSourceFiscalYear: null,
+      targetSource: null,
+      population: "ผู้ป่วย STEMI ที่มารับบริการที่ รพ. (ระดับโรงพยาบาล)",
+      sex: "all",
+      thaiOnly: false,
+      minAge: 0,
+      maxAge: null,
+      ageRange: "ทุกอายุ",
+      denominatorFactor: 1,
+      period: { kind: "fiscalYear" },
+      statusLabels: {
+        screened: "เสียชีวิต",
+        notScreened: "รอดชีวิต",
+        summary: { done: "เสียชีวิต", pending: "รอดชีวิต" },
+        dateHeader: "วันที่เสียชีวิต",
+        targetHeader: "ผู้ป่วย STEMI",
+      },
+      note: "A = เสียชีวิตที่ รพ.บางระกำ ภายใน 28 วัน / ไม่รวมผู้ที่เสียชีวิตหลังส่งต่อ (ไม่มีข้อมูลใน HOSxP) / ตัวเลขน้อย 1 รายประมาณ 4%",
+      unknownVillageName: "นอกเขต/ไม่ระบุหมู่บ้าน",
+    },
   };
 
 /* ------------------------------ periods ---------------------------------- */

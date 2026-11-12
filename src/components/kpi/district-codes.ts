@@ -14,6 +14,7 @@ export const DISTRICT_ACCENT: Record<DistrictKpiCode, AccentKey> = {
   RLU_LDL: "ldl",
   RLU_CR: "creatinine",
   CKD5: "ckd5",
+  STEMI: "stemi",
 };
 
 /**
@@ -33,7 +34,7 @@ export const DISTRICT_CODE_GROUPS: readonly {
   { label: "คัดกรอง / ยืนยัน NCD", codes: ["DM", "HT", "DMC", "HTC"] },
   { label: "คัดกรองมะเร็ง", codes: ["CX", "BR"] },
   { label: "ผลตรวจผู้ป่วยเบาหวาน", codes: ["RLU_HBA1C", "RLU_LDL", "RLU_CR"] },
-  { label: "อื่น ๆ", codes: ["CKD5"] },
+  { label: "อื่น ๆ", codes: ["CKD5", "STEMI"] },
 ];
 
 /** RLU = lab test indicators (A = "ได้รับการตรวจ"). */

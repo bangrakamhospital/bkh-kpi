@@ -15,6 +15,7 @@ import {
 import {
   apportionTargetShare,
   CKD5_INDICATOR,
+  isLowerBetter,
   isReductionCode,
   SCREENING_INDICATORS,
   screeningCountWindow,
@@ -43,7 +44,7 @@ import { hisScreeningDetailSource } from "./sources/screening-his";
 import { mockScreeningDetailSource } from "./sources/screening-mock";
 
 /**
- * Screening detail (KPI 1–4): breakdown by village and the person list
+ * Screening detail (KPI 1–9, 11): breakdown by village and the person list
  * behind it. Uses the same period / cutoff / counting window / B / A
  * definitions as `getScreeningKpi`.
  *
@@ -103,7 +104,10 @@ function toVillageBreakdown(
     eligible: raw.eligible,
     denominator,
     numerator: raw.numerator,
-    percent: toPercent(raw.numerator, denominator),
+    // Mortality: per-village rate is not exposed (tiny numbers).
+    percent: isLowerBetter(SCREENING_INDICATORS[code].targetOperator ?? ">=")
+      ? 0
+      : toPercent(raw.numerator, denominator),
   };
 }
 
@@ -189,12 +193,22 @@ function compareStatusThenName(
   a: ScreeningPersonRaw,
   b: ScreeningPersonRaw,
 ): number {
+  // Mortality rows carry eventDate: deaths first, then by event date.
+  if (a.eventDate !== undefined || b.eventDate !== undefined) {
+    return (
+      (a.screenDate ? 0 : 1) - (b.screenDate ? 0 : 1) ||
+      (a.eventDate ?? "").localeCompare(b.eventDate ?? "") ||
+      thaiCollator.compare(a.sortName, b.sortName) ||
+      a.personId - b.personId
+    );
+  }
   const sa = a.screenDate ? 1 : 0;
   const sb = b.screenDate ? 1 : 0;
   return (
     sa - sb ||
     thaiCollator.compare(a.sortName, b.sortName) ||
-    a.personId - b.personId
+    a.personId - b.personId ||
+    (a.eventDate ?? "").localeCompare(b.eventDate ?? "")
   );
 }
 
@@ -215,6 +229,7 @@ function toScreeningPerson(raw: ScreeningPersonRaw): ScreeningPerson {
     screened: raw.screenDate !== null,
     screenDate: raw.screenDate,
     ...(raw.suspectDate !== undefined ? { suspectDate: raw.suspectDate } : {}),
+    ...(raw.eventDate !== undefined ? { eventDate: raw.eventDate } : {}),
   };
 }
 

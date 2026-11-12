@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { requireSession } from "@/lib/auth/guard";
 import {
   DISTRICT_KPI_CODES,
   getDistrictKpi,
@@ -14,8 +15,11 @@ const ROUTE = "api/kpi/district/screening";
 
 /**
  * GET /api/kpi/district/screening?code=<DistrictKpiCode>&fy=2569
- * -> 200 DistrictKpiResult (discriminated by `kind`: "ratio" | "reduction");
- *    aggregates only, HDC database only. Public (no person-level data).
+ * -> 200 DistrictKpiResult (discriminated by `kind`: "ratio" | "reduction"
+ *    | "mortality"); aggregates only, HDC database only.
+ * Ratio indicators and CKD5 are public. STEMI (district total, small
+ * numbers) requires login like the hospital villages / persons APIs:
+ * 401 without a valid session (checked before any data access).
  * fy: BE year in [2569 (first HDC year), current FY]; default current FY.
  * 400 invalid params, 500 when HDC cannot be queried.
  */
@@ -27,6 +31,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       400,
       `code ต้องเป็น ${DISTRICT_KPI_CODES.join(", ")} อย่างใดอย่างหนึ่ง`,
     );
+  }
+  if (code === "STEMI") {
+    const auth = await requireSession(ROUTE);
+    if (!auth.ok) return auth.response;
   }
   const currentFy = currentFiscalYear(new Date());
   const fyRaw = params.get("fy");
@@ -47,7 +55,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     const body: DistrictKpiResult = await getDistrictKpi(code, fy);
     return Response.json(body, {
       headers: {
-        "Cache-Control": "private, max-age=0, must-revalidate",
+        "Cache-Control":
+          code === "STEMI"
+            ? "private, no-store"
+            : "private, max-age=0, must-revalidate",
       },
     });
   } catch (err) {

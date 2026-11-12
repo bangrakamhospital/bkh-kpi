@@ -5,7 +5,7 @@ interface Props {
   fiscalYear: number;
   minYear: number;
   maxYear: number;
-  /** สร้าง href ของปีงบที่เลือก (ค่าเริ่มต้น: `/?fy=ปี`) */
+  /** สร้าง href ของปีงบที่เลือก (ค่าเริ่มต้น: `/hospital?fy=ปี`) */
   buildHref?: (fiscalYear: number) => string;
 }
 
@@ -18,7 +18,7 @@ export function FiscalYearSelect({
   fiscalYear,
   minYear,
   maxYear,
-  buildHref = (fy) => `/?fy=${fy}`,
+  buildHref = (fy) => `/hospital?fy=${fy}`,
 }: Props) {
   const hasPrev = fiscalYear > minYear;
   const hasNext = fiscalYear < maxYear;

@@ -15,7 +15,8 @@ const MAX_AGE_MS = 10 * 60 * 1000;
 
 export type PendingAction =
   | { kind: "persons"; village: VillageBreakdown }
-  | { kind: "export"; villageId: number | null };
+  | { kind: "export"; villageId: number | null }
+  | { kind: "villages" };
 
 interface Stored {
   v: 1;
@@ -88,6 +89,7 @@ export function peekPendingLogin(
     if (a?.kind === "persons" && validVillage((a as { village?: unknown }).village)) {
       return { kind: "persons", village: (a as { village: VillageBreakdown }).village };
     }
+    if (a?.kind === "villages") return { kind: "villages" };
     if (a?.kind === "export") {
       const id = (a as { villageId?: unknown }).villageId;
       if (id === null || (isNum(id) && id >= 0)) return { kind: "export", villageId: id };

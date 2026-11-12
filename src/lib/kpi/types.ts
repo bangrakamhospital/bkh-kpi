@@ -12,6 +12,8 @@
  * patients with >= 1 HbA1c / LDL / creatinine result per fiscal year.
  * DMC / HTC = HDC 2.1 / 2.2: % of suspected DM / HT (from screening) with a
  * confirmation test after the suspect screening.
+ * STEMI = KPI 11 STEMI mortality (hospital level, A = deaths, B = STEMI
+ * episodes, LOWER is better, target < 9%).
  * Display order: SCREENING_CODES in `@/lib/kpi/screening-indicators`.
  */
 export type RatioCode =
@@ -23,7 +25,8 @@ export type RatioCode =
   | "RLU_LDL"
   | "RLU_CR"
   | "DMC"
-  | "HTC";
+  | "HTC"
+  | "STEMI";
 
 /**
  * CKD5 = KPI 10: % reduction of new CKD stage 5 patients vs the previous
@@ -34,7 +37,8 @@ export type ReductionCode = "CKD5";
 /** Every indicator code (home table rows, department filter, detail APIs). */
 export type ScreeningCode = RatioCode | ReductionCode;
 
-export type TargetOperator = ">=" | ">";
+/** ">=" / ">" = higher is better; "<" / "<=" = lower is better (STEMI). */
+export type TargetOperator = ">=" | ">" | "<" | "<=";
 
 export type KpiDataSource = "mock" | "his";
 
@@ -46,6 +50,11 @@ export interface ScreeningMonthly {
    * within the counting window, see ScreeningIndicator.countFrom).
    */
   screened: number;
+  /**
+   * STEMI only: B (episodes) starting in this month; absent for the other
+   * indicators.
+   */
+  eligible?: number;
   /**
    * (priorNumerator + screened from Oct through this month) / B * 100
    * (2 decimals). For fiscal-year indicators priorNumerator is 0.
@@ -226,6 +235,12 @@ export interface ScreeningPerson {
    * is then the confirmation date). Absent for the other indicators.
    */
   suspectDate?: string | null;
+  /**
+   * STEMI only: "YYYY-MM-DD" the episode started (screenDate is then the
+   * death date at this hospital, null = survived). One row per episode: the
+   * same hn may appear more than once.
+   */
+  eventDate?: string | null;
 }
 
 /* ---------------- district level (อ.บางระกำ, aggregates only) ---------------- */
@@ -233,8 +248,8 @@ export interface ScreeningPerson {
 /**
  * Ratio indicators of the district page (HDC only, per sub-district):
  * DM / HT = KPI 1–2, CX / BR = KPI 3–4, DMC / HTC = HDC 2.1 / 2.2,
- * RLU_* = HDC 11.3–11.5. CKD5 has its own result shape
- * (DistrictCkd5Result), see DistrictKpiCode.
+ * RLU_* = HDC 11.3–11.5. CKD5 / STEMI have their own result shapes
+ * (DistrictCkd5Result / DistrictStemiResult), see DistrictKpiCode.
  */
 export type DistrictCode =
   | "DM"
@@ -331,8 +346,8 @@ export interface DistrictScreeningResult {
   tambons: DistrictTambonRow[];
 }
 
-/** Every indicator of the district page (ratio + CKD5). */
-export type DistrictKpiCode = DistrictCode | "CKD5";
+/** Every indicator of the district page (ratio + CKD5 + STEMI). */
+export type DistrictKpiCode = DistrictCode | "CKD5" | "STEMI";
 
 /** Fields shared by every district result. */
 interface DistrictResultBase {
@@ -394,8 +409,30 @@ export interface DistrictCkd5Result extends DistrictResultBase {
   tambons: DistrictCkd5TambonRow[];
 }
 
+/**
+ * KPI 11 STEMI mortality (lower is better), district total only — small
+ * numbers, the API requires login (401 otherwise).
+ */
+export interface DistrictStemiResult extends DistrictResultBase {
+  kind: "mortality";
+  code: "STEMI";
+  district: {
+    code: string;
+    name: string;
+    /** B: STEMI episodes. */
+    episodes: number;
+    /** A: deaths at a district unit within 28 days. */
+    deaths: number;
+    /** A / B × 100 (2 decimals); 0 when B is 0. */
+    percent: number;
+  };
+}
+
 /** GET /api/kpi/district/screening response, discriminated by `kind`. */
-export type DistrictKpiResult = DistrictScreeningResult | DistrictCkd5Result;
+export type DistrictKpiResult =
+  | DistrictScreeningResult
+  | DistrictCkd5Result
+  | DistrictStemiResult;
 
 /* ---------------- district person list (HDC, login required) ---------------- */
 
@@ -405,7 +442,7 @@ export type DistrictKpiResult = DistrictScreeningResult | DistrictCkd5Result;
  * (login required, `Cache-Control: private, no-store`) and the district
  * Excel export. Never embed in pages, shared caches, or logs.
  * Deliberately excludes CID (hashed or not), pid, phone, address.
- * Ratio codes only (DistrictCode) — no person list for CKD5.
+ * Ratio codes only (DistrictCode) — no person list for CKD5 / STEMI.
  */
 export interface DistrictPerson {
   /** Opaque row key, stable within one response (React key); not an identifier. */

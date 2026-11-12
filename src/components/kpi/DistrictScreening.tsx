@@ -8,6 +8,10 @@ import {
   isDistrictKpiCode,
 } from "@/lib/kpi/district-areas";
 import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
+import {
+  CKD5_INDICATOR,
+  SCREENING_INDICATORS,
+} from "@/lib/kpi/screening-indicators";
 import type {
   DistrictCkd5Result,
   DistrictKpiCode,
@@ -16,6 +20,7 @@ import type {
 import { FiscalYearSelect } from "./FiscalYearSelect";
 import { DistrictCkd5Table } from "./DistrictCkd5Table";
 import { DistrictScreeningTable } from "./DistrictScreeningTable";
+import { DistrictStemiPanel } from "./DistrictStemiPanel";
 import { ACCENTS } from "./indicator-theme";
 import {
   DISTRICT_ACCENT,
@@ -67,6 +72,10 @@ function AlertBox({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function indicatorName(code: DistrictKpiCode): string {
+  return code === "CKD5" ? CKD5_INDICATOR.name : SCREENING_INDICATORS[code].name;
 }
 
 export async function DistrictScreening({
@@ -148,6 +157,16 @@ export async function DistrictScreening({
       {selectors(fy)}
     </div>
   );
+
+  // STEMI: login-only API, loaded client-side (no data in the HTML).
+  if (code === "STEMI") {
+    return (
+      <div className="space-y-4">
+        {header(indicatorName(code), parsedFy.year, null)}
+        <DistrictStemiPanel fiscalYear={parsedFy.year} />
+      </div>
+    );
+  }
 
   let result: DistrictScreeningResult | DistrictCkd5Result;
   try {

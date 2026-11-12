@@ -35,7 +35,7 @@ export interface ScreeningRawIndicator {
    */
   priorScreened: number;
   /** A broken down by month of first screening; one entry per query month (0 allowed). */
-  monthlyScreened: { month: string; screened: number }[];
+  monthlyScreened: { month: string; screened: number; eligible?: number }[];
 }
 
 /** Loads one indicator. Rejects on any error (handled per indicator by the caller). */
@@ -79,6 +79,8 @@ export interface ScreeningPersonRaw {
   screenDate: string | null;
   /** HDC 2.1 / 2.2 only: "YYYY-MM-DD" of the first suspect screening. */
   suspectDate?: string | null;
+  /** STEMI only: "YYYY-MM-DD" the episode started. */
+  eventDate?: string | null;
 }
 
 export type ScreeningPersonFilter =

@@ -10,7 +10,7 @@ import { isAuthConfigured } from "@/lib/auth/settings";
 
 /**
  * Page-view audit for logged-in users, called from <PageViewAudit> (a
- * dynamic hole inside <Suspense>) of /, /district and /admin/*.
+ * dynamic hole inside <Suspense>) of /, /hospital, /district and /admin/*.
  *
  * Why there and not in proxy.ts: with Cache Components + Partial
  * Prefetching a <Link> prefetch only downloads the static App Shell, so a
@@ -30,6 +30,10 @@ const MAX_KEYS = 2000;
 const QUERY_ALLOW: Record<string, RegExp> = {
   fy: /^\d{4}$/,
   code: /^[A-Za-z0-9_.:-]{1,40}$/,
+  // "/" service overview range picker
+  preset: /^[a-z0-9]{1,10}$/,
+  from: /^\d{4}-\d{2}-\d{2}$/,
+  to: /^\d{4}-\d{2}-\d{2}$/,
 };
 
 type SearchParams = Record<string, string | string[] | undefined>;

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, MapPinned } from "lucide-react";
+import { Building2, MapPinned, Users } from "lucide-react";
 
 const TABS = [
-  { href: "/", label: "ตัวชี้วัดในโรงพยาบาล", Icon: Building2 },
+  { href: "/", label: "ผู้รับบริการ", Icon: Users },
+  { href: "/hospital", label: "ตัวชี้วัดในโรงพยาบาล", Icon: Building2 },
   { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ", Icon: MapPinned },
 ] as const;
 

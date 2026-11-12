@@ -6,6 +6,7 @@ import type { ScreeningSqlSet } from "./screening-common";
 import { DM_CONFIRM_SQL, HT_CONFIRM_SQL } from "./hdc-confirm-hosxp";
 import { RLU_CR_SQL, RLU_HBA1C_SQL, RLU_LDL_SQL } from "./hdc-rlu-hosxp";
 import { DM_SQL, HT_SQL } from "./screening-hosxp";
+import { STEMI_SQL } from "./stemi-hosxp";
 
 /**
  * All screening SQL sets by indicator code. To add an indicator (e.g. BSE,
@@ -22,4 +23,5 @@ export const SCREENING_SQL: Record<RatioCode, ScreeningSqlSet> = {
   RLU_HBA1C: RLU_HBA1C_SQL,
   RLU_LDL: RLU_LDL_SQL,
   RLU_CR: RLU_CR_SQL,
+  STEMI: STEMI_SQL,
 };

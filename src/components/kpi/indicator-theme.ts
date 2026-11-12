@@ -22,7 +22,8 @@ export type AccentKey =
   | "hba1c"
   | "ldl"
   | "creatinine"
-  | "ckd5";
+  | "ckd5"
+  | "stemi";
 
 interface AccentTheme {
   Icon: LucideIcon;
@@ -194,5 +195,19 @@ export const ACCENTS: Record<AccentKey, AccentTheme> = {
     pill: "bg-cyan-700 text-white hover:bg-cyan-800 focus-visible:outline-cyan-600 dark:bg-cyan-400 dark:text-cyan-950 dark:hover:bg-cyan-300",
     focus: "focus:border-cyan-600 focus:outline-2 focus:outline-cyan-600",
     text: "text-cyan-800 dark:text-cyan-300",
+  },
+  stemi: {
+    Icon: HeartPulse,
+    iconBg: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+    bar: "bg-red-600 dark:bg-red-400",
+    band: "from-red-700 to-red-900",
+    soft: "bg-red-50 dark:bg-red-950/40",
+    thead: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
+    footer: "bg-red-200 text-red-950 dark:bg-red-900 dark:text-red-50",
+    rowHover: "hover:bg-red-50 dark:hover:bg-red-950/50",
+    badge: "bg-red-700 text-white dark:bg-red-400 dark:text-red-950",
+    pill: "bg-red-700 text-white hover:bg-red-800 focus-visible:outline-red-600 dark:bg-red-400 dark:text-red-950 dark:hover:bg-red-300",
+    focus: "focus:border-red-600 focus:outline-2 focus:outline-red-600",
+    text: "text-red-800 dark:text-red-300",
   },
 };
