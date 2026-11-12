@@ -95,3 +95,65 @@ Today's ageSex sums to 419; FY ageSex sums to 15,864 (= patients). Today's
 pttypes: UC 347, OFC 28, SSS 25, LGO 8, CSH 8, INS 2, GOV 1 (7 groups).
 The screenshot's 400 / ER 8 were taken earlier in the day (visits still
 arriving; 8 of today's 15 ER registrations were before 08:00).
+
+## 10 อันดับกลุ่มโรค (`diseaseGroups`)
+
+Component: `src/components/kpi/overview/DiseaseGroupTop.tsx` (two cards,
+OPD | IPD, side by side on `lg`, stacked on mobile). SQL:
+`OVERVIEW_SQL.diseaseGroupsOpd` / `diseaseGroupsIpd`. Uses the page range
+(`from..to`); no previous-period comparison.
+
+**Grouping = MOPH standard groups as configured in HOSxP** (checked with
+db-cli 2026-11-12):
+
+- OPD: **รง.504, 21 groups** — `rpt_504_name` (21 rows, Thai `name1`) +
+  `rpt_504_code` (36 ICD-10 ranges `code1..code2`).
+- IPD: **รง.505, 75 groups** — `rpt_505_name` (75 rows) + `rpt_505_code`
+  (112 ranges).
+- No range overlaps (0 `icd101` codes match >1 group in either table).
+- `vn_stat.gr504` / `an_stat.gr504` exist but are never filled here (all
+  NULL), so the mapping is done in SQL: `code BETWEEN code1 AND code2`.
+- `rpt_505_name` fixes applied in TS (`NAME_505_FIXES`): group 14 (CA
+  Cervix) carries group 13's Thai name ("เต้านม") → "เนื้องอกร้ายที่ปากมดลูก";
+  group 17 typo → "ความผิดปกติของต่อมไทรอยด์".
+
+| | OPD | IPD |
+|---|---|---|
+| unit | visit (`ovst.vn`), ครั้ง | discharged admission (`ipt.an`), ครั้ง |
+| date basis | `ovst.vstdate` in range (same universe as `opdVisits`) | **`ipt.dchdate` in range** — รง.505 is a discharge report and the diagnosis is final only at discharge. Differs from the `admitNew` card (regdate). All wards incl. home ward (same as `admitNew`) |
+| diagnosis | principal dx `vn_stat.pdx` (= `ovstdiag` diagtype `1`; identical for 100 % of Oct 2026 visits) | principal dx `an_stat.pdx` (= `iptdiag` diagtype `1`; identical for 100 % of Oct 2026 discharges) |
+| injuries | pdx S/T → classified by the external cause `MIN(ovstdiag.icd10)` with diagtype `5` (groups 19–21 are V01–Y89) | same with `iptdiag` diagtype `5` (groups 68–75) |
+
+Counted per visit / per admission (not distinct persons). One group per
+visit (principal dx only — secondary diagnoses are not counted).
+
+**Not classified** (excluded from the ranking and from the % denominator,
+shown as a note under each card):
+
+- `unclassified`: a principal dx that fits no range — **Z codes** (factors
+  influencing health status: check-ups, vaccination, NCD follow-up
+  Z00–Z99; ~42 % of OPD visits), U codes, injuries without an external
+  cause. IPD (HOSxP's 505 table) additionally has no range for malignant
+  neoplasms other than liver/lung/breast/cervix and K64–K67. Excluding Z
+  is standard: neither 504 nor 505 has a Z group.
+- `uncoded`: principal dx still empty (OPD visits in progress today;
+  discharges not yet coded — 101 of the 1–12 Nov 2026 discharges).
+
+ร้อยละ (UI) = group count / `classified` (sum of all groups), not / all
+visits. Badge = `classified`.
+
+Performance (EXPLAIN, Oct 2026): `ovst` range on `ix_vstdate_curdep` +
+`vn_stat` eq_ref; external-cause lookup is a dependent subquery on
+`ovstdiag.vn`, evaluated for S/T rows only. OPD ~0.3 s / month,
+~3.4 s / 366 days (a derived `ovstdiag`-by-`vstdate` table was ~10×
+slower). IPD: `ipt` range on `dchdate` + `an_stat` eq_ref, ~40 ms / month.
+
+Verified figures (db-cli 2026-11-12), Oct 2026 (1–31):
+
+- OPD 18,409 visits = 10,562 classified + 7,847 unclassified (Z 7,820,
+  U 27) + 0 uncoded. Top: 9 โรคระบบไหลเวียนเลือด 1,906; 4 ต่อมไร้ท่อฯ 1,756;
+  11 ระบบย่อยอาหาร 1,384; 13 กล้ามเนื้อฯ 1,056; 18 อาการ/อาการแสดง 671.
+- IPD 704 discharges = 687 classified + 17 unclassified (Z 12, other
+  cancers 5). Top: 21 ความผิดปกติจากสารออกฤทธิ์ (F10–F19) 98; 67 อาการ
+  (R00–R99) 84; 22 จิตเภท (F20–F29) 47. 139 of the 704 are home ward
+  (121 F-codes), which drives the F groups.

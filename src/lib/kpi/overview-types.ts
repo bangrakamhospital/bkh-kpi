@@ -64,6 +64,35 @@ export interface AgeSexBand {
   female: number;
 }
 
+export interface DiseaseGroupCount {
+  /** MOPH group number as text: "1".."21" (รง.504) or "1".."75" (รง.505) */
+  code: string;
+  /** Thai group name */
+  name: string;
+  /** ICD-10 ranges of the group, e.g. "J00-J99" or "O00-O79, O85-O99" */
+  icd: string;
+  /** OPD: visits (ครั้ง); IPD: discharged admissions (ครั้ง) */
+  count: number;
+}
+
+export interface DiseaseGroupRanking {
+  /** every group with count > 0, sorted by count desc (UI shows top 10) */
+  groups: DiseaseGroupCount[];
+  /** sum of `groups` — the denominator of the UI's ร้อยละ */
+  classified: number;
+  /** visits/discharges with a principal dx that fits no group (Z, U, ...) */
+  unclassified: number;
+  /** visits/discharges with no principal dx yet (not yet coded) */
+  uncoded: number;
+}
+
+export interface DiseaseGroups {
+  /** OPD visits (ovst.vstdate in range) by รง.504 group */
+  opd: DiseaseGroupRanking;
+  /** discharges (ipt.dchdate in range) by รง.505 group */
+  ipd: DiseaseGroupRanking;
+}
+
 export interface ServiceOverview {
   range: OverviewRange;
   cards: OverviewCards;
@@ -72,4 +101,5 @@ export interface ServiceOverview {
   departments: NamedCount[]; // all departments, sorted by visits desc (UI groups top 15 + "อื่นๆ")
   pttypes: NamedCount[]; // insurance/right groups, sorted by visits desc
   ageSex: AgeSexBand[]; // distinct patients in range, bands young→old
+  diseaseGroups: DiseaseGroups;
 }
