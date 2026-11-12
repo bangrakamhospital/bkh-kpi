@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { loginErrorMessage } from "@/lib/auth/messages";
+import { isLoginRequiredPath } from "@/lib/auth/protected-paths";
 import { safeCallbackPath } from "@/lib/auth/redirect";
 import { useAuth } from "./AuthProvider";
 import { SsoLogin } from "./SsoLogin";
@@ -17,6 +18,9 @@ export function LoginPageClient() {
   const rawCallback = searchParams.get("callbackUrl");
   // Render-safe (path only); absolute same-origin URLs are resolved on submit.
   const next = safeCallbackPath(rawCallback);
+  // Login-required target (/hospital, /pp): "back without login" would only
+  // bounce back here, so offer the public home page instead.
+  const nextRequiresLogin = isLoginRequiredPath(next.split(/[?#]/)[0]);
   const authError = searchParams.get("error");
   const initialError = authError
     ? loginErrorMessage(authError, searchParams.get("code"))
@@ -44,11 +48,20 @@ export function LoginPageClient() {
     <div className="flex w-full flex-col items-center gap-4">
       <SsoLogin
         callbackUrl={next}
-        description="เข้าสู่ระบบด้วย Provider ID เพื่อดูรายชื่อและดาวน์โหลด Excel"
+        description={
+          nextRequiresLogin
+            ? "หน้านี้สำหรับเจ้าหน้าที่ กรุณาเข้าสู่ระบบด้วย Provider ID"
+            : "เข้าสู่ระบบด้วย Provider ID เพื่อดูรายชื่อและดาวน์โหลด Excel"
+        }
         error={initialError}
       />
-      <Link href={next} className="text-xs text-brand-700 underline-offset-2 hover:underline dark:text-brand-300">
-        กลับไปหน้าเดิมโดยไม่เข้าสู่ระบบ
+      <Link
+        href={nextRequiresLogin ? "/" : next}
+        className="text-xs text-brand-700 underline-offset-2 hover:underline dark:text-brand-300"
+      >
+        {nextRequiresLogin
+          ? "กลับหน้าแรกโดยไม่เข้าสู่ระบบ"
+          : "กลับไปหน้าเดิมโดยไม่เข้าสู่ระบบ"}
       </Link>
     </div>
   );

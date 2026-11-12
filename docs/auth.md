@@ -1,14 +1,15 @@
 # การเข้าสู่ระบบ (Authentication)
 
-หลักการ: **ตัวเลขสรุปดูได้ทุกคน ส่วนรายชื่อผู้รับบริการต้องเข้าสู่ระบบก่อน**
+หลักการ: **หน้า `/` และ `/district` ดูตัวเลขสรุปได้ทุกคน ส่วนหน้า `/hospital`, `/pp` และรายชื่อผู้รับบริการต้องเข้าสู่ระบบ (บัญชี `approved`) ก่อน**
 
 การเข้าสู่ระบบใช้ **SSO ผ่าน PLK Health ID / MOPH Provider ID (OpenID Connect) อย่างเดียว** หน้าเว็บไม่มีฟอร์มชื่อผู้ใช้/รหัสผ่านแล้ว
 การล็อกอินด้วยรหัสผ่าน (Credentials) เปิดได้เฉพาะกรณีฉุกเฉินด้วย `AUTH_PASSWORD_LOGIN=true` และใช้ได้ผ่าน API เท่านั้น (ดูหัวข้อ "ทดสอบด้วย curl")
 
 | Route | สิทธิ์ |
 | --- | --- |
-| `/` หน้าแรก, ตารางตัวชี้วัด | สาธารณะ |
-| `GET /api/kpi/screening/villages` (ตัวเลขรายหมู่) | สาธารณะ |
+| `/` (ผู้รับบริการ), `/district` (ตัวชี้วัดทั้งอำเภอ) | สาธารณะ |
+| `/hospital` (ตัวชี้วัดในโรงพยาบาล), `/pp` (PP / รายได้คัดกรอง) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ไม่ผ่าน -> 307 `/login?callbackUrl=<path?query>` |
+| `GET /api/kpi/screening/villages` (ตัวเลขรายหมู่ ของหน้า `/hospital`) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ทุกรหัสตัวชี้วัด |
 | `GET /api/kpi/screening/persons` (รายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
 | `GET /api/kpi/screening/export` (Excel มีชีตรายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
 | `GET /api/departments` (รายการแผนกสำหรับกรองหน้าแรก) | สาธารณะ |
@@ -18,7 +19,14 @@
 | `/login` หน้าเข้าสู่ระบบ | สาธารณะ |
 
 ถ้าไม่ได้ล็อกอิน route ที่ต้องล็อกอินจะตอบ `401 { "error": "กรุณาเข้าสู่ระบบ" }` และ `Cache-Control: private, no-store`
-การตรวจสิทธิ์อยู่ใน route handler เอง (`requireSession()` ใน `src/lib/auth/guard.ts` ซึ่งเรียก `auth()` ของ Auth.js) ไม่ได้ใช้ proxy/middleware
+การตรวจสิทธิ์ของ API อยู่ใน route handler เอง (`requireSession()` ใน `src/lib/auth/guard.ts` ซึ่งเรียก `auth()` ของ Auth.js) proxy ไม่ครอบ `/api/*`
+
+หน้าที่ต้องล็อกอินกำหนดไว้ที่เดียวใน `src/lib/auth/protected-paths.ts` (`LOGIN_REQUIRED_PAGES`) และตรวจ 2 ชั้น:
+
+1. `src/proxy.ts` (Proxy ของ Next.js 16 = middleware เดิม, Node.js runtime) เรียก `auth()` ซึ่ง callback `jwt` ตรวจไฟล์ผู้ใช้ซ้ำ ถ้าไม่มี session หรือบัญชีไม่ `approved` -> 307 ไป `/login?callbackUrl=...` (ใช้ `X-Forwarded-Host` / `X-Forwarded-Proto` เมื่ออยู่หลัง nginx และ Next.js แปลงเป็น Location แบบ relative เมื่อ host ตรงกับ request) `config.matcher` ต้องตรงกับ `LOGIN_REQUIRED_PAGES` (matcher ต้องเป็นค่าคงที่) `/login`, `/auth/callback`, `/api/auth/*` ไม่อยู่ใน matcher จึงเป็นสาธารณะ
+2. `<RequireLogin>` (`src/components/auth/RequireLogin.tsx`) ครอบ component ข้อมูลของหน้าภายใน `<Suspense>` เรียก `hasApprovedSession()` ก่อน render ข้อมูล ถ้าไม่ผ่านจะ `redirect()` (stream redirect ฝั่ง client) โดยไม่ render component ข้อมูล การตรวจอยู่นอก `"use cache"` ฟังก์ชันข้อมูลที่ cache ไว้จึงยังใช้ร่วมกันได้
+
+ถ้า session หมด/ออกจากระบบขณะอยู่บนหน้าที่ต้องล็อกอิน `HeaderAuth` จะพาไป `/login` (UI เท่านั้น) และหน้า `/login` จะเปลี่ยนลิงก์ "กลับโดยไม่เข้าสู่ระบบ" เป็นหน้าแรก (กันการเด้งกลับ)
 
 ## SSO: PLK Health ID / Provider ID
 

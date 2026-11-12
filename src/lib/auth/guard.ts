@@ -63,6 +63,22 @@ export async function requireSession(
 }
 
 /**
+ * Page gate (server components, see components/auth/RequireLogin.tsx):
+ * same rule as requireSession() — configured auth, valid session, account
+ * still approved in the user store. Fails closed (store error -> false).
+ * Must run at request time and OUTSIDE any "use cache" scope (reads the
+ * session cookie via auth()).
+ */
+export async function hasApprovedSession(): Promise<boolean> {
+  await connection();
+  if (!isAuthConfigured()) return false;
+  const user = sessionUser(await auth());
+  if (!user) return false;
+  const access = await resolveAccess(user.username, user.provider);
+  return access.ok;
+}
+
+/**
  * Gate for /api/admin/*: requireSession + current role "admin"
  * (403 { error: "เฉพาะผู้ดูแลระบบเท่านั้น" } otherwise).
  */
