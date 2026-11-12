@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { auditDataAccess } from "@/lib/auth/audit";
+import { requestMeta } from "@/lib/auth/request";
 import { requireSession } from "@/lib/auth/guard";
 import { buildDistrictPersonsWorkbook } from "@/lib/kpi/district-excel";
 import {
@@ -37,14 +38,18 @@ export async function GET(request: NextRequest): Promise<Response> {
     const { code, fiscalYear, scope } = parsed.value;
     const data = await getDistrictPersons(code, fiscalYear, scope);
     const buffer = await buildDistrictPersonsWorkbook(data);
-    auditDataAccess({
-      action: "export",
-      loginname: auth.user.username,
-      code: `district:${code}`,
-      fiscalYear,
-      villageId: scopeLabel(scope),
-      rows: data.persons.length,
-    });
+    auditDataAccess(
+      {
+        action: "export",
+        loginname: auth.user.username,
+        name: auth.user.name,
+        code: `district:${code}`,
+        fiscalYear,
+        villageId: scopeLabel(scope),
+        rows: data.persons.length,
+      },
+      requestMeta(request.headers),
+    );
     // ASCII only, from validated values (code from a fixed list, digits).
     const filename = `kpi-district-${code}-${fiscalYear}-${scopeLabel(scope)}.xlsx`;
     return new Response(new Uint8Array(buffer), {

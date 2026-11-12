@@ -51,6 +51,11 @@ fi
 for k in HIS_HOST HIS_USER HIS_PASSWORD HIS_DATABASE AUTH_SECRET; do
   if ! grep -Eq "^$k=.+" .env; then echo "Missing $k in $APP_DIR/.env"; exit 1; fi
 done
+# District tab (/district) needs the HDC database (HIS_*2). Warn only:
+# the hospital page works without it.
+if ! grep -Eq "^HIS_HOST2=.+" .env; then
+  echo "WARNING: HIS_HOST2 is empty in $APP_DIR/.env - the district tab (/district) will not load data."
+fi
 
 # Local user store (data/users.json: approved users / admins). It is an
 # ignored untracked dir, so `git reset --hard` above keeps it. NEVER run

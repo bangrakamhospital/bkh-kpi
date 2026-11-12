@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { auditDataAccess } from "@/lib/auth/audit";
+import { requestMeta } from "@/lib/auth/request";
 import { requireSession } from "@/lib/auth/guard";
 import {
   DistrictAreaNotFoundError,
@@ -37,14 +38,18 @@ export async function GET(request: NextRequest): Promise<Response> {
   try {
     const { code, fiscalYear, scope } = parsed.value;
     const data = await getDistrictPersons(code, fiscalYear, scope);
-    auditDataAccess({
-      action: "persons",
-      loginname: auth.user.username,
-      code: `district:${code}`,
-      fiscalYear,
-      villageId: scopeLabel(scope),
-      rows: data.persons.length,
-    });
+    auditDataAccess(
+      {
+        action: "persons",
+        loginname: auth.user.username,
+        name: auth.user.name,
+        code: `district:${code}`,
+        fiscalYear,
+        villageId: scopeLabel(scope),
+        rows: data.persons.length,
+      },
+      requestMeta(request.headers),
+    );
     const body: DistrictPersonsResponse = {
       code: data.code,
       fiscalYear: data.fiscalYear,

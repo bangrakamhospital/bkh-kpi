@@ -4,7 +4,7 @@ import {
   adminMutationGate,
   readJsonBody,
 } from "@/lib/auth/admin-gate";
-import { authJson, clientIp } from "@/lib/auth/request";
+import { authJson, requestMeta } from "@/lib/auth/request";
 import {
   DEPARTMENT_MESSAGES,
   departmentStoreFailure,
@@ -58,9 +58,10 @@ export async function PATCH(request: Request, { params }: Ctx): Promise<Response
     auditDepartment({
       action: "department_update",
       actor: gate.admin.username,
+      actorName: gate.admin.name,
       id,
       name: result.department.name,
-      ip: clientIp(request.headers),
+      meta: requestMeta(request.headers),
     });
   }
   const body: DepartmentResponse = { department: result.department };
@@ -85,9 +86,10 @@ export async function DELETE(request: Request, { params }: Ctx): Promise<Respons
   auditDepartment({
     action: "department_delete",
     actor: gate.admin.username,
+    actorName: gate.admin.name,
     id,
     name: result.department.name,
-    ip: clientIp(request.headers),
+    meta: requestMeta(request.headers),
   });
   return authJson({ ok: true });
 }

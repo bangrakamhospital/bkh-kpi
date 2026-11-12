@@ -3,6 +3,7 @@ import Image from "next/image";
 import { ScreeningDashboard } from "@/components/kpi/ScreeningDashboard";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
+import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 
 export const metadata = {
@@ -36,6 +37,7 @@ export default function HospitalPage(props: PageProps<"/hospital">) {
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
+        <PageViewAudit path="/hospital" searchParams={props.searchParams} />
         <Suspense fallback={<DashboardSkeleton />}>
           <ScreeningDashboard searchParams={props.searchParams} />
         </Suspense>

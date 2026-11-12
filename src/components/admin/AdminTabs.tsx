@@ -1,12 +1,15 @@
 import Link from "next/link";
-import { Building2, UsersRound } from "lucide-react";
+import { Building2, ScrollText, UsersRound } from "lucide-react";
 
 const tabs = [
   { href: "/admin/users", key: "users", label: "ผู้ใช้งาน", Icon: UsersRound },
   { href: "/admin/departments", key: "departments", label: "แผนก", Icon: Building2 },
+  { href: "/admin/logs", key: "logs", label: "บันทึกการใช้งาน", Icon: ScrollText },
 ] as const;
 
-export function AdminTabs({ active }: { active: "users" | "departments" }) {
+export type AdminTabKey = (typeof tabs)[number]["key"];
+
+export function AdminTabs({ active }: { active: AdminTabKey }) {
   return (
     <nav aria-label="เมนูจัดการระบบ" className="mb-4 flex flex-wrap gap-2">
       {tabs.map(({ href, key, label, Icon }) => (

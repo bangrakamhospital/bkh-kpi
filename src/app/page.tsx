@@ -3,6 +3,7 @@ import Image from "next/image";
 import { ServiceOverview } from "@/components/kpi/overview/ServiceOverview";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
+import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 
 export const metadata = {
@@ -35,6 +36,7 @@ export default function Home(props: PageProps<"/">) {
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
+        <PageViewAudit path="/" searchParams={props.searchParams} />
         <Suspense fallback={<DashboardSkeleton />}>
           <ServiceOverview searchParams={props.searchParams} />
         </Suspense>

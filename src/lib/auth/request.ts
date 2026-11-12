@@ -30,6 +30,25 @@ export function clientIp(headers: Headers | null | undefined): string {
   return ip.slice(0, 64);
 }
 
+/** Client IP + user agent of a request, for the audit log. */
+export interface RequestMeta {
+  ip: string;
+  userAgent: string;
+}
+
+const MAX_USER_AGENT = 200;
+
+export function requestMeta(headers: Headers | null | undefined): RequestMeta {
+  const ua = headers?.get("user-agent") ?? "";
+  return {
+    ip: clientIp(headers),
+    userAgent: ua
+      .replace(/[\u0000-\u001f\u007f]+/g, " ")
+      .trim()
+      .slice(0, MAX_USER_AGENT),
+  };
+}
+
 /** Strip control chars / limit length before writing to logs. */
 export function logSafe(value: string, max = 64): string {
   return value.replace(/[\u0000-\u001f\u007f\s]+/g, "_").slice(0, max);
