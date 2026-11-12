@@ -12,6 +12,8 @@ import {
 import type {
   AgeSexBand,
   CountWithPrev,
+  DiseaseGroupCount,
+  DiseaseGroupRanking,
   HourlyVisit,
   NamedCount,
   OverviewRange,
@@ -139,6 +141,14 @@ interface PttypeRow extends RowDataPacket {
   hipdata_code: string;
   visits: number | string;
 }
+interface DiseaseGroupRow extends RowDataPacket {
+  group_id: number | string | null;
+  no_dx: number | string | null;
+  name_th: string | null;
+  ranges: string | null;
+  visits?: number | string;
+  admissions?: number | string;
+}
 interface AgeSexRow extends RowDataPacket {
   band: string;
   sex: string | null;
@@ -167,16 +177,27 @@ async function loadServiceOverview(
   const cur = { from, to };
   const prev = { from: prevFrom, to: prevTo };
 
-  const [curCards, prevCards, wardRows, hourRows, depRows, ptRows, asRows] =
-    await Promise.all([
-      query<CardsRow>(OVERVIEW_SQL.cards, cur),
-      query<CardsRow>(OVERVIEW_SQL.cards, prev),
-      query<WardRow>(OVERVIEW_SQL.wards),
-      query<HourRow>(OVERVIEW_SQL.hourly, cur),
-      query<DepRow>(OVERVIEW_SQL.departments, cur),
-      query<PttypeRow>(OVERVIEW_SQL.pttypes, cur),
-      query<AgeSexRow>(OVERVIEW_SQL.ageSex, cur),
-    ]);
+  const [
+    curCards,
+    prevCards,
+    wardRows,
+    hourRows,
+    depRows,
+    ptRows,
+    asRows,
+    dxOpdRows,
+    dxIpdRows,
+  ] = await Promise.all([
+    query<CardsRow>(OVERVIEW_SQL.cards, cur),
+    query<CardsRow>(OVERVIEW_SQL.cards, prev),
+    query<WardRow>(OVERVIEW_SQL.wards),
+    query<HourRow>(OVERVIEW_SQL.hourly, cur),
+    query<DepRow>(OVERVIEW_SQL.departments, cur),
+    query<PttypeRow>(OVERVIEW_SQL.pttypes, cur),
+    query<AgeSexRow>(OVERVIEW_SQL.ageSex, cur),
+    query<DiseaseGroupRow>(OVERVIEW_SQL.diseaseGroupsOpd, cur),
+    query<DiseaseGroupRow>(OVERVIEW_SQL.diseaseGroupsIpd, cur),
+  ]);
 
   const c = curCards[0];
   const p = prevCards[0];
@@ -205,6 +226,10 @@ async function loadServiceOverview(
     departments: toDepartments(depRows),
     pttypes: toPttypes(ptRows),
     ageSex: toAgeSex(asRows),
+    diseaseGroups: {
+      opd: toDiseaseRanking(dxOpdRows, (r) => r.visits),
+      ipd: toDiseaseRanking(dxIpdRows, (r) => r.admissions, NAME_505_FIXES),
+    },
   };
 }
 
@@ -292,4 +317,62 @@ function toAgeSex(rows: readonly AgeSexRow[]): AgeSexBand[] {
     // other / unknown sex is not shown (0 rows in FY2570 to date)
   }
   return [...out.values()];
+}
+
+/**
+ * Corrections to HOSxP's rpt_505_name.name1 at this site: group 14 (CA
+ * Cervix) carries group 13's Thai name, group 17 has a typo.
+ */
+const NAME_505_FIXES: Readonly<Record<string, string>> = {
+  "14": "เนื้องอกร้ายที่ปากมดลูก",
+  "17": "ความผิดปกติของต่อมไทรอยด์",
+};
+
+/** "Y85-Y85, Y86-Y89" -> "Y85, Y86-Y89" */
+function icdLabel(ranges: string | null): string {
+  return (ranges ?? "")
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((r) => {
+      const [a, b] = r.split("-");
+      return a === b ? a : r;
+    })
+    .join(", ");
+}
+
+function toDiseaseRanking(
+  rows: readonly DiseaseGroupRow[],
+  countOf: (r: DiseaseGroupRow) => unknown,
+  nameFixes: Readonly<Record<string, string>> = {},
+): DiseaseGroupRanking {
+  let unclassified = 0;
+  let uncoded = 0;
+  const groups: DiseaseGroupCount[] = [];
+  for (const r of rows) {
+    const count = num(countOf(r));
+    if (num(r.no_dx) === 1) {
+      uncoded += count;
+      continue;
+    }
+    if (r.group_id === null || r.group_id === undefined) {
+      unclassified += count;
+      continue;
+    }
+    if (count <= 0) continue;
+    const code = String(r.group_id);
+    groups.push({
+      code,
+      name: nameFixes[code] ?? (r.name_th?.trim() || `กลุ่ม ${code}`),
+      icd: icdLabel(r.ranges),
+      count,
+    });
+  }
+  groups.sort((a, b) => b.count - a.count || Number(a.code) - Number(b.code));
+  return {
+    groups,
+    classified: groups.reduce((s, g) => s + g.count, 0),
+    unclassified,
+    uncoded,
+  };
 }

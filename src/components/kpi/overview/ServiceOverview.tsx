@@ -7,6 +7,7 @@ import { HourlyChart } from "./HourlyChart";
 import { WardDonut } from "./WardDonut";
 import { DepartmentBars, PttypeBars } from "./CountBars";
 import { AgePyramid } from "./AgePyramid";
+import { DiseaseGroupTop } from "./DiseaseGroupTop";
 
 type Param = string | string[] | undefined;
 
@@ -56,6 +57,7 @@ export async function ServiceOverview({
         <DepartmentBars items={data.departments} />
         <PttypeBars items={data.pttypes} />
       </div>
+      <DiseaseGroupTop groups={data.diseaseGroups} />
       <AgePyramid bands={data.ageSex} />
     </div>
   );
