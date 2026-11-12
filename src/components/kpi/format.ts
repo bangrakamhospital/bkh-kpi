@@ -44,3 +44,12 @@ export function formatThaiMonthShort(month: string): string {
   const m = Number(month.slice(5, 7));
   return `${THAI_MONTHS_SHORT[m - 1]} ${String(year % 100).padStart(2, "0")}`;
 }
+
+const bahtFormat = new Intl.NumberFormat("th-TH", {
+  maximumFractionDigits: 0,
+});
+
+/** 12345.6 -> "฿12,346" */
+export function formatBaht(value: number): string {
+  return `฿${bahtFormat.format(value)}`;
+}
