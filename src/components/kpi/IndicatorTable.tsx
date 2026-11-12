@@ -507,6 +507,7 @@ export function IndicatorTable({
   const rows: SearchableRow[] = INDICATOR_ROWS.map((row) => ({
     no: row.no,
     code: row.code,
+    categoryId: row.categoryId,
     keywords: [
       `ข้อ ${row.no}`,
       row.title,
