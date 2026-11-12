@@ -4,6 +4,8 @@
 //   node .claude/skills/db-cli/scripts/query.mjs "SELECT ..." [--max-rows 50] [--json]
 //   node .claude/skills/db-cli/scripts/query.mjs --file path/to/query.sql
 // Connection: HIS_HOST / HIS_PORT / HIS_USER / HIS_PASSWORD / HIS_DATABASE from .env
+//   --conn 2 (or env HIS_CONN=2): use HIS_HOST2 / HIS_PORT2 / HIS_USER2 /
+//   HIS_PASSWORD2 / HIS_DATABASE2 instead (district HDC 43-file DB).
 // Safety: only SELECT / SHOW / DESCRIBE / DESC / EXPLAIN / WITH ... SELECT,
 //         single statement, READ ONLY session, row cap, PII + secret columns masked.
 import { readFileSync, existsSync } from "node:fs";
@@ -28,6 +30,7 @@ const has = (name) => {
 const asJson = has("--json");
 const maxRows = Math.min(Number(flag("--max-rows") ?? 50) || 50, 500);
 const file = flag("--file");
+const connArg = flag("--conn") ?? process.env.HIS_CONN ?? "1";
 let sql = file ? readFileSync(file, "utf8") : args.join(" ");
 sql = sql.trim().replace(/;\s*$/, "");
 
@@ -56,28 +59,34 @@ if (forbidden.test(stripped)) fail("statement contains a forbidden keyword (read
 // --- env -------------------------------------------------------------------
 const envPath = resolve(process.cwd(), ".env");
 if (existsSync(envPath)) process.loadEnvFile(envPath);
+if (connArg !== "1" && connArg !== "2") fail("--conn must be 1 (HOSxP) or 2 (HDC)");
+const sfx = connArg === "2" ? "2" : "";
+const env = (k) => process.env[`${k}${sfx}`];
 for (const k of ["HIS_HOST", "HIS_USER", "HIS_PASSWORD", "HIS_DATABASE"]) {
-  if (!process.env[k]) fail(`missing ${k} in .env (value is never printed)`);
+  if (!env(k)) fail(`missing ${k}${sfx} in .env (value is never printed)`);
 }
 
 // --- masking ---------------------------------------------------------------
 // Column names that identify a person or hold secrets: values are replaced.
 const MASK =
-  /^(cid|pid|card_?id|passport.*|p?name|fname|lname|mname|f?name_?eng|l?name_?eng|full_?name|patient_?name|.*_name_?th|tel.*|phone.*|mobile.*|.*telephone|addr.*|address.*|road|house_?no|moopart|email|line_?id|passweb|password.*|passwd|.*_pass|token.*|secret.*|hn_?name|father.*|mother.*|couple.*|spouse.*|informname|informaddr|informtel|contact.*)$/i;
+  /^(cid|pid|card_?id|passport.*|p?name|fname|lname|mname|f?name_?eng|l?name_?eng|full_?name|patient_?name|.*_name_?th|tel.*|phone.*|mobile.*|.*telephone|addr.*|address.*|road|house|house_?no|hn|moopart|email|line_?id|passweb|password.*|passwd|.*_pass|token.*|secret.*|hn_?name|father.*|mother.*|couple.*|spouse.*|informname|informaddr|informtel|contact.*)$/i;
 const isMasked = (col) => MASK.test(col) && !/^(.*_id|.*_code|.*_type.*)$/i.test(col);
 
-const conn = await mysql.createConnection({
-  host: process.env.HIS_HOST,
-  port: Number(process.env.HIS_PORT || 3306),
-  user: process.env.HIS_USER,
-  password: process.env.HIS_PASSWORD,
-  database: process.env.HIS_DATABASE,
-  charset: "utf8mb4_unicode_ci",
-  timezone: "+07:00",
-  dateStrings: true,
-  connectTimeout: 10000,
-  multipleStatements: false,
-});
+const conn = await mysql
+  .createConnection({
+    host: env("HIS_HOST"),
+    port: Number(env("HIS_PORT") || 3306),
+    user: env("HIS_USER"),
+    password: env("HIS_PASSWORD"),
+    database: env("HIS_DATABASE"),
+    charset: "utf8mb4_unicode_ci",
+    timezone: "+07:00",
+    dateStrings: true,
+    connectTimeout: 10000,
+    multipleStatements: false,
+  })
+  // Connection errors may contain the host name: report the driver code only.
+  .catch((e) => fail(`cannot connect (${e.code ?? "ERROR"}) — check HIS_*${sfx} in .env`));
 
 try {
   await conn.query("SET SESSION TRANSACTION READ ONLY");
@@ -107,7 +116,7 @@ try {
   }
 } catch (e) {
   // Never echo connection details; driver messages for SQL errors are safe to show.
-  fail(`${e.code ?? "ERROR"}: ${String(e.sqlMessage ?? e.message).replace(process.env.HIS_HOST ?? "\0", "<host>")}`);
+  fail(`${e.code ?? "ERROR"}: ${String(e.sqlMessage ?? e.message).replace(env("HIS_HOST") ?? "\0", "<host>")}`);
 } finally {
   await conn.end().catch(() => {});
 }

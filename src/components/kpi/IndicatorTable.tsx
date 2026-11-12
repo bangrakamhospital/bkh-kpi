@@ -16,6 +16,7 @@ import type {
 } from "@/lib/kpi/types";
 import {
   CKD5_INDICATOR,
+  isLowerBetter,
   isReductionCode,
   meetsTarget,
   SCREENING_INDICATORS,
@@ -113,10 +114,12 @@ export function IndicatorTable({
       meetsTarget(i.percent, i.targetPercent, i.targetOperator),
     ).length + reductionPassed;
   const belowCount = measuredCount - passedCount;
+  // ร้อยละเฉลี่ย: เฉพาะตัวที่ยิ่งสูงยิ่งดี (ข้อ 11 อัตราตาย ยิ่งต่ำยิ่งดี จึงไม่รวม)
+  const averaged = measured.filter((i) => !isLowerBetter(i.targetOperator));
   const avg =
-    measured.length > 0
-      ? measured.reduce((s, i) => s + Math.min(100, i.percent), 0) /
-        measured.length
+    averaged.length > 0
+      ? averaged.reduce((s, i) => s + Math.min(100, i.percent), 0) /
+        averaged.length
       : 0;
 
   function renderRow(row: IndicatorRowConfig) {
@@ -247,15 +250,27 @@ export function IndicatorTable({
                 meetsTarget(ind.percent, ind.targetPercent, ind.targetOperator);
               const StatusIcon = passed ? CheckCircle2 : XCircle;
               const meta = SCREENING_INDICATORS[row.code];
+              // อัตราตาย (ยิ่งต่ำยิ่งดี): แสดง A/B คู่กับร้อยละ ไม่มีแถบ progress
+              const lowerBetter = isLowerBetter(ind.targetOperator);
               return (
                 <tr key={row.no} className={rowClass}>
                   <td className="px-3 py-2.5 tabular-nums">{row.no}</td>
                   {titleCell}
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     {formatNumber(ind.denominator)}
+                    {lowerBetter && (
+                      <span className="block text-xs text-zinc-600 dark:text-zinc-400">
+                        {meta.statusLabels.targetHeader}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     {formatNumber(ind.numerator)}
+                    {lowerBetter && (
+                      <span className="block text-xs text-zinc-600 dark:text-zinc-400">
+                        {meta.statusLabels.summary?.done}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
@@ -279,14 +294,23 @@ export function IndicatorTable({
                         {noTarget ? "ยังไม่มีกลุ่มเป้าหมาย" : passed ? "ผ่าน" : "ไม่ผ่าน"}
                       </span>
                     </div>
-                    <div className="mt-2">
-                      <ProgressBar
-                        percent={ind.percent}
-                        targetPercent={ind.targetPercent}
-                        barClass={accent.bar}
-                        label={`ร้อยละข้อ ${row.no}`}
-                      />
-                    </div>
+                    {lowerBetter ? (
+                      <span className="mt-1 block text-xs font-semibold tabular-nums">
+                        {meta.statusLabels.summary?.done}{" "}
+                        {formatNumber(ind.numerator)} /{" "}
+                        {meta.statusLabels.targetHeader}{" "}
+                        {formatNumber(ind.denominator)} ราย
+                      </span>
+                    ) : (
+                      <div className="mt-2">
+                        <ProgressBar
+                          percent={ind.percent}
+                          targetPercent={ind.targetPercent}
+                          barClass={accent.bar}
+                          label={`ร้อยละข้อ ${row.no}`}
+                        />
+                      </div>
+                    )}
                     <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-400">
                       เกณฑ์ {targetOperatorSign(ind.targetOperator)} {formatNumber(ind.targetPercent)}%
                     </span>

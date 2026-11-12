@@ -26,4 +26,5 @@ export const INDICATOR_ROWS: IndicatorRowConfig[] = [
   { no: 8, code: "RLU_LDL", accent: "ldl", title: "ผู้ป่วยเบาหวานได้รับการตรวจ LDL", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["LDL","ไขมัน","เบาหวาน","lab","RLU","HDC"] },
   { no: 9, code: "RLU_CR", accent: "creatinine", title: "ผู้ป่วยเบาหวานได้รับการตรวจ Creatinine", subtitle: "ผู้ป่วยในทะเบียนคลินิกเบาหวาน", keywords: ["Creatinine","ครีเอตินีน","ไต","เบาหวาน","lab","RLU","HDC"] },
   { no: 10, code: "CKD5", accent: "ckd5", title: "ผู้ป่วยไตเรื้อรัง stage 5 รายใหม่ ลดลงจากปีก่อน", subtitle: "ผู้มารับบริการที่ รพ. (ระดับโรงพยาบาล)", keywords: ["ไต","CKD","eGFR","stage 5","ไตเรื้อรัง","NCD"] },
+  { no: 11, code: "STEMI", accent: "stemi", title: "อัตราตายผู้ป่วยโรคกล้ามเนื้อหัวใจตายเฉียบพลัน STEMI", subtitle: "ผู้ป่วย STEMI ที่มารับบริการที่ รพ. (ระดับโรงพยาบาล)", keywords: ["STEMI","หัวใจ","MI","กล้ามเนื้อหัวใจตาย","อัตราตาย","ACS","mortality"] },
 ];

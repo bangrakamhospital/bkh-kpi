@@ -6,8 +6,10 @@ import { BE_OFFSET } from "@/lib/kpi/fiscal-year";
 import type { ScreeningExportData } from "@/lib/kpi/screening-detail";
 import {
   CKD5_INDICATOR,
+  isLowerBetter,
   isReductionCode,
   SCREENING_INDICATORS,
+  type ScreeningIndicatorMeta,
   screeningTargetPercent,
   targetOperatorSign,
 } from "@/lib/kpi/screening-indicators";
@@ -134,10 +136,110 @@ async function buildCkd5Workbook(data: ScreeningExportData): Promise<Buffer> {
   return Buffer.from(out);
 }
 
+/**
+ * STEMI (KPI 11, lower is better) workbook. Summary: B / A counts per village
+ * (no percentage per village, numbers too small; the hospital-level rate is
+ * in the notes). List: one row per EPISODE (the same HN may repeat).
+ */
+async function buildMortalityWorkbook(
+  data: ScreeningExportData,
+  meta: ScreeningIndicatorMeta,
+): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "bkh-kpi";
+  wb.created = new Date(data.generatedAt);
+  const n = { numFmt: "#,##0" };
+  const labels = meta.statusLabels;
+  const bLabel = labels.targetHeader ?? "กลุ่มเป้าหมาย";
+  const aLabel = labels.summary?.done ?? "เสียชีวิต";
+  const target = screeningTargetPercent(meta.code, data.fiscalYear);
+  const sign = targetOperatorSign(meta.targetOperator ?? "<");
+
+  const summary = wb.addWorksheet("สรุปรายหมู่");
+  summary.columns = [
+    { key: "moo" },
+    { key: "villageName" },
+    { key: "denominator", style: n },
+    { key: "numerator", style: n },
+  ];
+  summary.addRow(["หมู่", "ชื่อหมู่บ้าน", `B (${bLabel})`, `A (${aLabel})`]);
+  for (const v of data.villages) {
+    summary.addRow([v.moo, v.villageName, v.denominator, v.numerator]);
+  }
+  const totalB = data.villages.reduce((s, v) => s + v.denominator, 0);
+  const totalA = data.villages.reduce((s, v) => s + v.numerator, 0);
+  const totalRow = summary.addRow(["รวม", "", totalB, totalA]);
+  totalRow.font = { bold: true };
+  const tableRows = summary.rowCount;
+
+  summary.addRow([]);
+  summary.addRow([`ตัวชี้วัด: ${meta.name}`]);
+  summary.addRow([
+    `เกณฑ์: อัตราตาย ${sign} ร้อยละ ${target} (ยิ่งต่ำยิ่งดี) / อัตราตายรวม = ${totalA.toLocaleString("en-US")} / ${totalB.toLocaleString("en-US")} = ${
+      totalB > 0 ? (Math.round((totalA / totalB) * 10000) / 100).toFixed(2) : "-"
+    }%`,
+  ]);
+  summary.addRow([
+    `ช่วงข้อมูล: ${data.periodLabel} (${toThaiDate(data.countFrom)} – ${toThaiDate(data.dataAsOf)}) ข้อมูล ณ วันที่ ${toThaiDate(data.dataAsOf)}`,
+  ]);
+  if (data.note) summary.addRow([`หมายเหตุ: ${data.note}`]);
+  summary.addRow([
+    "ไม่แสดงร้อยละรายหมู่ เพราะจำนวนผู้ป่วยต่อหมู่น้อย (ร้อยละใช้ที่ระดับโรงพยาบาลเท่านั้น)",
+  ]);
+  if (data.truncated) {
+    summary.addRow([
+      `หมายเหตุ: ชีต "รายชื่อ" แสดงเพียง ${data.personLimit.toLocaleString("en-US")} รายการแรก`,
+    ]);
+  }
+  finishSheet(summary, tableRows);
+
+  const list = wb.addWorksheet("รายชื่อ");
+  list.columns = [
+    { key: "moo" },
+    { key: "hn" },
+    { key: "fullName" },
+    { key: "sex" },
+    { key: "age" },
+    { key: "status" },
+    { key: "eventDate" },
+    { key: "deathDate" },
+  ];
+  list.addRow([
+    "หมู่",
+    "HN",
+    "ชื่อ-สกุล",
+    "เพศ",
+    "อายุ",
+    "สถานะ",
+    "วันที่เริ่มป่วย (episode)",
+    labels.dateHeader ?? "วันที่เสียชีวิต",
+  ]);
+  // One row per episode: the same HN can appear more than once.
+  for (const p of data.persons) {
+    list.addRow([
+      p.moo,
+      p.hn ?? "",
+      p.fullName,
+      p.sex,
+      p.age,
+      p.screened ? labels.screened : labels.notScreened,
+      toThaiDate(p.eventDate ?? null),
+      toThaiDate(p.screenDate),
+    ]);
+  }
+  finishSheet(list, list.rowCount);
+
+  const out = await wb.xlsx.writeBuffer();
+  return Buffer.from(out);
+}
+
 export async function buildScreeningWorkbook(
   data: ScreeningExportData,
 ): Promise<Buffer> {
   if (isReductionCode(data.code)) return buildCkd5Workbook(data);
+  if (isLowerBetter(SCREENING_INDICATORS[data.code].targetOperator ?? ">=")) {
+    return buildMortalityWorkbook(data, SCREENING_INDICATORS[data.code]);
+  }
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "bkh-kpi";

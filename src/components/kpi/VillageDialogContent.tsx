@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
+  isLowerBetter,
   meetsTarget,
   targetOperatorSign,
   type ScreeningStatusLabels,
@@ -84,6 +85,8 @@ function levelOf(
   operator: TargetOperator,
 ): Level {
   if (meetsTarget(percent, target, operator)) return "pass";
+  // ยิ่งต่ำยิ่งดี: ไม่ผ่านคือสูงกว่าเกณฑ์ (ไม่ใช้ช่วง 70%)
+  if (isLowerBetter(operator)) return "low";
   return percent >= 70 ? "near" : "low";
 }
 
@@ -223,6 +226,8 @@ function StatRow({
   percentLabel = "ร้อยละ",
   doneLabel = "คัดกรองแล้ว",
   pendingLabel = "ยังไม่คัดกรอง",
+  lowerBetter = false,
+  showPercent = true,
 }: {
   accent: AccentKey;
   target: number;
@@ -233,8 +238,15 @@ function StatRow({
   percentLabel?: string;
   doneLabel?: string;
   pendingLabel?: string;
+  /** ยิ่งต่ำยิ่งดี (STEMI): A = เสียชีวิต เป็นสีแดง, B−A = รอดชีวิต เป็นสีเขียว */
+  lowerBetter?: boolean;
+  /** false = ไม่แสดงร้อยละ (STEMI รายหมู่ จำนวนน้อย) */
+  showPercent?: boolean;
 }) {
   const theme = ACCENTS[accent];
+  const GOOD =
+    "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300";
+  const BAD = "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300";
   return (
     <div
       className={`grid grid-cols-2 gap-2 border-b border-zinc-200 p-3 sm:grid-cols-4 dark:border-zinc-800 ${theme.soft}`}
@@ -246,23 +258,25 @@ function StatRow({
         value={formatNumber(target)}
       />
       <StatCard
-        Icon={CheckCircle2}
-        tone="bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+        Icon={lowerBetter ? UserX : CheckCircle2}
+        tone={lowerBetter ? BAD : GOOD}
         label={doneLabel}
         value={formatNumber(screened)}
       />
       <StatCard
-        Icon={UserX}
-        tone="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+        Icon={lowerBetter ? UserCheck : UserX}
+        tone={lowerBetter ? GOOD : BAD}
         label={pendingLabel}
         value={formatNumber(Math.max(0, unscreened))}
       />
-      <StatCard
-        Icon={Percent}
-        tone="bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-200"
-        label={percentLabel}
-        value={`${formatPercent(percent)}%`}
-      />
+      {showPercent && (
+        <StatCard
+          Icon={Percent}
+          tone="bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-200"
+          label={percentLabel}
+          value={`${formatPercent(percent)}%`}
+        />
+      )}
     </div>
   );
 }
@@ -418,6 +432,124 @@ function Ckd5VillageTable({
   );
 }
 
+/**
+ * STEMI (KPI 11): counts only (B = episodes, A = deaths). No percentage per
+ * village: the numbers are too small to be meaningful (1 case = ~4%).
+ */
+function MortalityVillageTable({
+  rows,
+  accent,
+  statusLabels,
+  locked,
+  onSelect,
+}: {
+  rows: VillageBreakdown[];
+  accent: AccentKey;
+  statusLabels: StatusLabels;
+  locked: boolean;
+  onSelect: (v: VillageBreakdown) => void;
+}) {
+  const theme = ACCENTS[accent];
+  const bLabel = statusLabels.targetHeader ?? "กลุ่มเป้าหมาย";
+  const aLabel = statusLabels.summary?.done ?? "เสียชีวิต";
+  const totalB = rows.reduce((s, r) => s + r.denominator, 0);
+  const totalA = rows.reduce((s, r) => s + r.numerator, 0);
+  return (
+    <table className="w-full min-w-[40rem] text-xs">
+      <thead className={`sticky top-0 z-10 text-left ${theme.thead}`}>
+        <tr>
+          <th scope="col" className={th}>หมู่</th>
+          <th scope="col" className={th}>ชื่อหมู่บ้าน</th>
+          <th scope="col" className={`${th} text-right`}>{bLabel} (B)</th>
+          <th scope="col" className={`${th} text-right`}>{aLabel} (A)</th>
+          <th scope="col" className={`${th} text-center`}>รายชื่อ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr
+            key={r.villageId}
+            className={`border-t border-zinc-200 odd:bg-surface even:bg-zinc-50 dark:border-zinc-800 dark:even:bg-zinc-900/60 ${theme.rowHover}`}
+          >
+            <td className={td}>
+              <span
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${theme.badge}`}
+              >
+                {r.moo}
+              </span>
+            </td>
+            <td className={td}>
+              <span className="inline-flex items-center gap-1.5">
+                {r.villageId > 0 ? (
+                  <Home aria-hidden="true" className={`${iconCls} ${theme.text}`} />
+                ) : (
+                  <MapPin aria-hidden="true" className={`${iconCls} text-zinc-500`} />
+                )}
+                {r.villageName}
+              </span>
+            </td>
+            <td className={`${td} text-right tabular-nums`}>
+              {formatNumber(r.denominator)}
+            </td>
+            <td className={`${td} text-right font-semibold tabular-nums`}>
+              {formatNumber(r.numerator)}
+            </td>
+            <td className={`${td} text-center`}>
+              {r.villageId > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(r)}
+                  aria-label={
+                    locked
+                      ? `รายชื่อ หมู่ ${r.moo} (ต้องเข้าสู่ระบบ)`
+                      : `รายชื่อ หมู่ ${r.moo}`
+                  }
+                  title={locked ? "ต้องเข้าสู่ระบบก่อนดูรายชื่อ" : undefined}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 ${theme.pill}`}
+                >
+                  {locked ? (
+                    <Lock aria-hidden="true" className={iconCls} />
+                  ) : (
+                    <Users aria-hidden="true" className={iconCls} />
+                  )}
+                  รายชื่อ
+                  <ChevronRight aria-hidden="true" className={iconCls} />
+                </button>
+              ) : (
+                <InfoPopover
+                  label={`รายละเอียดเพิ่มเติม ${r.villageName}`}
+                  title={r.villageName}
+                  items={[
+                    {
+                      icon: <FileSpreadsheet size={14} />,
+                      label: "ดูรายชื่อ",
+                      value: "ดูได้ในไฟล์ Excel ทั้งปีงบฯ",
+                    },
+                  ]}
+                />
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot className={`font-bold ${theme.footer}`}>
+        <tr>
+          <td className={td} colSpan={2}>
+            รวม
+          </td>
+          <td className={`${td} text-right tabular-nums`}>
+            {formatNumber(totalB)}
+          </td>
+          <td className={`${td} text-right tabular-nums`}>
+            {formatNumber(totalA)}
+          </td>
+          <td className={td} />
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
 function pct(n: number, d: number): number {
   return d > 0 ? Math.round((n / d) * 10000) / 100 : 0;
 }
@@ -449,6 +581,7 @@ export function VillageDialogContent({
     busy: null,
     error: null,
   });
+  const mortalityRef = useRef(isLowerBetter(targetOperator));
   const base = `code=${code}&fy=${fiscalYear}`;
   const theme = ACCENTS[accent];
   // "loading" = optimistic: the API re-checks and answers 401 if needed.
@@ -537,6 +670,7 @@ export function VillageDialogContent({
     setLoginFor(null);
     // Not logged in -> person list is not reachable; back to villages.
     if (status !== "in") setVillage(null);
+    if (mortalityRef.current && status !== "in") onClose();
   }
 
   const exportProps = {
@@ -546,8 +680,23 @@ export function VillageDialogContent({
     onExport,
   };
 
+  const mortality = isLowerBetter(targetOperator);
+  // STEMI villages API needs login (small numbers): login panel instead of the table.
+  const mortalityPending: Pending = { kind: "villages" };
+
   let body: React.ReactNode;
-  if (loginFor) {
+  if (mortality && locked && !loginFor) {
+    body = (
+      <LoginPanel
+        request={{ pending: mortalityPending, reason: "required" }}
+        accent={accent}
+        onCancel={onClose}
+        onBeforeRedirect={() =>
+          savePendingLogin(code, fiscalYear, mortalityPending)
+        }
+      />
+    );
+  } else if (loginFor) {
     body = (
       <LoginPanel
         request={loginFor}
@@ -568,6 +717,7 @@ export function VillageDialogContent({
         statusLabels={statusLabels}
         denominatorFactor={denominatorFactor}
         ckd5={code === "CKD5"}
+        mortality={isLowerBetter(targetOperator)}
         fiscalYear={fiscalYear}
         village={village}
         exportProps={exportProps}
@@ -585,10 +735,12 @@ export function VillageDialogContent({
         statusLabels={statusLabels}
         denominatorFactor={denominatorFactor}
         ckd5={code === "CKD5"}
+        mortality={isLowerBetter(targetOperator)}
         fiscalYear={fiscalYear}
         locked={locked}
         exportProps={exportProps}
         onSelect={onSelectVillage}
+        onUnauthorized={() => requireLogin({ kind: "villages" }, "expired")}
       />
     );
   }
@@ -725,7 +877,9 @@ function LoginPanel({
   const what =
     pending.kind === "persons"
       ? `ดูรายชื่อ หมู่ ${pending.village.moo} ${pending.village.villageName}`
-      : "ดาวน์โหลด Excel (มีรายชื่อผู้รับบริการ)";
+      : pending.kind === "villages"
+        ? "ดูรายละเอียดรายหมู่บ้าน (ข้อมูลจำนวนน้อย อาจระบุตัวผู้ป่วยได้)"
+        : "ดาวน์โหลด Excel (มีรายชื่อผู้รับบริการ)";
   const description =
     reason === "expired"
       ? `การเข้าสู่ระบบหมดอายุ กรุณาเข้าสู่ระบบอีกครั้งเพื่อ${what}`
@@ -758,10 +912,12 @@ function VillagesView({
   statusLabels,
   denominatorFactor,
   ckd5,
+  mortality,
   fiscalYear,
   locked,
   exportProps,
   onSelect,
+  onUnauthorized,
 }: {
   base: string;
   accent: AccentKey;
@@ -771,14 +927,20 @@ function VillagesView({
   denominatorFactor: number;
   /** CKD5 (KPI 10): counts only, no percentage per village. */
   ckd5: boolean;
+  /** STEMI (KPI 11, lower is better): counts only, no percentage per village. */
+  mortality: boolean;
   fiscalYear: number;
   locked: boolean;
   exportProps: ExportProps;
   onSelect: (v: VillageBreakdown) => void;
+  onUnauthorized: () => void;
 }) {
-  const { loading, error, data, retry } = useApiList<VillageBreakdown>(
-    `/api/kpi/screening/villages?${base}`,
-  );
+  const { loading, error, unauthorized, data, retry } =
+    useApiList<VillageBreakdown>(`/api/kpi/screening/villages?${base}`);
+  // Session expired (STEMI villages need login) -> back to the login form.
+  useEffect(() => {
+    if (unauthorized) onUnauthorized();
+  }, [unauthorized, onUnauthorized]);
   const rows = data ?? [];
   const totalD = rows.reduce((s, r) => s + r.denominator, 0);
   const totalN = rows.reduce((s, r) => s + r.numerator, 0);
@@ -799,6 +961,7 @@ function VillagesView({
       )}
       {rows.length > 0 && !ckd5 && (
         <StatRow
+          lowerBetter={mortality}
           accent={accent}
           target={totalD}
           screened={totalN}
@@ -820,7 +983,9 @@ function VillagesView({
           <Info aria-hidden="true" className={iconCls} />
           {ckd5
             ? `เกณฑ์ลดลง ${targetOperatorSign(targetOperator)} ${formatNumber(targetPercent)}% (ระดับโรงพยาบาล ไม่คำนวณร้อยละรายหมู่)`
-            : `เกณฑ์ ${targetOperatorSign(targetOperator)} ${formatNumber(targetPercent)}%`}
+            : mortality
+              ? `เกณฑ์ ${targetOperatorSign(targetOperator)} ${formatNumber(targetPercent)}% (ระดับโรงพยาบาล ไม่แสดงร้อยละรายหมู่ เพราะจำนวนน้อย)`
+              : `เกณฑ์ ${targetOperatorSign(targetOperator)} ${formatNumber(targetPercent)}%`}
         </p>
         <ExportButton villageId={null} {...exportProps} />
       </div>
@@ -840,7 +1005,16 @@ function VillagesView({
             onSelect={onSelect}
           />
         )}
-        {rows.length > 0 && !ckd5 && (
+        {rows.length > 0 && mortality && (
+          <MortalityVillageTable
+            rows={rows}
+            accent={accent}
+            statusLabels={statusLabels}
+            locked={locked}
+            onSelect={onSelect}
+          />
+        )}
+        {rows.length > 0 && !ckd5 && !mortality && (
           <table className="w-full min-w-[46rem] text-xs">
             <thead className={`sticky top-0 z-10 text-left ${theme.thead}`}>
               <tr>
@@ -1060,6 +1234,7 @@ function PersonsView({
   statusLabels,
   denominatorFactor,
   ckd5,
+  mortality,
   fiscalYear,
   village,
   exportProps,
@@ -1073,6 +1248,8 @@ function PersonsView({
   denominatorFactor: number;
   /** CKD5 (KPI 10): list of new cases only, no status / filter. */
   ckd5: boolean;
+  /** STEMI (KPI 11, lower is better): one row per episode, "died" is highlighted. */
+  mortality: boolean;
   fiscalYear: number;
   village: VillageBreakdown;
   exportProps: ExportProps;
@@ -1145,6 +1322,8 @@ function PersonsView({
       )}
       {!loading && !error && all.length > 0 && !ckd5 && (
         <StatRow
+          lowerBetter={mortality}
+          showPercent={!mortality}
           accent={accent}
           target={all.length}
           screened={doneCount}
@@ -1235,6 +1414,9 @@ function PersonsView({
                 <th scope="col" className={th}>เพศ</th>
                 <th scope="col" className={`${th} text-right`}>อายุ</th>
                 {!ckd5 && <th scope="col" className={th}>สถานะ</th>}
+                {mortality && (
+                  <th scope="col" className={th}>วันที่เริ่มป่วย (episode)</th>
+                )}
                 <th scope="col" className={th}>
                   {denominatorFactor !== 1
                     ? "วันที่คัดกรอง (ใน Phase)"
@@ -1245,18 +1427,21 @@ function PersonsView({
             <tbody>
               {rows.map((p, i) => {
                 const sex = SEX_STYLE[p.sex];
+                // ปกติ "ยังไม่คัดกรอง" เป็นสีแดง; STEMI ยิ่งต่ำยิ่งดี จึงเน้นแดงที่ "เสียชีวิต"
+                const good = mortality ? !p.screened : p.screened;
                 return (
                   <tr
-                    key={p.personId}
+                    // หนึ่งแถวต่อ episode: HN เดียวกันซ้ำได้ จึงใช้ key ประกอบ
+                    key={`${p.personId}:${p.hn ?? ""}:${p.eventDate ?? ""}:${i}`}
                     className={`border-t border-zinc-200 dark:border-zinc-800 ${
-                      p.screened
+                      good
                         ? `odd:bg-surface even:bg-zinc-50 dark:even:bg-zinc-900/60 ${theme.rowHover}`
                         : "bg-red-50/70 hover:bg-red-100/70 dark:bg-red-950/30 dark:hover:bg-red-950/50"
                     }`}
                   >
                     <td
                       className={`${td} border-l-4 tabular-nums ${
-                        p.screened ? "border-transparent" : "border-red-500"
+                        good ? "border-transparent" : "border-red-500"
                       }`}
                     >
                       {formatNumber(i + 1)}
@@ -1281,12 +1466,12 @@ function PersonsView({
                     <td className={td}>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          p.screened
+                          good
                             ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
                             : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
                         }`}
                       >
-                        {p.screened ? (
+                        {good ? (
                           <CheckCircle2
                             aria-hidden="true"
                             className="h-3.5 w-3.5"
@@ -1297,6 +1482,11 @@ function PersonsView({
                         {p.screened ? statusLabels.screened : statusLabels.notScreened}
                       </span>
                     </td>
+                    )}
+                    {mortality && (
+                      <td className={td}>
+                        {p.eventDate ? formatThaiDate(p.eventDate) : "—"}
+                      </td>
                     )}
                     <td className={td}>
                       {p.screenDate ? (

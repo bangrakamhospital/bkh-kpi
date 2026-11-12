@@ -12,6 +12,7 @@ import {
 import {
   applyTargetShare,
   CKD5_INDICATOR,
+  isLowerBetter,
   reductionPercentOf,
   SCREENING_CODES,
   SCREENING_INDICATORS,
@@ -38,7 +39,7 @@ import { hisScreeningSource } from "./sources/screening-his";
 import { mockScreeningSource } from "./sources/screening-mock";
 
 /**
- * Screening KPIs (SCREENING_CODES: DM, HT, CX, BR, HDC 2.1/2.2, 11.3–11.5). Definitions:
+ * Screening KPIs (SCREENING_CODES: DM, HT, CX, BR, HDC 2.1/2.2, 11.3–11.5, STEMI). Definitions:
  * docs/kpi/01-screening-dm-ht.md, 03-screening-cervical.md, 04-screening-breast.md
  */
 
@@ -164,15 +165,25 @@ function deriveIndicator(
 ): ScreeningIndicator {
   const meta = SCREENING_INDICATORS[raw.code];
   const denominator = applyTargetShare(raw.eligible, meta.denominatorFactor);
+  // Mortality (lower is better): cumulative % = cum A / cum B (episodes so far).
+  const mortality = isLowerBetter(meta.targetOperator ?? ">=");
   let cumulative = raw.priorScreened;
-  const monthly = raw.monthlyScreened.map(({ month, screened }) => {
-    cumulative += screened;
-    return {
-      month,
-      screened,
-      cumulativePercent: toPercent(cumulative, denominator),
-    };
-  });
+  let cumulativeEligible = 0;
+  const monthly = raw.monthlyScreened.map(
+    ({ month, screened, eligible }) => {
+      cumulative += screened;
+      cumulativeEligible += eligible ?? 0;
+      return {
+        month,
+        screened,
+        ...(eligible !== undefined ? { eligible } : {}),
+        cumulativePercent: toPercent(
+          cumulative,
+          mortality ? cumulativeEligible : denominator,
+        ),
+      };
+    },
+  );
   return {
     ...describeIndicator(raw.code, fy),
     denominator,

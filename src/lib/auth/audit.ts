@@ -15,7 +15,8 @@ export function auditDataAccess(entry: {
   loginname: string;
   code: string;
   fiscalYear: number;
-  villageId: number | null;
+  /** HOSxP village id, or district HDC vid / tambon code (aggregate identifiers only). */
+  villageId: number | string | null;
   rows: number;
 }) {
   console.info(

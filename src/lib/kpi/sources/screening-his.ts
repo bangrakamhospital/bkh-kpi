@@ -26,6 +26,8 @@ interface MonthlyRow extends RowDataPacket {
   /** 'prior' (before periodStart) or 'YYYY-MM'. */
   bucket: string;
   screened: number | string;
+  /** Only the STEMI monthly query selects this column (B per month). */
+  eligible?: number | string;
 }
 
 interface VillageRow extends RowDataPacket {
@@ -47,6 +49,8 @@ interface PersonRow extends RowDataPacket {
   screen_date: string | null;
   /** Only the HDC 2.1 / 2.2 queries select this column. */
   suspect_date?: string | null;
+  /** Only the STEMI person queries select this column. */
+  event_date?: string | null;
 }
 
 function sqlContext(q: ScreeningSourceQuery) {
@@ -70,20 +74,30 @@ export const hisScreeningSource: ScreeningSource = async (
   ]);
 
   let priorScreened = 0;
-  const byMonth = new Map<string, number>();
+  const withEligible = monthRows.some((r) => r.eligible !== undefined);
+  const byMonth = new Map<string, { screened: number; eligible: number }>();
   for (const r of monthRows) {
     if (r.bucket === "prior") priorScreened += Number(r.screened);
-    else byMonth.set(r.bucket, Number(r.screened));
+    else {
+      byMonth.set(r.bucket, {
+        screened: Number(r.screened),
+        eligible: Number(r.eligible ?? 0),
+      });
+    }
   }
 
   return {
     code,
     eligible: Number(eligibleRows[0]?.eligible ?? 0),
     priorScreened,
-    monthlyScreened: q.months.map((month) => ({
-      month,
-      screened: byMonth.get(month) ?? 0,
-    })),
+    monthlyScreened: q.months.map((month) => {
+      const m = byMonth.get(month);
+      return {
+        month,
+        screened: m?.screened ?? 0,
+        ...(withEligible ? { eligible: m?.eligible ?? 0 } : {}),
+      };
+    }),
   };
 };
 
@@ -132,6 +146,9 @@ export const hisScreeningDetailSource: ScreeningDetailSource = {
       screenDate: emptyToNull(r.screen_date),
       ...(r.suspect_date !== undefined
         ? { suspectDate: emptyToNull(r.suspect_date) }
+        : {}),
+      ...(r.event_date !== undefined
+        ? { eventDate: emptyToNull(r.event_date) }
         : {}),
     }));
   },

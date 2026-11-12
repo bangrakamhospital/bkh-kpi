@@ -51,7 +51,14 @@ const BASE: Record<RatioCode, MockBase> = {
   RLU_HBA1C: { eligible: 7_100, yearRate: 0.8, rateJitter: [0.03, 0.03] },
   RLU_LDL: { eligible: 7_100, yearRate: 0.8, rateJitter: [0.03, 0.03] },
   RLU_CR: { eligible: 7_100, yearRate: 0.83, rateJitter: [0.03, 0.03] },
+  // STEMI episodes per year (B ~25) and the share who died (A ~1–3).
+  STEMI: { eligible: 25, yearRate: 0.08, rateJitter: [0.05, 0.06] },
 };
+
+/** Mortality indicators report B per month too (see buildMortalityYear). */
+function isMortality(code: RatioCode): boolean {
+  return SCREENING_INDICATORS[code].targetOperator === "<";
+}
 
 /** FNV-1a string hash -> 32-bit seed. */
 function hashSeed(input: string): number {
@@ -93,6 +100,10 @@ function buildYear(
   const [minus, plus] = base.rateJitter;
   const yearRate = base.yearRate - minus + rand() * (minus + plus);
 
+  if (isMortality(code)) {
+    return buildMortalityYear(code, eligible, yearRate, months, rand);
+  }
+
   const priorScreened = Math.min(alreadyScreened, eligible);
   const asOfMonth = dataAsOf.slice(0, 7);
   const asOfDay = Number(dataAsOf.slice(8, 10));
@@ -117,6 +128,44 @@ function buildYear(
   });
 
   return { code, eligible, priorScreened, monthlyScreened };
+}
+
+/**
+ * Mortality year: B (episodes) is spread over the reported months; A (deaths)
+ * is a few cases that never exceed the B of their month. Headline B is the
+ * sum of the monthly B so the cumulative rate (cum A / cum B) is consistent.
+ */
+function buildMortalityYear(
+  code: RatioCode,
+  eligibleFullYear: number,
+  yearRate: number,
+  months: string[],
+  rand: () => number,
+): ScreeningRawIndicator {
+  const weights = months.map(
+    (m) => MONTH_WEIGHTS[(Number(m.slice(5, 7)) + 2) % 12],
+  );
+  const sumW = weights.reduce((a, b) => a + b, 0);
+  const monthlyB = apportion(Math.round(eligibleFullYear * sumW), weights);
+  const eligible = monthlyB.reduce((a, b) => a + b, 0);
+  let remainingDeaths = Math.min(eligible, Math.round(eligible * yearRate));
+  const monthlyScreened = months.map((month, i) => {
+    const deaths = Math.min(
+      monthlyB[i],
+      remainingDeaths,
+      rand() < 0.5 ? 1 : 0,
+    );
+    remainingDeaths -= deaths;
+    return { month, screened: deaths, eligible: monthlyB[i] };
+  });
+  // Deaths that did not fit in a random month go to the last month with room.
+  for (let i = monthlyScreened.length - 1; i >= 0 && remainingDeaths > 0; i--) {
+    const room = monthlyScreened[i].eligible - monthlyScreened[i].screened;
+    const add = Math.min(room, remainingDeaths);
+    monthlyScreened[i].screened += add;
+    remainingDeaths -= add;
+  }
+  return { code, eligible, priorScreened: 0, monthlyScreened };
 }
 
 /** Headline raw numbers, incl. earlier years of the phase for CX. */
@@ -280,15 +329,22 @@ function mockPersonsOfVillage(
           .toISOString()
           .slice(0, 10)
       : null;
+    // Mortality: one row per episode; screenDate = death date (after the start).
+    const eventDate = isMortality(code)
+      ? new Date(startMs + Math.floor(rand() * spanDays) * DAY_MS)
+          .toISOString()
+          .slice(0, 10)
+      : null;
     people.push({
       personId,
       villageId: village.villageId,
+      ...(eventDate !== null ? { eventDate } : {}),
       hn: `MOCK${String(personId).padStart(8, "0")}`,
       fullName: `${title}${first} ${last}`,
       sortName: `${first} ${last}`,
       sex,
       age,
-      screenDate,
+      screenDate: eventDate !== null && screened ? eventDate : screenDate,
     });
   }
   return people;
