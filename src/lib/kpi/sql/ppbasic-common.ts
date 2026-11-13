@@ -12,12 +12,32 @@ import {
 /**
  * Shared pieces of the "P&P Basic Services" (/pp/basic) SQL modules
  * (./ppbasic-child-hosxp, ./ppbasic-dental-elderly-hosxp). HOSxP only.
- * Every item is ONE per-village aggregate query; no person rows.
+ * Every item is ONE per-village aggregate query (EPI adds one one-row money
+ * query, PpBasicMoneySql); no person rows.
  */
 
 export interface PpBasicVillageSql {
   /** -> rows { village_id, village_moo, village_name, eligible, numerator } */
   village: string;
+  buildParams(ctx: ScreeningSqlContext): QueryParams;
+  /**
+   * Money units of the item when they are NOT the persons (EPI: vaccine
+   * doses); otherwise the money units are eligible / numerator.
+   */
+  money?: PpBasicMoneySql;
+}
+
+/**
+ * One-row money-unit query of an item (EPI). Units = doses:
+ *   due_units              doses due in the period for the catchment
+ *   done_units             doses given by this hospital in the period, ALL
+ *                          areas (catchment + out of area)
+ *   catchment_done_units   part of done_units given to catchment residents
+ *   catchment_birth_units  birth doses within catchment_done_units
+ * The loader derives target / gap / out of area (../ppbasic.ts toDoseUnits).
+ */
+export interface PpBasicMoneySql {
+  sql: string;
   buildParams(ctx: ScreeningSqlContext): QueryParams;
 }
 
@@ -27,13 +47,25 @@ export interface PpBasicVillageSql {
  * only: the catchment filter already requires a real village). The joined
  * screened subquery has one row per person_id, so there is no fan-out.
  */
-export function buildPpBasicVillageSql(spec: ScreeningSqlSpec): PpBasicVillageSql {
+export function buildPpBasicVillageSql(
+  spec: ScreeningSqlSpec,
+  opts: {
+    /**
+     * Numerator aggregate over the screened `sc` rows, for a screened
+     * subquery that also returns persons who are NOT done (e.g. on a
+     * `complete` flag). It must still have one row per person_id.
+     */
+    numerator?: string;
+    money?: PpBasicMoneySql;
+  } = {},
+): PpBasicVillageSql {
+  const numerator = opts.numerator ?? "COUNT(DISTINCT sc.person_id)";
   const village = `
 SELECT CASE WHEN v.village_id IS NULL THEN 0 ELSE p.village_id END AS village_id,
        MAX(CAST(v.village_moo AS CHAR)) AS village_moo,
        MAX(v.village_name)              AS village_name,
        COUNT(DISTINCT p.person_id)      AS eligible,
-       COUNT(DISTINCT sc.person_id)     AS numerator
+       ${numerator} AS numerator
 FROM person p
 LEFT JOIN village v
   ON v.village_id = p.village_id
@@ -43,7 +75,9 @@ LEFT JOIN (${spec.screenedSubquery}
 WHERE ${spec.targetWhere}
 GROUP BY CASE WHEN v.village_id IS NULL THEN 0 ELSE p.village_id END
 `;
-  return { village, buildParams: spec.buildParams };
+  return opts.money
+    ? { village, buildParams: spec.buildParams, money: opts.money }
+    : { village, buildParams: spec.buildParams };
 }
 
 /** Target population of every item: living catchment residents (TYPEAREA 1/3), Thai. */
