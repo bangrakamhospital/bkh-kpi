@@ -1,7 +1,6 @@
-import { Suspense } from "react";
+import { FiscalYearSuspense } from "@/components/kpi/FiscalYearSuspense";
 import Image from "next/image";
 import { DistrictPpDashboard } from "@/components/kpi/district-pp/DistrictPpDashboard";
-import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
 import { DistrictSubNav } from "@/components/kpi/DistrictSubNav";
 import { PageViewAudit } from "@/components/audit/PageViewAudit";
@@ -42,11 +41,11 @@ export default function DistrictPpPage(props: PageProps<"/district/pp">) {
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
         <PageViewAudit path="/district/pp" searchParams={props.searchParams} />
-        <Suspense fallback={<DashboardSkeleton />}>
+        <FiscalYearSuspense searchParams={props.searchParams}>
           <RequireLogin path="/district/pp" searchParams={props.searchParams}>
             <DistrictPpDashboard searchParams={props.searchParams} />
           </RequireLogin>
-        </Suspense>
+        </FiscalYearSuspense>
       </main>
     </>
   );
