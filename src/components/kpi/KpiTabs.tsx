@@ -8,7 +8,7 @@ const TABS = [
   { href: "/", label: "ผู้รับบริการ", Icon: Users },
   { href: "/hospital", label: "ตัวชี้วัดในโรงพยาบาล", Icon: Building2 },
   { href: "/pp", label: "PP / รายได้คัดกรอง", Icon: HandCoins },
-  { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ / PP รายได้", Icon: MapPinned },
+  { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ / PP รายได้อำเภอ", Icon: MapPinned },
 ] as const;
 
 export function KpiTabs() {

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ" },
-  { href: "/district/pp", label: "PP รายได้" },
+  { href: "/district/pp", label: "PP รายได้อำเภอ" },
 ] as const;
 
 /** Sub-navigation shared by /district and /district/pp. */
