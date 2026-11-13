@@ -141,7 +141,7 @@ export function DistrictPpView({
   const unitOptions = useMemo(() => {
     const m = new Map<string, string>();
     for (const v of villages) m.set(v.hospcode, v.hospName);
-    return [...m].sort((a, b) => a[1].localeCompare(b[1], "th"));
+    return [...m].sort((a, b) => a[0].localeCompare(b[0]));
   }, [villages]);
   const tambonOptions = useMemo(() => {
     const m = new Map<string, string>();
@@ -307,7 +307,7 @@ export function DistrictPpView({
         filter === "unit" ? v.hospcode : filter === "tambon" ? v.tambon : v.moo;
       const label =
         filter === "unit"
-          ? v.hospName
+          ? `${v.hospcode} ${v.hospName}`
           : filter === "tambon"
             ? `ต.${v.tambonName}`
             : `หมู่ ${v.moo}${v.villageName ? ` ${v.villageName}` : ""}`;
@@ -447,7 +447,7 @@ export function DistrictPpView({
               <option value="">ทั้งหมด ({unitOptions.length} หน่วย)</option>
               {unitOptions.map(([code, name]) => (
                 <option key={code} value={code}>
-                  {name}
+                  {code} {name}
                 </option>
               ))}
             </select>
@@ -516,7 +516,7 @@ export function DistrictPpView({
             {staleUnits
               .map(
                 (u) =>
-                  `${u.hospName} (${u.lastDate ? `ถึง ${formatThaiDate(u.lastDate)}` : "ยังไม่มีข้อมูล"})`,
+                  `${u.hospcode} ${u.hospName} (${u.lastDate ? `ถึง ${formatThaiDate(u.lastDate)}` : "ยังไม่มีข้อมูล"})`,
               )
               .join(", ")}
           </p>
