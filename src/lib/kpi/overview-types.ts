@@ -91,6 +91,15 @@ export interface DiseaseGroups {
   opd: DiseaseGroupRanking;
   /** discharges (ipt.dchdate in range) by รง.505 group */
   ipd: DiseaseGroupRanking;
+  /**
+   * new admissions (ipt.regdate in range — same universe as cards.admit_new)
+   * by รง.505 group of the ADMITTING diagnosis: principal dx (ovstdiag
+   * diagtype '1') of the OPD visit that sent the patient in (ipt.vn).
+   * Available at once (no coding lag) but provisional — ~53 % agree with the
+   * final pdx at 3 characters. `uncoded` = admissions whose admitting visit
+   * has no principal dx.
+   */
+  ipdAdmit: DiseaseGroupRanking;
 }
 
 export interface ServiceOverview {

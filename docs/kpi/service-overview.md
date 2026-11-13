@@ -127,6 +127,43 @@ db-cli 2026-11-12):
 Counted per visit / per admission (not distinct persons). One group per
 visit (principal dx only — secondary diagnoses are not counted).
 
+### IPD card: two views (`diseaseGroupsIpdAdmit` / `diseaseGroupsIpd`)
+
+The IPD card "10 อันดับกลุ่มโรค ผู้ป่วยใน" (`IpdDiseaseGroupCard.tsx`) has a
+toggle with two views. Both use the same รง.505 grouping tables
+(`rpt_505_code` / `rpt_505_name`), the same S/T → external-cause rule and the
+same ranking/% rules; they differ in date basis and diagnosis source. The
+IPD column of the table above describes the **discharge** view only.
+
+| | "รับใหม่ (แรกรับ)" (default) — `diseaseGroupsIpdAdmit` | "จำหน่าย (รง.505)" — `diseaseGroupsIpd` |
+|---|---|---|
+| unit | new admission (`ipt`), ครั้ง | discharged admission (`ipt.an`), ครั้ง |
+| date basis | **`ipt.regdate` in range** — same universe and same total as the "Admit ใหม่" card (`admitNew`), all wards incl. home ward | **`ipt.dchdate` in range** (see table above) |
+| diagnosis | admitting diagnosis = principal dx of the OPD visit that sent the patient in: `ovstdiag` diagtype `1` of `ipt.vn` | final `an_stat.pdx` (= `iptdiag` diagtype `1`) |
+| injuries | pdx S/T → external cause `MIN(ovstdiag.icd10)` diagtype `5` of the same `vn` | `iptdiag` diagtype `5` |
+| availability | immediate (no coding wait) | coding lags ~1–3 days after discharge, so the most recent days show `รอลงรหัสวินิจฉัย N ครั้ง` (`uncoded`) |
+| status | **provisional** | final |
+
+"รับใหม่ (แรกรับ)" details:
+
+- `ipt.vn` NULL, or the admitting visit has no diagtype `1` row (only
+  diagtype `2`, or not yet diagnosed) → counted as `uncoded` (`no_dx`).
+- Source is `ovstdiag`, not `vn_stat.pdx`: over regdate 2025-11-12..2026-11-12
+  (10,256 admissions) the two disagreed on only 2 rows (one `vn_stat` not yet
+  refreshed, one `ovstdiag` row deleted). `ovstdiag` is the source of truth
+  and the fresher one, which is the purpose of this view. No `vn` has more
+  than one diagtype `1` row.
+- **Accuracy is limited — treat as provisional.** Compared with the final
+  `an_stat.pdx` on 906 coded discharges (1 Oct–12 Nov 2026), the admitting
+  dx matched: exact code ~41 %, same 3-character code ~53 %, same ICD-10
+  chapter ~71 %. The UI should label this view as แรกรับ/เบื้องต้น and not
+  use it as the official รง.505 figure; use "จำหน่าย (รง.505)" for that.
+- Performance: `ipt.regdate` range scan + dependent subqueries on
+  `ovstdiag.vn`; ~8 ms / day, ~35 ms / month, ~0.35 s / 366 days.
+- Verified (db-cli): 12 Nov 2026 (1 day) 46 admissions = `admitNew` —
+  36 classified + 2 unclassified + 8 uncoded; 13 Oct–12 Nov 2026: 762
+  admissions (22 unclassified, 9 uncoded).
+
 **Not classified** (excluded from the ranking and from the % denominator,
 shown as a note under each card):
 

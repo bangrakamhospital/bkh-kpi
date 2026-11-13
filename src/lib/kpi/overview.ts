@@ -187,6 +187,7 @@ async function loadServiceOverview(
     asRows,
     dxOpdRows,
     dxIpdRows,
+    dxIpdAdmitRows,
   ] = await Promise.all([
     query<CardsRow>(OVERVIEW_SQL.cards, cur),
     query<CardsRow>(OVERVIEW_SQL.cards, prev),
@@ -197,6 +198,7 @@ async function loadServiceOverview(
     query<AgeSexRow>(OVERVIEW_SQL.ageSex, cur),
     query<DiseaseGroupRow>(OVERVIEW_SQL.diseaseGroupsOpd, cur),
     query<DiseaseGroupRow>(OVERVIEW_SQL.diseaseGroupsIpd, cur),
+    query<DiseaseGroupRow>(OVERVIEW_SQL.diseaseGroupsIpdAdmit, cur),
   ]);
 
   const c = curCards[0];
@@ -229,6 +231,11 @@ async function loadServiceOverview(
     diseaseGroups: {
       opd: toDiseaseRanking(dxOpdRows, (r) => r.visits),
       ipd: toDiseaseRanking(dxIpdRows, (r) => r.admissions, NAME_505_FIXES),
+      ipdAdmit: toDiseaseRanking(
+        dxIpdAdmitRows,
+        (r) => r.admissions,
+        NAME_505_FIXES,
+      ),
     },
   };
 }
