@@ -112,7 +112,8 @@ type AuthEvent =
   | "logout";
 
 /**
- * `username` = OIDC sub / loginname as typed ("-" = unknown). For failed
+ * `username` = OIDC sub / loginname as typed / `access-code:<id>` of an
+ * external auditor ("-" = unknown, e.g. a wrong access code). For failed
  * password logins it is the attempted username (never the password).
  * `detail` = short fixed reason code (e.g. "org_not_allowed").
  */
@@ -166,6 +167,31 @@ export function auditDepartment(entry: {
     actorName: entry.actorName,
     target: entry.id,
     detail: `แผนก ${entry.name.slice(0, 80)}`,
+  });
+}
+
+/**
+ * Admin created / revoked an external-auditor access code. Never the code
+ * itself: `target` is the record id (session username of the auditor is
+ * `access-code:<id>`), `detail` the auditor's name / org / expiry.
+ */
+export function auditAccessCode(entry: {
+  action: "access_code_create" | "access_code_revoke";
+  actor: string;
+  actorName?: string;
+  id: string;
+  name: string;
+  org: string;
+  expiresAt: string;
+  meta: RequestMeta;
+}) {
+  console.info(
+    `[audit] ${new Date().toISOString()} action=${entry.action} user=${logSafe(entry.actor) || "-"} id=${logSafe(entry.id)} expires=${logSafe(entry.expiresAt)} ip=${logSafe(entry.meta.ip)}`,
+  );
+  persist(entry.action, entry.actor, entry.meta, {
+    actorName: entry.actorName,
+    target: `access-code:${entry.id}`,
+    detail: `ผู้ตรวจ ${entry.name.slice(0, 60)} (${entry.org.slice(0, 60)}) หมดอายุ ${entry.expiresAt.slice(0, 10)}`,
   });
 }
 

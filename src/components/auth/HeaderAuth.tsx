@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Loader2, LogIn, LogOut, Settings, UserCircle2 } from "lucide-react";
+import {
+  BadgeCheck,
+  Loader2,
+  LogIn,
+  LogOut,
+  Settings,
+  UserCircle2,
+} from "lucide-react";
 import {
   isLoginRequiredPath,
   loginRedirectPath,
@@ -15,13 +22,33 @@ const pillClass =
   "inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-60";
 const iconCls = "h-4 w-4 shrink-0";
 
+const expiryFmt = new Intl.DateTimeFormat("th-TH", {
+  timeZone: "Asia/Bangkok",
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+/** Access-code expiry (end of day, Bangkok) as a Thai date. */
+function formatExpiry(iso: string): string | null {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : expiryFmt.format(d);
+}
+
 /** Login state in the page header (client-only; keeps the page static). */
 export function HeaderAuth() {
   const { status, displayName, logout } = useAuth();
   const router = useRouter();
   const { data: session } = useSession();
-  const isAdmin =
-    (session?.user as { role?: unknown } | undefined)?.role === "admin";
+  const sessionUser = session?.user as
+    | { role?: unknown; provider?: unknown; auditorExpiresAt?: unknown }
+    | undefined;
+  const isAuditor = sessionUser?.provider === "access-code";
+  const isAdmin = !isAuditor && sessionUser?.role === "admin";
+  const auditorExpiry =
+    isAuditor && typeof sessionUser?.auditorExpiresAt === "string"
+      ? formatExpiry(sessionUser.auditorExpiresAt)
+      : null;
   const [busy, setBusy] = useState(false);
   const pathname = usePathname();
 
@@ -69,6 +96,16 @@ export function HeaderAuth() {
           {displayName}
         </span>
       </span>
+      {isAuditor && (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full bg-amber-300 px-3 py-1 text-xs font-semibold text-amber-950"
+          title="เข้าสู่ระบบด้วยลิงก์สำหรับผู้ตรวจภายนอก"
+        >
+          <BadgeCheck aria-hidden="true" className={iconCls} />
+          ผู้ตรวจภายนอก
+          {auditorExpiry && ` · ใช้ได้ถึง ${auditorExpiry}`}
+        </span>
+      )}
       {isAdmin && (
         <Link href="/admin/users" className={pillClass}>
           <Settings aria-hidden="true" className={iconCls} />

@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Building2, ScrollText, UsersRound } from "lucide-react";
+import { Building2, KeyRound, ScrollText, UsersRound } from "lucide-react";
 
 const tabs = [
   { href: "/admin/users", key: "users", label: "ผู้ใช้งาน", Icon: UsersRound },
   { href: "/admin/departments", key: "departments", label: "แผนก", Icon: Building2 },
+  { href: "/admin/access-codes", key: "access-codes", label: "ลิงก์ผู้ตรวจภายนอก", Icon: KeyRound },
   { href: "/admin/logs", key: "logs", label: "บันทึกการใช้งาน", Icon: ScrollText },
 ] as const;
 

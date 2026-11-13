@@ -9,11 +9,13 @@ export function ChartCard({
   badge,
   chart,
   table,
+  controls,
 }: {
   title: string;
   badge?: string;
   chart: React.ReactNode;
   table: React.ReactNode;
+  controls?: React.ReactNode;
 }) {
   const [showTable, setShowTable] = useState(false);
   const panelId = useId();
@@ -31,6 +33,7 @@ export function ChartCard({
           </span>
         )}
       </div>
+      {controls && <div className="mt-2">{controls}</div>}
       <div id={panelId} className="mt-3">
         {showTable ? <div className="overflow-x-auto">{table}</div> : chart}
       </div>

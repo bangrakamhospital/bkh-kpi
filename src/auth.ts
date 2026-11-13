@@ -7,11 +7,21 @@ import NextAuth, {
 } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
+import { accessCodeHashingReady } from "@/lib/access-codes/code";
+import { verifyAccessCode } from "@/lib/access-codes/store";
+import {
+  ACCESS_CODE_INPUT_MAX,
+  ACCESS_CODE_PROVIDER_ID,
+  ACCESS_CODE_USERNAME_PREFIX,
+} from "@/lib/access-codes/types";
 import { auditAuth } from "@/lib/auth/audit";
 import { LOGIN_CODE, rateLimitedCode, SSO_CODE } from "@/lib/auth/messages";
 import { getAuthProvider } from "@/lib/auth/provider";
 import {
+  accessCodeRetryAfter,
   loginRetryAfter,
+  recordAccessCodeFailure,
+  recordAccessCodeSuccess,
   recordLoginFailure,
   recordLoginSuccess,
 } from "@/lib/auth/rate-limit";
@@ -32,6 +42,7 @@ import type { AuthUser } from "@/lib/auth/types";
 import {
   isBootstrapAdminName,
   isEnvAdmin,
+  isSessionProvider,
   logStoreError,
   passwordLoginEnabled,
   resolveAccess,
@@ -51,6 +62,10 @@ import type { UserRole } from "@/lib/users/types";
  *    user is upserted in data/users.json; only status "approved" may sign
  *    in (new users are "pending"). AUTH_ADMIN_SUBS / AUTH_BOOTSTRAP_ADMIN_FNAMES
  *    create admins. The emergency Credentials account counts as admin.
+ *  - External auditors: Credentials provider "access-code" with a
+ *    per-auditor code issued by an admin (src/lib/access-codes). Session
+ *    username `access-code:<id>`, role always "user"; revoked / expired
+ *    codes end the session on the next read (resolveAccess).
  *  - Stateless JWT session (encrypted cookie, AUTH_SECRET), absolute
  *    lifetime 8 h from login; contains only { username, name, provider, role }.
  *    Every session read re-checks the user store (revocation is immediate).
@@ -124,8 +139,13 @@ export interface SessionUser {
    * jwt callback). UI hint only: route handlers re-check the store.
    */
   role: UserRole;
-  /** "sso" = Provider ID, "password" = emergency Credentials (admin). */
+  /**
+   * "sso" = Provider ID, "password" = emergency Credentials (admin),
+   * "access-code" = external auditor (role always "user").
+   */
   provider: SessionProvider;
+  /** External auditor only: code expiry (ISO 8601), for the header badge. */
+  auditorExpiresAt?: string;
 }
 
 /** Narrow, validated user from an Auth.js session (null = not logged in). */
@@ -137,17 +157,31 @@ export function sessionUser(
     !user ||
     typeof user.username !== "string" ||
     user.username === "" ||
-    (user.provider !== "sso" && user.provider !== "password")
+    !isSessionProvider(user.provider)
   ) {
     return null;
   }
+  const auditor = user.provider === "access-code";
   return {
     username: user.username,
     name:
       typeof user.name === "string" && user.name ? user.name : user.username,
-    role: user.role === "admin" ? "admin" : "user",
+    // An auditor is never an admin, whatever the token says.
+    role: !auditor && user.role === "admin" ? "admin" : "user",
     provider: user.provider,
+    ...(auditor && typeof user.auditorExpiresAt === "string"
+      ? { auditorExpiresAt: user.auditorExpiresAt }
+      : {}),
   };
+}
+
+/** Auth.js provider id -> session provider (unknown -> null, no session). */
+function sessionProviderOf(providerId: string | undefined): SessionProvider | null {
+  if (providerId === SSO_PROVIDER_ID) return "sso";
+  if (providerId === ACCESS_CODE_PROVIDER_ID) return "access-code";
+  // Emergency Credentials provider (default id "credentials").
+  if (providerId === "credentials") return "password";
+  return null;
 }
 
 /**
@@ -213,6 +247,8 @@ function buildConfig(meta: RequestMeta): NextAuthConfig {
         : []),
       // SSO (Provider ID) — only when AUTH_PLKHEALTH_* is configured.
       ...(sso ? [sso] : []),
+      // External auditors: per-auditor access code issued at /admin/access-codes.
+      accessCodeProvider(meta),
     ],
     callbacks: {
       async signIn({ account, profile }) {
@@ -221,6 +257,12 @@ function buildConfig(meta: RequestMeta): NextAuthConfig {
         const who = ssoSubject(account);
         if (!who || str(profile?.sub) !== who) {
           auditAuth("login_failed", "-", meta, { detail: "invalid_sso_profile" });
+          return false;
+        }
+        // Reserved namespace of external-auditor sessions: refuse before
+        // the user store is touched (no upsert, no login_success).
+        if (who.startsWith(ACCESS_CODE_USERNAME_PREFIX)) {
+          auditAuth("login_failed", "-", meta, { detail: "reserved_sso_sub" });
           return false;
         }
         const org = checkOrg(profile as Record<string, unknown> | undefined);
@@ -247,11 +289,19 @@ function buildConfig(meta: RequestMeta): NextAuthConfig {
         if (user) {
           // Sign-in: fresh minimal token (drops email/picture defaults).
           // SSO: OIDC sub; Credentials: the HOSxP / local loginname.
-          const provider: SessionProvider =
-            account?.provider === SSO_PROVIDER_ID ? "sso" : "password";
+          // Explicit mapping: an unknown provider id must never fall back
+          // to "password" (= admin).
+          const provider = sessionProviderOf(account?.provider);
+          if (!provider) return null;
           const username =
             provider === "sso" ? ssoSubject(account) : (user.id ?? "");
           if (!username) return null;
+          if (
+            (provider === "access-code") !==
+            username.startsWith(ACCESS_CODE_USERNAME_PREFIX)
+          ) {
+            return null;
+          }
           const access = await resolveAccess(username, provider);
           if (!access.ok) return null;
           return {
@@ -261,6 +311,9 @@ function buildConfig(meta: RequestMeta): NextAuthConfig {
             provider,
             role: access.role,
             loginAt: now,
+            ...(access.auditor
+              ? { auditorExpiresAt: access.auditor.expiresAt }
+              : {}),
           };
         }
         // Absolute expiry: Auth.js re-issues the cookie on every session
@@ -276,23 +329,42 @@ function buildConfig(meta: RequestMeta): NextAuthConfig {
         }
         // Revocation: every session read re-checks the user store, so a
         // rejected / reset user is logged out and role changes show up.
+        // Access codes: revoked / expired code -> session ends here.
         const access = await resolveAccess(token.username, token.provider);
         if (!access.ok) return null;
-        return { ...token, role: access.role };
+        return {
+          ...token,
+          role: access.role,
+          ...(access.auditor
+            ? { auditorExpiresAt: access.auditor.expiresAt }
+            : {}),
+        };
       },
       session({ token }) {
         const username =
           typeof token.username === "string" ? token.username : "";
         const name = typeof token.name === "string" ? token.name : username;
         const loginAt = typeof token.loginAt === "number" ? token.loginAt : 0;
-        const role: UserRole = token.role === "admin" ? "admin" : "user";
-        const provider: SessionProvider =
-          token.provider === "password" ? "password" : "sso";
+        const provider: SessionProvider = isSessionProvider(token.provider)
+          ? token.provider
+          : "sso";
+        const role: UserRole =
+          provider !== "access-code" && token.role === "admin" ? "admin" : "user";
+        const auditorExpiresAt =
+          provider === "access-code" && typeof token.auditorExpiresAt === "string"
+            ? token.auditorExpiresAt
+            : undefined;
         return {
           expires: new Date(
             (loginAt + SESSION_MAX_AGE_SECONDS) * 1000,
           ).toISOString(),
-          user: { username, name, role, provider },
+          user: {
+            username,
+            name,
+            role,
+            provider,
+            ...(auditorExpiresAt ? { auditorExpiresAt } : {}),
+          },
         } as unknown as Session;
       },
     },
@@ -375,6 +447,82 @@ function credentialsProvider(meta: RequestMeta) {
       return { id: user.loginname, name: user.displayName };
     },
   });
+}
+
+/**
+ * External auditor login with a per-auditor access code (provider id
+ * "access-code"). Session username = `access-code:<record id>`, role
+ * "user". Wrong / expired / revoked codes are audited and rate limited
+ * like password failures (5 / 5 min per IP, src/lib/auth/rate-limit.ts).
+ */
+function accessCodeProvider(meta: RequestMeta) {
+  return Credentials({
+    id: ACCESS_CODE_PROVIDER_ID,
+    name: "ลิงก์ผู้ตรวจภายนอก",
+    credentials: {
+      code: { label: "รหัสลับ", type: "password" },
+    },
+    async authorize(credentials) {
+      if (!isAuthConfigured() || !accessCodeHashingReady()) {
+        console.error(
+          "[auth] access-code login disabled: AUTH_SECRET missing or shorter than 32 characters",
+        );
+        throw new LoginError(LOGIN_CODE.disabled);
+      }
+      const raw = credentials?.code;
+      if (
+        typeof raw !== "string" ||
+        raw.trim() === "" ||
+        raw.length > ACCESS_CODE_INPUT_MAX
+      ) {
+        throw new LoginError(LOGIN_CODE.accessCodeMissing);
+      }
+
+      const retryAfter = accessCodeRetryAfter(meta.ip);
+      if (retryAfter > 0) {
+        auditAuth("login_rate_limited", "-", meta, { detail: "access_code" });
+        throw new LoginError(rateLimitedCode(retryAfter));
+      }
+
+      let result;
+      try {
+        result = await verifyAccessCode(raw);
+      } catch (err) {
+        logStoreError(err);
+        auditAuth("login_store_error", "-", meta, { detail: "access_code" });
+        throw new LoginError(LOGIN_CODE.unavailable);
+      }
+
+      if (!result.ok) {
+        recordAccessCodeFailure(meta.ip);
+        if (result.reason === "invalid") {
+          auditAuth("login_failed", "-", meta, { detail: "access_code_invalid" });
+          throw new LoginError(LOGIN_CODE.accessCodeInvalid);
+        }
+        auditAuth(
+          "login_failed",
+          `${ACCESS_CODE_USERNAME_PREFIX}${result.record.id}`,
+          meta,
+          {
+            name: auditorDisplayName(result.record.name, result.record.org),
+            detail: `access_code_${result.reason}`,
+          },
+        );
+        throw new LoginError(LOGIN_CODE.accessCodeInactive);
+      }
+
+      const username = `${ACCESS_CODE_USERNAME_PREFIX}${result.record.id}`;
+      const name = auditorDisplayName(result.record.name, result.record.org);
+      recordAccessCodeSuccess(meta.ip);
+      auditAuth("login_success", username, meta, { name, detail: "access_code" });
+      return { id: username, name };
+    },
+  });
+}
+
+/** Session / audit display name of an auditor: "name (org)". */
+function auditorDisplayName(name: string, org: string): string {
+  return org ? `${name} (${org})` : name;
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth((request) => {

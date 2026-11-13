@@ -254,6 +254,76 @@ LEFT JOIN (
 GROUP BY g.id, no_dx, n.name1, r.ranges
 `;
 
+/**
+ * New admissions in range by MOPH รง.505 disease group of the ADMITTING
+ * diagnosis ("รับใหม่ (แรกรับ)" view).
+ * -> rows { group_id (NULL = not classifiable), no_dx (1 = the admitting OPD
+ *    visit has no principal dx), name_th, ranges, admissions }
+ *
+ * Date basis: ipt.regdate in range — same universe as the admit_new card
+ * (all wards incl. home ward). Unlike diseaseGroupsIpd (discharges by final
+ * an_stat.pdx, coded 1-3 days after discharge) this is available at once,
+ * but provisional: ~53 % agree with the final pdx at 3 characters.
+ * code = principal dx of the OPD visit that sent the patient in
+ *   (ovstdiag diagtype '1' of ipt.vn); injuries (S/T) re-classified by
+ *   external cause (ovstdiag diagtype '5' of the same vn), like OPD.
+ *   ipt.vn NULL / no ovstdiag row -> code NULL -> no_dx = 1.
+ * Same rpt_505_code / rpt_505_name mapping as diseaseGroupsIpd.
+ *
+ * Why ovstdiag and not vn_stat.pdx (checked with db-cli, regdate
+ * 2025-11-12..2026-11-12, 10,256 admissions): they disagree on only 2 —
+ * one fresh visit whose vn_stat.pdx was not yet refreshed (ovstdiag had it)
+ * and one old visit whose ovstdiag row was deleted (vn_stat stale).
+ * ovstdiag is the source of truth and the fresher of the two, which is the
+ * point of this view. No vn has more than one diagtype '1' row.
+ *
+ * Verified 2026-11-12 (1 day): 46 admissions = admit_new — classified 36,
+ * unclassified 2, no_dx 8 (admitting visit has only diagtype '2' rows or no
+ * dx yet). 2026-10-13..2026-11-12: 762 (unclassified 22, no_dx 9).
+ * Performance: ipt.regdate range scan + dependent subqueries on index
+ * ovstdiag.vn; ~8 ms / day, ~35 ms / month, ~0.35 s / 366 d (optimizer
+ * switches ipt to a full scan at ~10k of 112k rows; still fast). The
+ * vn_stat.pdx variant was ~0.2 s / 366 d — not worth the staleness.
+ */
+const diseaseGroupsIpdAdmit = `
+SELECT
+  g.id AS group_id,
+  (x.code IS NULL OR x.code = '') AS no_dx,
+  n.name1 AS name_th,
+  r.ranges,
+  SUM(x.admissions) AS admissions
+FROM (
+  SELECT
+    CASE
+      WHEN LEFT(p.pdx, 1) IN ('S', 'T') THEN COALESCE(
+        (SELECT MIN(d.icd10) FROM ovstdiag d
+          WHERE d.vn = p.vn AND d.diagtype = '5'),
+        p.pdx)
+      ELSE p.pdx
+    END AS code,
+    COUNT(*) AS admissions
+  FROM (
+    SELECT
+      i.vn,
+      (SELECT MIN(d.icd10) FROM ovstdiag d
+        WHERE d.vn = i.vn AND d.diagtype = '1') AS pdx
+    FROM ipt i
+    WHERE i.regdate BETWEEN :from AND :to
+  ) p
+  GROUP BY code
+) x
+LEFT JOIN rpt_505_code g ON x.code BETWEEN g.code1 AND g.code2
+LEFT JOIN rpt_505_name n ON n.id = g.id
+LEFT JOIN (
+  SELECT c.id,
+    GROUP_CONCAT(CONCAT(LEFT(c.code1, 3), '-', LEFT(c.code2, 3))
+      ORDER BY c.code1 SEPARATOR ', ') AS ranges
+  FROM rpt_505_code c
+  GROUP BY c.id
+) r ON r.id = g.id
+GROUP BY g.id, no_dx, n.name1, r.ranges
+`;
+
 export const OVERVIEW_SQL = {
   cards,
   wards,
@@ -263,4 +333,5 @@ export const OVERVIEW_SQL = {
   ageSex,
   diseaseGroupsOpd,
   diseaseGroupsIpd,
+  diseaseGroupsIpdAdmit,
 } as const;
