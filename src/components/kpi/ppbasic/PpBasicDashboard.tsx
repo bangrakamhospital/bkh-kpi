@@ -6,6 +6,7 @@ import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
 import { formatThaiDate } from "../format";
 import { FiscalYearSelect } from "../FiscalYearSelect";
 import { PpBasicCards } from "./PpBasicCards";
+import { PpBasicStatCards } from "./PpBasicStatCards";
 import { PpBasicTable } from "./PpBasicTable";
 
 // HOSxP data for these items verified from FY2568 (docs/kpi/pp-basic-services.md).
@@ -104,10 +105,10 @@ export async function PpBasicDashboard({
         </div>
       ) : (
         <>
+          {data.moneyTotals && <PpBasicStatCards totals={data.moneyTotals} />}
           <PpBasicCards items={items} />
-          <p className="text-xs text-zinc-600 dark:text-zinc-400">
-            บริการพื้นฐาน P&amp;P จ่ายแบบเหมาจ่ายรายหัว จึงแสดงความครอบคลุม (คน) ไม่ใช่จำนวนเงิน
-            {" "}ข้อมูลจาก HOSxP ของโรงพยาบาลเท่านั้น
+          <p className="break-words text-xs text-zinc-600 dark:text-zinc-400">
+            ข้อมูลจาก HOSxP ของโรงพยาบาลเท่านั้น
             {" "}
             {data.closed
               ? "ปีงบประมาณนี้ปิดแล้ว"

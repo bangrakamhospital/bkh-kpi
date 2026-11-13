@@ -1,6 +1,6 @@
 import type { PpBasicItem } from "@/lib/kpi/ppbasic-types";
 import { ProgressBar } from "../ProgressBar";
-import { formatNumber, formatPercent } from "../format";
+import { formatBaht, formatNumber, formatPercent } from "../format";
 
 export function PpBasicCards({ items }: { items: PpBasicItem[] }) {
   return (
@@ -47,6 +47,27 @@ export function PpBasicCards({ items }: { items: PpBasicItem[] }) {
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
                 ทำแล้ว {formatNumber(it.done)} / เป้าหมาย {formatNumber(it.target)} {it.unit}
               </p>
+              <p className="break-words text-xs text-zinc-600 dark:text-zinc-400">
+                {it.money && it.money.rate !== null
+                  ? `ได้แล้ว ${formatBaht(it.money.earnedBaht ?? 0)} / เป้าหมาย ${formatBaht(it.money.targetBaht ?? 0)} บาท${
+                      it.money.basis === "reference"
+                        ? " (มูลค่าอ้างอิง)"
+                        : " (เงิน สปสช.)"
+                    }`
+                  : "เหมาจ่ายรายหัว ไม่มีมูลค่าเป็นเงิน"}
+              </p>
+              {it.money &&
+                it.money.rate !== null &&
+                it.money.units !== it.unit && (
+                  <p className="break-words text-xs text-zinc-600 dark:text-zinc-400">
+                    เงิน: นับเป็น{it.money.units} ({formatNumber(it.money.doneUnits)}/
+                    {formatNumber(it.money.targetUnits)} {it.money.units})
+                    {it.money.outOfAreaUnits !== undefined
+                      ? ` รวมนอกเขต ${formatNumber(it.money.outOfAreaUnits)} ${it.money.units}`
+                      : ""}
+                    {" "}ส่วนร้อยละนับเป็น{it.unit}ในเขต
+                  </p>
+                )}
             </>
           )}
         </div>

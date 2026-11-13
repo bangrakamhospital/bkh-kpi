@@ -5,9 +5,11 @@ import { cacheLife, cacheTag, io } from "next/cache";
 
 import { HisQueryError, query } from "@/lib/db/his";
 import { fiscalYearRange, todayIsoDate } from "@/lib/kpi/fiscal-year";
+import { PPBASIC_RATES } from "@/lib/kpi/ppbasic-rates";
 import type {
   PpBasicCode,
   PpBasicItem,
+  PpBasicMoney,
   PpBasicSummary,
   PpBasicVillageRow,
 } from "@/lib/kpi/ppbasic-types";
@@ -38,6 +40,13 @@ import type { ScreeningSqlContext } from "@/lib/kpi/sql/screening-common";
  *     target; dataAsOf only ends the counted services.
  * PPFS (./ppfs.ts) instead passes dataAsOf = 30 Sep for every year (its
  * targets are whole-year baht targets).
+ *
+ * Money (item.money, summary.moneyTotals): rate table ./ppbasic-rates.ts
+ * (basis "nhso" = real NHSO rate, "reference" = hospital reference value,
+ * "unset" = no baht). Units = persons (target / done), except items with a
+ * money query (sql.money; EPI: vaccine doses, toDoseUnits() below and
+ * EPI_MONEY in ./sql/ppbasic-child-hosxp.ts). Totals are kept per basis
+ * and never mixed.
  */
 
 export const PPBASIC_CACHE_TAG = "kpi:ppbasic";
@@ -45,7 +54,11 @@ export const PPBASIC_CACHE_TAG = "kpi:ppbasic";
 type PpBasicItemDef = Pick<
   PpBasicItem,
   "code" | "order" | "name" | "group" | "condition" | "unit" | "caveat"
-> & { sql: PpBasicVillageSql };
+> & {
+  sql: PpBasicVillageSql;
+  /** Thai unit of the money units when the SQL has a money query (sql.money). */
+  moneyUnits?: string;
+};
 
 /** Display texts from the SQL authors' docs, trimmed for a table cell. */
 export const PPBASIC_ITEMS: readonly PpBasicItemDef[] = [
@@ -83,6 +96,7 @@ export const PPBASIC_ITEMS: readonly PpBasicItemDef[] = [
     caveat:
       "ป.6 คิดจากช่วงวันเกิด (ไม่ใช่ชั้นเรียนจริง) และอยู่ในเป้าตั้งแต่ต้นปี แต่ฉีด dT ช่วง ก.พ.-มี.ค.",
     sql: PPBASIC_CHILD_SQL.EPI,
+    moneyUnits: "เข็ม",
   },
   {
     code: "FLUORIDE",
@@ -149,6 +163,27 @@ interface VillageRow extends RowDataPacket {
   numerator: number | string;
 }
 
+/** One row of sql.money (see PpBasicMoneySql / EPI_MONEY). */
+interface MoneyRow extends RowDataPacket {
+  due_units: number | string | null;
+  done_units: number | string | null;
+  catchment_done_units: number | string | null;
+  catchment_birth_units: number | string | null;
+}
+
+/** Dose units of an item with sql.money (EPI), see PpBasicMoney. */
+type DoseUnits = Required<
+  Pick<
+    PpBasicMoney,
+    | "targetUnits"
+    | "doneUnits"
+    | "catchmentDueUnits"
+    | "catchmentDoneUnits"
+    | "catchmentBirthUnits"
+    | "outOfAreaUnits"
+  >
+>;
+
 const num = (v: number | string | null | undefined): number => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -167,11 +202,38 @@ const toDisplay = (def: PpBasicItemDef) => ({
   caveat: def.caveat,
 });
 
+/**
+ * EPI dose units. done = every UC EPI dose given here (all areas). The gap
+ * compares the catchment with itself on the same schedule: doses due vs
+ * scheduled doses given (catchment done minus birth doses); out-of-area
+ * and birth doses have no schedule here, so they are their own target.
+ * target = done + gap, so target >= done and the gap is never negative.
+ */
+function toDoseUnits(row: MoneyRow | undefined): DoseUnits {
+  const due = num(row?.due_units);
+  const done = num(row?.done_units);
+  const catchmentAll = Math.min(num(row?.catchment_done_units), done);
+  const birth = Math.min(num(row?.catchment_birth_units), catchmentAll);
+  const scheduledDone = catchmentAll - birth;
+  return {
+    targetUnits: done + Math.max(0, due - scheduledDone),
+    doneUnits: done,
+    catchmentDueUnits: due,
+    catchmentDoneUnits: scheduledDone,
+    catchmentBirthUnits: birth,
+    outOfAreaUnits: done - catchmentAll,
+  };
+}
+
 async function loadItem(
   def: PpBasicItemDef,
   ctx: ScreeningSqlContext,
 ): Promise<PpBasicItem> {
-  const rows = await query<VillageRow>(def.sql.village, def.sql.buildParams(ctx));
+  const money = def.sql.money;
+  const [rows, moneyRows] = await Promise.all([
+    query<VillageRow>(def.sql.village, def.sql.buildParams(ctx)),
+    money ? query<MoneyRow>(money.sql, money.buildParams(ctx)) : null,
+  ]);
   const villages: PpBasicVillageRow[] = rows.map((r) => ({
     villageId: num(r.village_id),
     moo: emptyToNull(r.village_moo),
@@ -190,13 +252,59 @@ async function loadItem(
     target += v.target;
     done += v.done;
   }
+  const units: DoseUnits | { targetUnits: number; doneUnits: number } = moneyRows
+    ? toDoseUnits(moneyRows[0])
+    : { targetUnits: target, doneUnits: done };
   return {
     ...toDisplay(def),
     target,
     done,
     percent: target > 0 ? (done / target) * 100 : 0,
     villages,
+    money: buildMoney(def, units),
   };
+}
+
+function buildMoney(
+  def: PpBasicItemDef,
+  units: DoseUnits | { targetUnits: number; doneUnits: number },
+): PpBasicMoney {
+  const r = PPBASIC_RATES[def.code];
+  const base = {
+    basis: r.basis,
+    rate: r.rate,
+    rateUnit: r.rateUnit,
+    rateNote: r.rateNote,
+    ...units,
+    units: def.sql.money ? (def.moneyUnits ?? def.unit) : def.unit,
+  };
+  if (r.basis === "unset") {
+    return { ...base, targetBaht: null, earnedBaht: null, gapBaht: null };
+  }
+  const targetBaht = units.targetUnits * r.rate;
+  const earnedBaht = units.doneUnits * r.rate;
+  return {
+    ...base,
+    targetBaht,
+    earnedBaht,
+    gapBaht: Math.max(0, targetBaht - earnedBaht),
+  };
+}
+
+function moneyTotals(items: readonly PpBasicItem[]): PpBasicSummary["moneyTotals"] {
+  const totals: PpBasicSummary["moneyTotals"] = {
+    nhso: { targetBaht: 0, earnedBaht: 0, gapBaht: 0 },
+    reference: { targetBaht: 0, earnedBaht: 0, gapBaht: 0 },
+  };
+  for (const it of items) {
+    const m = it.money;
+    if (it.error !== undefined || m === null || m.basis === "unset") continue;
+    const t = totals[m.basis];
+    t.targetBaht += m.targetBaht ?? 0;
+    t.earnedBaht += m.earnedBaht ?? 0;
+    t.gapBaht += m.gapBaht ?? 0;
+  }
+  return totals;
 }
 
 function failedItem(def: PpBasicItemDef): PpBasicItem {
@@ -206,6 +314,7 @@ function failedItem(def: PpBasicItemDef): PpBasicItem {
     done: 0,
     percent: 0,
     villages: [],
+    money: null,
     error: "ไม่สามารถดึงข้อมูลรายการนี้ได้",
   };
 }
@@ -233,7 +342,7 @@ async function loadPpBasicSummary(
     dataAsOf,
   };
 
-  // EPI ~3 s and ELDERLY_DEPRESSION ~2 s dominate; the rest < 0.6 s.
+  // ELDERLY_DEPRESSION ~2 s dominates; the rest (EPI included) < 0.6 s.
   const settled = await Promise.allSettled(
     PPBASIC_ITEMS.map((def) => loadItem(def, ctx)),
   );
@@ -265,6 +374,7 @@ async function loadPpBasicSummary(
     dataAsOf,
     closed,
     items,
+    moneyTotals: moneyTotals(items),
     updatedAt: new Date().toISOString(),
   };
 }
