@@ -1,7 +1,6 @@
-import { Suspense } from "react";
+import { FiscalYearSuspense } from "@/components/kpi/FiscalYearSuspense";
 import Image from "next/image";
 import { PpBasicDashboard } from "@/components/kpi/ppbasic/PpBasicDashboard";
-import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
 import { PpSubNav } from "@/components/kpi/PpSubNav";
 import { PageViewAudit } from "@/components/audit/PageViewAudit";
@@ -42,11 +41,11 @@ export default function PpBasicPage(props: PageProps<"/pp/basic">) {
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
         <PageViewAudit path="/pp/basic" searchParams={props.searchParams} />
-        <Suspense fallback={<DashboardSkeleton />}>
+        <FiscalYearSuspense searchParams={props.searchParams}>
           <RequireLogin path="/pp/basic" searchParams={props.searchParams}>
             <PpBasicDashboard searchParams={props.searchParams} />
           </RequireLogin>
-        </Suspense>
+        </FiscalYearSuspense>
       </main>
     </>
   );
