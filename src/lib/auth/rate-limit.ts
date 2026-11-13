@@ -90,3 +90,31 @@ export function recordLoginFailure(
 export function recordLoginSuccess(ip: string, username: string) {
   buckets.delete(keys(ip, username).user);
 }
+
+// --- external-auditor access codes ----------------------------------------
+// Same limits (5 per IP / 5 min, plus the shared 20 per IP), but in their
+// own key namespace ("c|") so no password username can ever share or
+// reset this bucket.
+
+function accessCodeKey(ip: string): string {
+  return `c|${ip}`;
+}
+
+export function accessCodeRetryAfter(ip: string, now = Date.now()): number {
+  const c = active(accessCodeKey(ip), now);
+  const i = active(keys(ip, "").ip, now);
+  let until = 0;
+  if (c && c.count >= MAX_PER_USER) until = Math.max(until, c.resetAt);
+  if (i && i.count >= MAX_PER_IP) until = Math.max(until, i.resetAt);
+  return until > now ? Math.ceil((until - now) / 1000) : 0;
+}
+
+export function recordAccessCodeFailure(ip: string, now = Date.now()) {
+  if (buckets.size > MAX_KEYS) prune(now);
+  bump(accessCodeKey(ip), now);
+  bump(keys(ip, "").ip, now);
+}
+
+export function recordAccessCodeSuccess(ip: string) {
+  buckets.delete(accessCodeKey(ip));
+}

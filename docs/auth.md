@@ -13,10 +13,11 @@
 | `GET /api/kpi/screening/persons` (รายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
 | `GET /api/kpi/screening/export` (Excel มีชีตรายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
 | `GET /api/departments` (รายการแผนกสำหรับกรองหน้าแรก) | สาธารณะ |
-| `GET /api/admin/users`, `PATCH /api/admin/users/{sub}`, `POST/PATCH/DELETE /api/admin/departments[/{id}]` | ผู้ดูแลระบบ (`role=admin`) |
+| `GET /api/admin/users`, `PATCH /api/admin/users/{sub}`, `POST/PATCH/DELETE /api/admin/departments[/{id}]`, `GET/POST/DELETE /api/admin/access-codes[/{id}]` | ผู้ดูแลระบบ (`role=admin`) |
 | `/api/auth/*` ของ Auth.js (`session`, `csrf`, `providers`, `signin/plkhealth`, `callback/plkhealth`, `signout`) | สาธารณะ (POST ต้องมี CSRF token ของ Auth.js) |
 | `/auth/callback` redirect URI ที่ลงทะเบียนกับ IdP: 307 ส่งต่อ query เดิมไป `/api/auth/callback/plkhealth` | สาธารณะ |
 | `/login` หน้าเข้าสู่ระบบ | สาธารณะ |
+| `/access#<code>` ลิงก์เข้าสู่ระบบของผู้ตรวจภายนอก (รหัสอยู่ใน fragment) | สาธารณะ (`Referrer-Policy: no-referrer`, `no-store`) |
 
 ถ้าไม่ได้ล็อกอิน route ที่ต้องล็อกอินจะตอบ `401 { "error": "กรุณาเข้าสู่ระบบ" }` และ `Cache-Control: private, no-store`
 การตรวจสิทธิ์ของ API อยู่ใน route handler เอง (`requireSession()` ใน `src/lib/auth/guard.ts` ซึ่งเรียก `auth()` ของ Auth.js) proxy ไม่ครอบ `/api/*`
@@ -85,6 +86,21 @@ type อยู่ที่ `src/lib/users/types.ts` (import ได้จาก�
 ### Deploy
 
 `scripts/deploy-kpi.sh` ใช้ `git reset --hard` ซึ่ง**ไม่ลบ** `data/` (เป็นโฟลเดอร์ untracked ที่อยู่ใน `.gitignore`) script สร้าง `data/` (0700) ให้เป็นของผู้ใช้ที่รัน pm2 ห้ามใช้ `git clean -x` บน server ถ้าตั้ง `KPI_DATA_DIR` ต้องสร้างโฟลเดอร์นั้นเองและให้ผู้ใช้ pm2 เขียนได้ ควรสำรอง `users.json` ไว้ด้วย (ถ้าหาย ทุกคนจะกลับเป็น pending ยกเว้น `AUTH_ADMIN_SUBS`)
+
+## ลิงก์สำหรับผู้ตรวจภายนอก (access code)
+
+ผู้ดูแลระบบออก**ลิงก์ 1 ลิงก์ต่อผู้ตรวจ 1 คน** ที่ `/admin/access-codes` (ชื่อ, หน่วยงาน, วันหมดอายุ: ค่าเริ่มต้น 7 วัน ใช้ได้ถึงสิ้นวันที่เลือกตามเวลาไทย แต่ไม่เกิน 90 วันนับจากเวลาที่สร้าง) แล้วส่งลิงก์ให้ผู้ตรวจ ผู้ตรวจ**ไม่ต้องกรอกรหัสที่ไหน** หน้า `/login` ไม่มีช่องกรอกรหัสลับ
+
+- **ลิงก์:** `${origin}/access#<code>` รหัสอยู่ใน URL fragment จึงไม่ถูกส่งไปที่ server, log ของ nginx/proxy หรือ Referer หน้า `/access` (สาธารณะ ไม่อยู่ใน `LOGIN_REQUIRED_PAGES`/proxy matcher, `src/components/auth/AccessLinkLogin.tsx`) อ่าน `location.hash` แล้วลบออกจาก address bar/history ทันทีด้วย `history.replaceState` จากนั้นเรียก `signIn("access-code", { code, redirect: false })` (CSRF ของ Auth.js) สำเร็จ -> `/hospital` (หรือ `?callbackUrl=` ที่ผ่าน `safeNextPath`) ไม่สำเร็จ -> ข้อความไทย (ไม่ถูกต้อง / หมดอายุหรือถูกยกเลิก / พยายามถี่เกินไป) + "กรุณาติดต่อผู้ดูแลระบบเพื่อขอลิงก์ใหม่" `/access` ส่ง `Referrer-Policy: no-referrer` และ `Cache-Control: private, no-store` (`next.config.ts` `headers()`) และมี `<meta name="referrer" content="no-referrer">`
+- **แสดงครั้งเดียว:** หน้า admin แสดงลิงก์เต็มครั้งเดียวหลังสร้าง (สร้างจาก `window.location.origin`) ถ้าลิงก์หาย ให้สร้างลิงก์ใหม่แล้วยกเลิกลิงก์เดิม
+- **สิทธิ์:** เท่าผู้ใช้ทั่วไปที่ `approved` (`/hospital`, `/pp`, API รายชื่อ/Excel ที่ใช้ `requireSession()`) แต่ `role` เป็น `user` เสมอ ไม่มีทางเป็น admin
+- **รูปแบบรหัส:** Crockford base32 16 ตัว (80 bit) เช่น `7K3M-QX9P-2HDT-WV8R` ไม่สนตัวพิมพ์เล็ก/ใหญ่ ขีด/ช่องว่าง และแปลง `O`->`0`, `I`/`L`->`1`
+- **การเก็บ:** `${KPI_DATA_DIR}/access-codes.json` (0600) เก็บเฉพาะ HMAC-SHA256 ของรหัส (key มาจาก `AUTH_ACCESS_CODE_SECRET` ถ้าตั้งและยาว >= 32 ตัว ไม่งั้นใช้ `AUTH_SECRET` ถ้าตั้ง `AUTH_ACCESS_CODE_SECRET` แต่สั้นกว่า 32 ตัวจะเตือนใน log ครั้งเดียวและใช้ `AUTH_SECRET` แทน) รหัสจริงแสดงครั้งเดียวตอนสร้าง (เป็นส่วนหนึ่งของลิงก์) เทียบแบบ constant-time ทุก record **ถ้าเปลี่ยน secret นั้น รหัสที่ออกไปแล้วใช้ไม่ได้ทั้งหมด**
+- **Session:** provider `access-code`, username `access-code:<id>`, ชื่อ "ชื่อ (หน่วยงาน)" header แสดงป้าย "ผู้ตรวจภายนอก · ใช้ได้ถึง ..." `resolveAccess()` ตรวจไฟล์ทุก request: ยกเลิก/หมดอายุ -> ออกจากระบบทันทีในคำขอถัดไป (อายุ session ยังไม่เกิน 8 ชม.)
+- **Rate limit:** `rate-limit.ts` (`accessCodeRetryAfter` / `recordAccessCodeFailure`): ผิด 5 ครั้ง/5 นาทีต่อ IP ใน namespace แยก (`c|<ip>`) ที่ชื่อผู้ใช้ของ password login ชนไม่ได้ และนับรวมเพดาน 20 ครั้ง/IP เดิม
+- **กัน namespace:** SSO `sub` ที่ขึ้นต้นด้วย `access-code:` ถูกปฏิเสธใน callback `signIn` ก่อนแตะไฟล์ผู้ใช้ (audit `login_failed` detail `reserved_sso_sub`)
+- **Audit:** `access_code_create` / `access_code_revoke` (ผู้ดูแลที่ทำ, target `access-code:<id>`), `login_success` / `login_failed` (detail `access_code_invalid` / `access_code_expired` / `access_code_revoked`) / `login_rate_limited`, และ `page_view` / `persons` / `export` ของผู้ตรวจบันทึกเป็น actor `access-code:<id>`
+- **API:** `GET/POST /api/admin/access-codes`, `DELETE /api/admin/access-codes/{id}` (ยกเลิก เก็บ record ไว้) เฉพาะ admin, same-origin
 
 ## สถาปัตยกรรม (Auth.js / next-auth v5)
 

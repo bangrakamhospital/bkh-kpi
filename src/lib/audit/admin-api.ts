@@ -3,6 +3,8 @@ import "server-only";
 import ExcelJS from "exceljs";
 
 import { adminError } from "@/lib/auth/admin-gate";
+import { listAccessCodes } from "@/lib/access-codes/store";
+import { ACCESS_CODE_USERNAME_PREFIX } from "@/lib/access-codes/types";
 import { listUsers } from "@/lib/users/store";
 import {
   AUDIT_ACTION_LABELS,
@@ -26,13 +28,28 @@ export function auditReadFailure(route: string, err: unknown): Response {
   return adminError(503, AUDIT_UNAVAILABLE_MESSAGE);
 }
 
-/** sub -> display name of known staff (empty when users.json is unreadable). */
+/**
+ * sub -> display name of known staff, plus `access-code:<id>` -> external
+ * auditor (each part empty when its file is unreadable).
+ */
 export async function staffNames(): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
   try {
-    return new Map((await listUsers()).map((u) => [u.sub, u.name]));
+    for (const u of await listUsers()) names.set(u.sub, u.name);
   } catch {
-    return new Map();
+    // users.json unreadable: names stay unresolved
   }
+  try {
+    for (const c of await listAccessCodes()) {
+      names.set(
+        `${ACCESS_CODE_USERNAME_PREFIX}${c.id}`,
+        `${c.name} (${c.org}) [ผู้ตรวจภายนอก]`,
+      );
+    }
+  } catch {
+    // access-codes.json unreadable
+  }
+  return names;
 }
 
 const dateTimeFmt = new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {

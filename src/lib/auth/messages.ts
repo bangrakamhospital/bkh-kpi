@@ -22,7 +22,18 @@ export const LOGIN_CODE = {
   unavailable: "provider_unavailable",
   /** Followed by `_<minutes>`, e.g. `rate_limited_5`. */
   rateLimited: "rate_limited",
+  /** External auditor (/access link): empty / too long access code. */
+  accessCodeMissing: "access_code_missing",
+  /** External auditor: no such access code. */
+  accessCodeInvalid: "access_code_invalid",
+  /** External auditor: the code exists but is expired or revoked. */
+  accessCodeInactive: "access_code_inactive",
 } as const;
+
+export const ACCESS_CODE_MISSING_MESSAGE = "ลิงก์สำหรับผู้ตรวจภายนอกไม่ครบ";
+export const ACCESS_CODE_INVALID_MESSAGE = "ลิงก์สำหรับผู้ตรวจภายนอกไม่ถูกต้อง";
+export const ACCESS_CODE_INACTIVE_MESSAGE =
+  "ลิงก์นี้หมดอายุหรือถูกยกเลิกแล้ว";
 
 /** `code` values of /login?error=AccessDenied set by the SSO signIn callback. */
 export const SSO_CODE = {
@@ -100,6 +111,12 @@ export function loginErrorMessage(
       return AUTH_DISABLED_MESSAGE;
     case LOGIN_CODE.unavailable:
       return PROVIDER_UNAVAILABLE_MESSAGE;
+    case LOGIN_CODE.accessCodeMissing:
+      return ACCESS_CODE_MISSING_MESSAGE;
+    case LOGIN_CODE.accessCodeInvalid:
+      return ACCESS_CODE_INVALID_MESSAGE;
+    case LOGIN_CODE.accessCodeInactive:
+      return ACCESS_CODE_INACTIVE_MESSAGE;
     default:
       return INVALID_CREDENTIALS_MESSAGE;
   }

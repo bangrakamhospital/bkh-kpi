@@ -1,5 +1,11 @@
 import "server-only";
 
+import {
+  accessCodeStatus,
+  getAccessCode,
+  isValidAccessCodeId,
+} from "../access-codes/store";
+import { ACCESS_CODE_USERNAME_PREFIX } from "../access-codes/types";
 import type { UserRole } from "./types";
 import { getUser, UserStoreError } from "./store";
 
@@ -19,8 +25,15 @@ import { getUser, UserStoreError } from "./store";
  *                                first login (first names are not unique).
  */
 
-/** How the session was created (stored in the JWT). */
-export type SessionProvider = "sso" | "password";
+/**
+ * How the session was created (stored in the JWT).
+ * "access-code" = external auditor (src/lib/access-codes), always role "user".
+ */
+export type SessionProvider = "sso" | "password" | "access-code";
+
+export function isSessionProvider(v: unknown): v is SessionProvider {
+  return v === "sso" || v === "password" || v === "access-code";
+}
 
 function list(name: string): string[] {
   return (process.env[name] ?? "")
@@ -59,8 +72,16 @@ export function passwordLoginEnabled(): boolean {
   return process.env.AUTH_PASSWORD_LOGIN?.trim().toLowerCase() === "true";
 }
 
+/** Extra session info of an external auditor (header badge). */
+export interface AuditorAccess {
+  /** Access-code record id. */
+  codeId: string;
+  /** ISO 8601 expiry of the code. */
+  expiresAt: string;
+}
+
 export type Access =
-  | { ok: true; role: UserRole }
+  | { ok: true; role: UserRole; auditor?: AuditorAccess }
   | {
       ok: false;
       reason:
@@ -68,6 +89,8 @@ export type Access =
         | "pending"
         | "rejected"
         | "password_login_disabled"
+        | "access_code_expired"
+        | "access_code_revoked"
         | "invalid_session"
         | "store_error";
     };
@@ -78,6 +101,9 @@ export type Access =
  *    approved (role from the store). Store unreadable -> denied (fail closed).
  *  - Password (break-glass, AUTH_PASSWORD_LOGIN=true): admin while
  *    AUTH_PASSWORD_LOGIN is still "true"; turning it off revokes the session.
+ *  - Access code (external auditor): the code record must exist, not be
+ *    revoked and not be expired -> role "user" (NEVER admin, whatever the
+ *    store says). Revocation / expiry ends the session on the next read.
  */
 export async function resolveAccess(
   username: string,
@@ -89,6 +115,7 @@ export async function resolveAccess(
       ? { ok: true, role: "admin" }
       : { ok: false, reason: "password_login_disabled" };
   }
+  if (provider === "access-code") return resolveAuditorAccess(username);
   // Sessions issued before user management have no provider: re-login.
   if (provider !== "sso") return { ok: false, reason: "invalid_session" };
   if (isEnvAdmin(username)) return { ok: true, role: "admin" };
@@ -98,6 +125,29 @@ export async function resolveAccess(
     if (user.status === "pending") return { ok: false, reason: "pending" };
     if (user.status === "rejected") return { ok: false, reason: "rejected" };
     return { ok: true, role: user.role };
+  } catch (err) {
+    logStoreError(err);
+    return { ok: false, reason: "store_error" };
+  }
+}
+
+async function resolveAuditorAccess(username: string): Promise<Access> {
+  if (!username.startsWith(ACCESS_CODE_USERNAME_PREFIX)) {
+    return { ok: false, reason: "invalid_session" };
+  }
+  const id = username.slice(ACCESS_CODE_USERNAME_PREFIX.length);
+  if (!isValidAccessCodeId(id)) return { ok: false, reason: "invalid_session" };
+  try {
+    const rec = await getAccessCode(id);
+    if (!rec) return { ok: false, reason: "unknown_user" };
+    const status = accessCodeStatus(rec);
+    if (status === "revoked") return { ok: false, reason: "access_code_revoked" };
+    if (status === "expired") return { ok: false, reason: "access_code_expired" };
+    return {
+      ok: true,
+      role: "user",
+      auditor: { codeId: rec.id, expiresAt: rec.expiresAt },
+    };
   } catch (err) {
     logStoreError(err);
     return { ok: false, reason: "store_error" };

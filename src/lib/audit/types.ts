@@ -31,6 +31,9 @@ export const AUDIT_ACTIONS = [
   "department_delete",
   "audit_view",
   "audit_export",
+  // external auditor access codes
+  "access_code_create",
+  "access_code_revoke",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -55,6 +58,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   department_delete: "ลบแผนก",
   audit_view: "ดูบันทึกการใช้งาน",
   audit_export: "ส่งออกบันทึกการใช้งาน",
+  access_code_create: "สร้างลิงก์ผู้ตรวจภายนอก",
+  access_code_revoke: "ยกเลิกลิงก์ผู้ตรวจภายนอก",
 };
 
 export const AUDIT_ACTION_GROUPS = [
@@ -86,6 +91,8 @@ export const AUDIT_ACTION_GROUPS = [
       "department_delete",
       "audit_view",
       "audit_export",
+      "access_code_create",
+      "access_code_revoke",
     ],
   },
 ] as const satisfies readonly {
