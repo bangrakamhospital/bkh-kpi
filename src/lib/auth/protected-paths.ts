@@ -11,9 +11,9 @@ import { safeNextPath } from "./redirect";
  *  - <RequireLogin>          server gate around the page data (defense in depth)
  *  - route handlers          requireSession() in /api/kpi/screening/*
  */
-export const LOGIN_REQUIRED_PAGES = ["/hospital", "/pp"] as const;
+export const LOGIN_REQUIRED_PAGES = ["/hospital", "/pp", "/district/pp"] as const;
 
-/** True for /hospital, /hospital/..., /pp, /pp/... (not /ppx). */
+/** True for /hospital, /pp, /district/pp and their sub-paths (not /ppx). */
 export function isLoginRequiredPath(pathname: string): boolean {
   return LOGIN_REQUIRED_PAGES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),

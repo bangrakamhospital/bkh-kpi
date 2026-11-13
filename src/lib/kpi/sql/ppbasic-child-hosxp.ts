@@ -66,7 +66,7 @@ const BORN_WINDOW_WHERE = `
 // --- 1. CHILD_DEV: DSPM -----------------------------------------------------
 
 /** DSPM key ages (months), MOPH / HDC "คัดกรองพัฒนาการ 9, 18, 30, 42, 60 เดือน". */
-const DSPM_AGES_MONTHS = [9, 18, 30, 42, 60] as const;
+export const DSPM_AGES_MONTHS = [9, 18, 30, 42, 60] as const;
 
 /**
  * pp_special_type.pp_special_code of a DSPM screening (SPECIALPP): the
@@ -74,7 +74,7 @@ const DSPM_AGES_MONTHS = [9, 18, 30, 42, 60] as const;
  * plus the per-domain codes 1B20x (GM), 1B21x (FM), 1B22x (RL), 1B23x (EL),
  * 1B24x (PS). TEDA4I (1B27x) is follow-up stimulation, not screening.
  */
-const DSPM_PP_CODES = [
+export const DSPM_PP_CODES = [
   "1B200", "1B201", "1B202",
   "1B210", "1B211", "1B212",
   "1B220", "1B221", "1B222",
@@ -127,7 +127,7 @@ const CHILD_DEV_SPEC: ScreeningSqlSpec = {
 // --- 2. CHILD_GROWTH: weight + height ---------------------------------------
 
 /** Children 0-12 years on 1 Oct (born after periodStart − 13 years). */
-const GROWTH_MAX_AGE = 12;
+export const GROWTH_MAX_AGE = 12;
 
 /**
  * CHILD_GROWTH — ชั่งน้ำหนักและวัดส่วนสูง, เด็ก 0-12 ปี.
@@ -190,7 +190,7 @@ const CHILD_GROWTH_SPEC: ScreeningSqlSpec = {
  * person_vaccine.export_vaccine_code (43-file EPI VACCINETYPE) per dose;
  * a dose is satisfied by any code of its list (combined / older vaccines).
  */
-const EPI_DOSE = {
+export const EPI_DOSE = {
   BCG: ["010"],
   HBV1: ["041"],
   DTP_HB3: ["D23", "093"], // DTP-HB-Hib3 / DTP-HB3
@@ -206,7 +206,7 @@ const EPI_DOSE = {
   OPV5: ["085"],
   DT_P6: ["024"], // dT ป.6
 } as const;
-type EpiDose = keyof typeof EPI_DOSE;
+export type EpiDose = keyof typeof EPI_DOSE;
 
 /**
  * Cohorts (HDC "ความครอบคลุมวัคซีน" age groups). A child belongs to the
@@ -214,7 +214,7 @@ type EpiDose = keyof typeof EPI_DOSE;
  * year windows never overlap. Required doses may have been given at any
  * time up to :dataAsOf.
  */
-const EPI_AGE_COHORTS: readonly { years: number; doses: readonly EpiDose[] }[] = [
+export const EPI_AGE_COHORTS: readonly { years: number; doses: readonly EpiDose[] }[] = [
   { years: 1, doses: ["BCG", "HBV1", "DTP_HB3", "OPV3", "IPV", "MMR1"] },
   { years: 2, doses: ["JE1", "DTP4", "OPV4"] },
   { years: 3, doses: ["MMR2", "JE2"] },
@@ -231,8 +231,8 @@ const EPI_AGE_COHORTS: readonly { years: number; doses: readonly EpiDose[] }[] =
  * before May 2013 or from Jun 2014 received it); 77 of the 80 HPV ป.5
  * doses (310) of FY2569 went to girls born in the ป.5 window.
  */
-const P6_DOSES: readonly EpiDose[] = ["DT_P6"];
-const SCHOOL_CUTOFF_MMDD = "-05-16";
+export const P6_DOSES: readonly EpiDose[] = ["DT_P6"];
+export const SCHOOL_CUTOFF_MMDD = "-05-16";
 
 const EPI_COHORT_CODES = [
   ...new Set(Object.values(EPI_DOSE).flatMap((c) => [...c])),
@@ -365,7 +365,7 @@ const EPI_SPEC: ScreeningSqlSpec = {
  * (111–117), influenza (815), adult / ANC dT (106), aP (P41), COVID-19
  * (C19).
  */
-const EPI_FEE_CODES = [
+export const EPI_FEE_CODES = [
   "010", "011", // BCG, BCG school
   "041", "042", "043", // HBV1-3
   "D21", "D22", "D23", // DTP-HB-Hib1-3
@@ -385,7 +385,7 @@ const EPI_FEE_CODES = [
 ] as const;
 
 /** Child / school-age scope: age at the visit ≤ 14 completed years. */
-const EPI_FEE_MAX_AGE = 14;
+export const EPI_FEE_MAX_AGE = 14;
 
 /**
  * Birth doses (BCG, HBV1): given by the hospital where the child is born,
@@ -393,7 +393,7 @@ const EPI_FEE_MAX_AGE = 14;
  * are born elsewhere: FY2569 42 newborns, 17 birth doses given here).
  * Birth doses given here still count as money (own target, no gap).
  */
-const EPI_BIRTH_CODES = ["010", "041"] as const;
+export const EPI_BIRTH_CODES = ["010", "041"] as const;
 
 /**
  * National EPI schedule as given at this hospital (checked against the
@@ -404,7 +404,7 @@ const EPI_BIRTH_CODES = ["010", "041"] as const;
  * DTP5 + OPV5. School: HPV ป.5 girls (1), dT ป.6 (1). Catch-up doses
  * (MMR / OPV ป.1, HBV2/3, campaigns) have no slot, so they are never due.
  */
-const EPI_SCHEDULE: readonly { months: number; doses: number }[] = [
+export const EPI_SCHEDULE: readonly { months: number; doses: number }[] = [
   { months: 2, doses: 3 },
   { months: 4, doses: 3 },
   { months: 6, doses: 3 },

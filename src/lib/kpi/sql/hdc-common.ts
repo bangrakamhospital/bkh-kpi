@@ -204,8 +204,10 @@ GROUP BY t.vid
 export const HDC_PERSONS_PER_VILLAGE_LIMIT = 5000;
 export const HDC_PERSONS_PER_TAMBON_LIMIT = 20000;
 
-const UNIT_CODE = (col: string) =>
+/** SQL: 5-digit unit code of a hospcode column ("GA0007535" -> "07535"). */
+export const HDC_UNIT_CODE = (col: string) =>
   `CASE WHEN ${col} LIKE 'GA%' THEN RIGHT(${col}, 5) ELSE ${col} END`;
+const UNIT_CODE = HDC_UNIT_CODE;
 
 /**
  * Person list over the SAME CTEs as villageSql (so the list is exactly B

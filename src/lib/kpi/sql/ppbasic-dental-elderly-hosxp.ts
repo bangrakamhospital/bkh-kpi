@@ -62,7 +62,7 @@ import {
  *   2387020 permanent dentition — 000272 / 000273 (-ผู้ใหญ่), 000338
  *           (กลุ่มเสี่ยง 25-59 ปี); rare in children but valid
  */
-const FLUORIDE_OP_CODES = ["2377020", "2387020"] as const;
+export const FLUORIDE_OP_CODES = ["2377020", "2387020"] as const;
 
 /**
  * Pit and fissure sealant, permanent teeth: ICD-10-TM 2387030 (tmcode
@@ -72,7 +72,8 @@ const FLUORIDE_OP_CODES = ["2377020", "2387020"] as const;
  * (resin restoration, not a sealant) and primary-teeth sealant 2377030
  * (9 rows since FY2565).
  */
-const SEALANT_OP_PREFIX_WHERE = "t.icd10tm_operation_code LIKE '238703%'";
+export const SEALANT_OP_PREFIX = "238703";
+const SEALANT_OP_PREFIX_WHERE = `t.icd10tm_operation_code LIKE '${SEALANT_OP_PREFIX}%'`;
 
 /**
  * Depression screening (pp_special_type.pp_special_code, SPECIALPP):
