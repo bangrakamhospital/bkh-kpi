@@ -3,6 +3,7 @@ import Image from "next/image";
 import { PpfsDashboard } from "@/components/kpi/ppfs/PpfsDashboard";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
+import { PpSubNav } from "@/components/kpi/PpSubNav";
 import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 import { RequireLogin } from "@/components/auth/RequireLogin";
@@ -34,6 +35,9 @@ export default function PpPage(props: PageProps<"/pp">) {
         </div>
         <div className="mx-auto mt-4 w-full max-w-6xl px-4 sm:px-6">
           <KpiTabs />
+        </div>
+        <div className="mx-auto mt-3 w-full max-w-6xl px-4 sm:px-6">
+          <PpSubNav />
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
