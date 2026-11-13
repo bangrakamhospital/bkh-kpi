@@ -85,13 +85,13 @@ export function PpfsTable({
           <thead className={theadClass}>
             <tr>
               <th scope="col" className={thClass}>รายการ</th>
-              <th scope="col" className={thRightClass}>อัตรา</th>
+              <th scope="col" className={thRightClass}>อัตรา (บาท)</th>
               <th scope="col" className={thRightClass}>เป้าหมาย</th>
               <th scope="col" className={thRightClass}>ทำแล้ว</th>
               <th scope="col" className={thRightClass}>คิดเงินแล้ว (ครั้ง)</th>
-              <th scope="col" className={thRightClass}>เป้าหมาย ฿</th>
-              <th scope="col" className={thRightClass}>ได้แล้ว ฿</th>
-              <th scope="col" className={thRightClass}>ยังไม่ได้ ฿</th>
+              <th scope="col" className={thRightClass}>เป้าหมาย (บาท)</th>
+              <th scope="col" className={thRightClass}>ได้แล้ว (บาท)</th>
+              <th scope="col" className={thRightClass}>ยังไม่ได้ (บาท)</th>
               <th scope="col" className={thClass}>ความคืบหน้า</th>
               <th scope="col" className={thClass}>
                 <span className="sr-only">รายหมู่บ้าน</span>
@@ -152,7 +152,7 @@ export function PpfsTable({
                         {potential && (
                           <div className="rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 py-1 dark:border-amber-700 dark:bg-amber-950/40">
                             <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                              {potential.label}: {formatNumber(potential.units)} {unit} ({formatNumber(potential.persons)} {potential.personsUnit}) ≈ {formatBaht(potential.baht)}
+                              {potential.label}: {formatNumber(potential.units)} {unit} ({formatNumber(potential.persons)} {potential.personsUnit}) ≈ {formatBaht(potential.baht)} บาท
                             </p>
                             <p className="text-xs text-amber-900 dark:text-amber-200">
                               {potential.note}
@@ -203,7 +203,7 @@ export function PpfsTable({
                     {it.error ? NONE : formatBaht(it.earnedBaht)}
                     {potential && (
                       <span className={potentialClass} title={potential.note}>
-                        +{formatBaht(potential.baht)} รอพิจารณา
+                        +{formatBaht(potential.baht)} บาท รอพิจารณา
                       </span>
                     )}
                   </td>

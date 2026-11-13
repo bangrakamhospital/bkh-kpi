@@ -126,7 +126,7 @@ export function PpfsVillageButton({
                   {name}
                 </h2>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  รายหมู่บ้าน ปีงบประมาณ {fiscalYear} · อัตรา {formatBaht(rate)}{" "}
+                  รายหมู่บ้าน ปีงบประมาณ {fiscalYear} · อัตรา {formatBaht(rate)} บาท{" "}
                   ต่อ{countUnit} · ยอดรวมเท่านั้น
                 </p>
               </div>
@@ -155,9 +155,9 @@ export function PpfsVillageButton({
                         <th scope="col" className={thRightClass}>คิดเงินแล้ว (ครั้ง)</th>
                       )}
                       <th scope="col" className={thRightClass}>ร้อยละ</th>
-                      <th scope="col" className={thRightClass}>เป้าหมาย ฿</th>
-                      <th scope="col" className={thRightClass}>ได้แล้ว ฿</th>
-                      <th scope="col" className={thRightClass}>ยังไม่ได้ ฿</th>
+                      <th scope="col" className={thRightClass}>เป้าหมาย (บาท)</th>
+                      <th scope="col" className={thRightClass}>ได้แล้ว (บาท)</th>
+                      <th scope="col" className={thRightClass}>ยังไม่ได้ (บาท)</th>
                     </tr>
                   </thead>
                   <tbody>

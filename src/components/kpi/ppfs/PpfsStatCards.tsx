@@ -36,21 +36,21 @@ export function PpfsStatCards({ totals }: { totals: PpfsTotals }) {
       className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
     >
       <Card
-        title="เงินเป้าหมายรวม"
+        title="เงินเป้าหมายรวม (บาท)"
         value={formatBaht(totals.targetBaht)}
         sub="เฉพาะรายการที่มีเป้าหมาย"
         Icon={Coins}
         tone="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
       />
       <Card
-        title="ได้แล้ว (ประมาณ)"
+        title="ได้แล้ว (บาท, ประมาณการ)"
         value={formatBaht(totals.earnedBaht)}
         sub="รวมทุกรายการ"
         Icon={PiggyBank}
         tone="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
       />
       <Card
-        title="ยังไม่ได้"
+        title="ยังไม่ได้ (บาท)"
         value={formatBaht(totals.gapBaht)}
         sub="เป้าหมายที่ยังไม่ได้ดำเนินการ"
         Icon={TrendingDown}

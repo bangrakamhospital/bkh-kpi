@@ -49,7 +49,7 @@ const bahtFormat = new Intl.NumberFormat("th-TH", {
   maximumFractionDigits: 0,
 });
 
-/** 12345.6 -> "฿12,346" */
+/** 12345.6 -> "12,346" (number only; put "บาท" in the label/header) */
 export function formatBaht(value: number): string {
-  return `฿${bahtFormat.format(value)}`;
+  return bahtFormat.format(value);
 }
