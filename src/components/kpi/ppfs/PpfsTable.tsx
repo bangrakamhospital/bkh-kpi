@@ -18,6 +18,22 @@ const GRADE_CLASS: Record<PpfsGrade, string> = {
   C: "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
+/** Plain-language label + explanation of the data-quality grade (A/B/C). */
+const GRADE_INFO: Record<PpfsGrade, { label: string; hint: string }> = {
+  A: {
+    label: "ตัวเลขตรงเงื่อนไข",
+    hint: "เป้าหมายและผลงานนับจากข้อมูลที่ตรงเงื่อนไข สปสช. โดยตรง เชื่อถือได้สูง",
+  },
+  B: {
+    label: "ตัวเลขประมาณการ",
+    hint: "บางส่วนต้องใช้ข้อมูลอื่นแทนเงื่อนไขจริง (เช่น ใช้ช่วงอายุแทนกลุ่มเสี่ยง หรือเห็นเฉพาะประวัติใน รพ.) ตัวเลขอาจคลาดเคลื่อน",
+  },
+  C: {
+    label: "นับได้เฉพาะยอดคิดเงิน",
+    hint: "ไม่มีข้อมูลบริการให้นับเป้าหมาย นับได้เฉพาะรายการที่คิดเงินแล้ว",
+  },
+};
+
 const chipClass =
   "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold";
 
@@ -56,6 +72,14 @@ export function PpfsTable({
       <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
         &quot;คิดเงินแล้ว&quot; = จำนวนครั้ง (visit) ของกลุ่มเป้าหมายที่ถูกคิดรายการ ADP ของ สปสช. ตรงกับรายการใน HOSxP ในปีงบฯ นี้ ไม่ใช่สถานะการเบิกจ่ายจริง
       </p>
+      <dl className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+        {(["A", "B"] as const).map((g) => (
+          <div key={g} className="flex flex-wrap items-center gap-1.5">
+            <dt className={`${chipClass} ${GRADE_CLASS[g]}`}>{GRADE_INFO[g].label}</dt>
+            <dd>{GRADE_INFO[g].hint}</dd>
+          </div>
+        ))}
+      </dl>
       <div className="mt-3 overflow-x-auto">
         <table className={`${tableClass} min-w-[64rem]`}>
           <thead className={theadClass}>
@@ -88,18 +112,18 @@ export function PpfsTable({
                 <tr key={it.code} className={trClass}>
                   <td className={tdClass}>
                     <div className="flex items-start gap-2">
-                      <span
-                        title={`เกรด ${it.grade}`}
-                        className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${GRADE_CLASS[it.grade]}`}
-                      >
-                        {it.grade}
-                      </span>
                       <div className="min-w-0 space-y-0.5">
                         <p className="font-medium">{it.name}</p>
                         <p className="text-xs text-zinc-600 dark:text-zinc-400">
                           {it.group} · {it.condition}
                         </p>
                         <div className="flex flex-wrap gap-1">
+                          <span
+                            title={GRADE_INFO[it.grade].hint}
+                            className={`${chipClass} ${GRADE_CLASS[it.grade]}`}
+                          >
+                            {GRADE_INFO[it.grade].label}
+                          </span>
                           <span
                             className={`${chipClass} ${
                               it.population === "service"
