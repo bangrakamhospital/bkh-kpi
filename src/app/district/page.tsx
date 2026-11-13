@@ -3,6 +3,7 @@ import Image from "next/image";
 import { DistrictScreening } from "@/components/kpi/DistrictScreening";
 import { DashboardSkeleton } from "@/components/kpi/DashboardSkeleton";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
+import { DistrictSubNav } from "@/components/kpi/DistrictSubNav";
 import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 
@@ -33,6 +34,9 @@ export default function DistrictPage(props: PageProps<"/district">) {
         </div>
         <div className="mx-auto mt-4 w-full max-w-6xl px-4 sm:px-6">
           <KpiTabs />
+        </div>
+        <div className="mx-auto mt-3 w-full max-w-6xl px-4 sm:px-6">
+          <DistrictSubNav />
         </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
