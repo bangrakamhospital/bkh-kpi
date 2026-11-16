@@ -5,7 +5,8 @@ import { loginRedirectPath } from "@/lib/auth/protected-paths";
 import { isAuthConfigured } from "@/lib/auth/settings";
 
 /**
- * Login gate for the pages in LOGIN_REQUIRED_PAGES (/hospital, /pp, /district/pp):
+ * Login gate for the pages in LOGIN_REQUIRED_PAGES (/hospital, /pp, /district/pp,
+ * /strategy):
  * no APPROVED session -> 307 /login?callbackUrl=<path?query>.
  *
  * Runs Auth.js' session read (Node.js runtime, the proxy default): the
@@ -61,5 +62,5 @@ export async function proxy(request: NextRequest): Promise<Response> {
 
 export const config = {
   // Keep in sync with LOGIN_REQUIRED_PAGES (matcher must be static).
-  matcher: ["/hospital/:path*", "/pp/:path*", "/district/pp/:path*"],
+  matcher: ["/hospital/:path*", "/pp/:path*", "/district/pp/:path*", "/strategy/:path*"],
 };
