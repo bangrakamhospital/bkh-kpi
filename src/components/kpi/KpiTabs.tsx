@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, HandCoins, MapPinned, Users } from "lucide-react";
+import { Building2, HandCoins, MapPinned, Target, Users } from "lucide-react";
 
 const TABS = [
   { href: "/", label: "ผู้รับบริการ", Icon: Users },
   { href: "/hospital", label: "ตัวชี้วัดในโรงพยาบาล", Icon: Building2 },
   { href: "/pp", label: "PP / รายได้คัดกรอง", Icon: HandCoins },
   { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ / PP รายได้อำเภอ", Icon: MapPinned },
+  { href: "/strategy", label: "ยุทธศาสตร์ & HA", Icon: Target },
 ] as const;
 
 export function KpiTabs() {
