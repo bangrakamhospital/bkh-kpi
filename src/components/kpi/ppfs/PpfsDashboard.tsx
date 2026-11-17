@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { CalendarDays } from "lucide-react";
+import { getNhsoOtherSummary } from "@/lib/kpi/nhso-other";
 import { getPpfsSummary } from "@/lib/kpi/ppfs";
 import type { PpfsSummary } from "@/lib/kpi/ppfs-types";
 import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
@@ -7,12 +8,57 @@ import { FiscalYearSelect } from "../FiscalYearSelect";
 import { PpfsStatCards } from "./PpfsStatCards";
 import { PpfsTable } from "./PpfsTable";
 
-/** PPFS rate table starts at FY2569. */
+/** PPFS / NHSO FY2569 rate tables: the pages start at FY2569. */
 const MIN_FISCAL_YEAR = 2569;
 
 type FyParam = string | string[] | undefined;
 
-const buildHref = (fy: number) => `/pp?fy=${fy}`;
+/**
+ * The two NHSO revenue pages share this dashboard (same cards / table),
+ * each with its own loader, items and totals:
+ *  - ppfs:  /pp        PP Fee Schedule (getPpfsSummary)
+ *  - other: /pp/other  other NHSO revenue, not PP (getNhsoOtherSummary)
+ */
+export type PpfsDashboardKind = "ppfs" | "other";
+
+interface Variant {
+  basePath: string;
+  load: (fiscalYear: number) => Promise<PpfsSummary>;
+  rateLabel: string;
+  loadError: string;
+  empty: string;
+  cardsLabel: string;
+  tableLabel: string;
+  tableTitle: string;
+  note: string;
+}
+
+const VARIANTS: Record<PpfsDashboardKind, Variant> = {
+  ppfs: {
+    basePath: "/pp",
+    load: getPpfsSummary,
+    rateLabel: "อัตรา PPFS ปี",
+    loadError: "ไม่สามารถโหลดข้อมูลรายได้ PPFS ได้ในขณะนี้ กรุณาลองใหม่ภายหลัง",
+    empty: "ไม่พบรายการ PPFS",
+    cardsLabel: "สรุปรายได้ PPFS",
+    tableLabel: "รายการ PPFS",
+    tableTitle: "รายการ PPFS เรียงตามยอดที่ยังไม่ได้",
+    note:
+      "รายการคัดกรองนับเฉพาะคนไทยในเขตรับผิดชอบ (คนนอกเขตที่มารับบริการทำให้รายได้จริงสูงกว่านี้) ส่วนรายการแม่และเด็ก วางแผนครอบครัว และวัคซีนไข้หวัดใหญ่นับจากผู้มารับบริการที่ รพ. ทั้งหมด ANC นับเฉพาะครั้งที่ 1–8 ต่อครรภ์ (ครั้งที่ 9+ ต้องส่งหลักฐาน แยกแสดงในแถว ANC ไม่รวมในยอดรวม) รายการที่ไม่มีเป้าหมายรวมเฉพาะในยอดได้แล้ว",
+  },
+  other: {
+    basePath: "/pp/other",
+    load: getNhsoOtherSummary,
+    rateLabel: "อัตรา สปสช. ปี",
+    loadError: "ไม่สามารถโหลดข้อมูลรายได้ สปสช. อื่นๆ ได้ในขณะนี้ กรุณาลองใหม่ภายหลัง",
+    empty: "ไม่พบรายการ",
+    cardsLabel: "สรุปรายได้ สปสช. อื่นๆ",
+    tableLabel: "รายการรายได้ สปสช. อื่นๆ",
+    tableTitle: "รายการรายได้ สปสช. อื่นๆ (นอก PP) เรียงตามยอดที่ยังไม่ได้",
+    note:
+      "อัตราตามแนวทางปฏิบัติในการขอรับค่าใช้จ่ายเพื่อบริการสาธารณสุข ปีงบประมาณ 2569 ยอดของหน้านี้แยกจากรายการ PPFS และไม่รวมกัน นับจากผู้มารับบริการที่ รพ. ทั้งหมด รายการที่ไม่มีเป้าหมายรวมเฉพาะในยอดได้แล้ว",
+  },
+};
 
 function parseFiscalYear(
   raw: FyParam,
@@ -36,9 +82,13 @@ const alertClass =
 
 export async function PpfsDashboard({
   searchParams,
+  kind = "ppfs",
 }: {
   searchParams: Promise<{ fy?: FyParam }>;
+  kind?: PpfsDashboardKind;
 }) {
+  const v = VARIANTS[kind];
+  const buildHref = (fy: number) => `${v.basePath}?fy=${fy}`;
   const { fy } = await searchParams;
   await connection();
   const maxYear = fiscalYearOf(todayIsoDate());
@@ -62,7 +112,7 @@ export async function PpfsDashboard({
 
   let data: PpfsSummary | null = null;
   try {
-    data = await getPpfsSummary(year ?? maxYear);
+    data = await v.load(year ?? maxYear);
   } catch {
     data = null;
   }
@@ -70,7 +120,7 @@ export async function PpfsDashboard({
   if (!data) {
     return (
       <div role="alert" className={alertClass}>
-        ไม่สามารถโหลดข้อมูลรายได้คัดกรองได้ในขณะนี้ กรุณาลองใหม่ภายหลัง
+        {v.loadError}
       </div>
     );
   }
@@ -87,7 +137,7 @@ export async function PpfsDashboard({
             ปีงบประมาณ {data.fiscalYear}
           </span>
           <span className="text-zinc-700 dark:text-zinc-300">
-            อัตรา PPFS ปี {data.rateYear}
+            {v.rateLabel} {data.rateYear}
           </span>
           {data.source === "stub" && (
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-300">
@@ -105,20 +155,25 @@ export async function PpfsDashboard({
         </div>
       </div>
 
-      <PpfsStatCards totals={data.totals} />
+      <PpfsStatCards totals={data.totals} ariaLabel={v.cardsLabel} />
 
       <p className="text-xs text-zinc-600 dark:text-zinc-400">
-        ยอดเงินเป็นค่าประมาณจากข้อมูล HOSxP × อัตรา PPFS ปี {data.rateYear} ไม่ใช่ยอดโอนจริงจาก สปสช.
-        {" "}รายการคัดกรองนับเฉพาะคนไทยในเขตรับผิดชอบ (คนนอกเขตที่มารับบริการทำให้รายได้จริงสูงกว่านี้) ส่วนรายการแม่และเด็กนับจากผู้มาฝากครรภ์ ผู้คลอด และผู้มาตรวจที่ รพ. ทั้งหมด ANC นับเฉพาะครั้งที่ 1–8 ต่อครรภ์ (ครั้งที่ 9+ ต้องส่งหลักฐาน แยกแสดงในแถว ANC ไม่รวมในยอดรวม) รายการที่ไม่มีเป้าหมายรวมเฉพาะในยอดได้แล้ว
+        ยอดเงินเป็นค่าประมาณจากข้อมูล HOSxP × {v.rateLabel} {data.rateYear} ไม่ใช่ยอดโอนจริงจาก สปสช.
+        {" "}{v.note}
         {" "}{data.closed ? "ปีงบประมาณนี้ปิดแล้ว" : "ปีงบประมาณนี้ยังไม่สิ้นสุด เป้าหมายเป็นยอดทั้งปี"}
       </p>
 
       {data.items.length === 0 ? (
         <div className="rounded-xl border border-zinc-200 bg-surface p-6 text-center text-sm text-zinc-700 shadow-sm dark:border-zinc-800 dark:text-zinc-300">
-          ไม่พบรายการ PPFS
+          {v.empty}
         </div>
       ) : (
-        <PpfsTable items={data.items} fiscalYear={data.fiscalYear} />
+        <PpfsTable
+          items={data.items}
+          fiscalYear={data.fiscalYear}
+          ariaLabel={v.tableLabel}
+          title={v.tableTitle}
+        />
       )}
     </div>
   );

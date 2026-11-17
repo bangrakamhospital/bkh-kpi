@@ -1,5 +1,5 @@
 /**
- * Data contract for the "PP / รายได้คัดกรอง" tab: PP Fee Schedule (สปสช. PPFS)
+ * Data contract for the "PP / รายได้ สปสช." tab: PP Fee Schedule (สปสช. PPFS)
  * screening revenue — target baht vs earned baht vs gap baht.
  * Aggregates only, no patient-identifying data.
  * Definitions: docs/kpi/ppfs-revenue-feasibility.md ("Implemented Phase 1").

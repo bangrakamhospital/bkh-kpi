@@ -20,7 +20,7 @@ import {
 } from "./screening-common";
 
 /**
- * SQL for the "PP / รายได้คัดกรอง" tab (PPFS Phase 1 + mother-and-child
+ * SQL for the "PP / รายได้ สปสช." tab (PPFS Phase 1 + mother-and-child
  * items) against HOSxP.
  * Definitions and FY2569 verification: docs/kpi/ppfs-revenue-feasibility.md
  * ("Implemented", 10.6 for the mother-and-child items). All codes below were verified with db-cli.
@@ -890,5 +890,151 @@ LEFT JOIN b
 `;
 
 export function ppfsUptParams(ctx: ScreeningSqlContext): QueryParams {
+  return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
+}
+
+// --- family planning (no target) -------------------------------------------
+
+/**
+ * drugitems.icode of the contraceptives (verified with db-cli, 2026-11-17).
+ * DMPA 1460145 is inactive (istatus 'N') but kept for past fiscal years.
+ * COC qty is dispensed in packs (แผง): 1900424 is labelled แผง; 1510047 is
+ * labelled เม็ด but its OPD qty is 1-6 per visit, i.e. packs as well.
+ */
+const FP_DRUG_ICODES = {
+  DMPA: ["1900342", "1460145"],
+  COC: ["1510047", "1900424"],
+} as const;
+
+/** nondrugitems.nhso_adp_code of the FP service fees. */
+const FP_ADP = {
+  DMPA: ["FP003_4"], // nondrugitems 3002638, 60 baht
+  COC: ["FP003_1"], // nondrugitems 3002132, 40 baht per pack
+} as const;
+
+/** NHSO FY2569 caps. */
+export const PPFS_FP_LIMITS = {
+  /** DMPA injections paid per woman per year. */
+  DMPA_PER_YEAR: 5,
+  /** COC packs paid per dispensing visit. */
+  COC_PER_VISIT: 3,
+  /** COC packs paid per woman per year. */
+  COC_PER_YEAR: 13,
+} as const;
+
+/**
+ * Family planning (C, no target), OPD (opitemrece.an empty) dispensing
+ * (qty > 0: a 0-qty row is not a dispensing) to Thai women
+ * (patient.nationality '99', sex '2') in the fiscal year:
+ *  - done_dmpa   = distinct visits with a DMPA drug, at most
+ *                  DMPA_PER_YEAR per woman (in date order)
+ *  - billed_dmpa = those visits charged FP003_4
+ *  - done_pill   = COC packs: SUM(qty) per visit capped at COC_PER_VISIT,
+ *                  then cumulated per woman and capped at COC_PER_YEAR
+ *  - billed_pill = COC visits (still under the yearly cap) charged
+ *                  FP003_1 — visits, not packs
+ * Emergency (FP003_3) and progestin-only (FP003_2) pills are not counted.
+ * -> one row.
+ */
+export const PPFS_FP_SQL = `
+WITH rx AS (
+  SELECT oi.vn, oi.hn, oi.vstdate, oi.icode, oi.qty
+  FROM opitemrece oi
+  JOIN patient pt
+    ON pt.hn = oi.hn
+  WHERE oi.icode IN (${sqlCodeList([...FP_DRUG_ICODES.DMPA, ...FP_DRUG_ICODES.COC])})
+    AND oi.vstdate >= :periodStart
+    AND oi.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+    AND (oi.an IS NULL OR oi.an = '')
+    AND oi.vn IS NOT NULL AND oi.vn <> ''
+    AND oi.qty > 0
+    AND pt.nationality = '99'
+    AND pt.sex = '2'
+),
+bill AS (
+  SELECT DISTINCT oi.vn, n.nhso_adp_code AS adp
+  FROM opitemrece oi
+  JOIN nondrugitems n
+    ON n.icode = oi.icode
+  WHERE n.nhso_adp_code IN (${sqlCodeList([...FP_ADP.DMPA, ...FP_ADP.COC])})
+    AND oi.vstdate >= :periodStart
+    AND oi.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+),
+dmpa AS (
+  SELECT x.vn,
+         ROW_NUMBER() OVER (PARTITION BY x.hn ORDER BY x.vstdate, x.vn) AS rn
+  FROM (
+    SELECT DISTINCT rx.vn, rx.hn, rx.vstdate
+    FROM rx
+    WHERE rx.icode IN (${sqlCodeList(FP_DRUG_ICODES.DMPA)})
+  ) x
+),
+pill AS (
+  SELECT x.vn, x.packs,
+         SUM(x.packs) OVER (PARTITION BY x.hn ORDER BY x.vstdate, x.vn) AS cum
+  FROM (
+    SELECT rx.vn, rx.hn, MIN(rx.vstdate) AS vstdate,
+           LEAST(SUM(rx.qty), ${PPFS_FP_LIMITS.COC_PER_VISIT}) AS packs
+    FROM rx
+    WHERE rx.icode IN (${sqlCodeList(FP_DRUG_ICODES.COC)})
+    GROUP BY rx.vn, rx.hn
+  ) x
+)
+SELECT
+  (SELECT COUNT(*) FROM dmpa
+    WHERE dmpa.rn <= ${PPFS_FP_LIMITS.DMPA_PER_YEAR})                    AS done_dmpa,
+  (SELECT COUNT(*) FROM dmpa
+    JOIN bill b ON b.vn = dmpa.vn AND b.adp IN (${sqlCodeList(FP_ADP.DMPA)})
+    WHERE dmpa.rn <= ${PPFS_FP_LIMITS.DMPA_PER_YEAR})                    AS billed_dmpa,
+  (SELECT COALESCE(SUM(GREATEST(0, LEAST(pill.packs,
+            ${PPFS_FP_LIMITS.COC_PER_YEAR} - (pill.cum - pill.packs)))), 0)
+     FROM pill)                                                        AS done_pill,
+  (SELECT COUNT(*) FROM pill
+    JOIN bill b ON b.vn = pill.vn AND b.adp IN (${sqlCodeList(FP_ADP.COC)})
+    WHERE pill.cum - pill.packs < ${PPFS_FP_LIMITS.COC_PER_YEAR})        AS billed_pill
+`;
+
+export function ppfsFpParams(ctx: ScreeningSqlContext): QueryParams {
+  return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
+}
+
+// --- influenza vaccine (no target) -----------------------------------------
+
+/**
+ * person_vaccine.export_vaccine_code of the NHSO influenza vaccine
+ * (person_vaccine_id 32 'Flu'). 817 (social-security insured, 50+) and
+ * 818 (others) are not NHSO-funded and are not counted. Not part of
+ * EPI_FEE_CODES (P&P Basic, sql/ppbasic-child-hosxp.ts): no double count.
+ */
+const FLU_VACCINE_CODES = ["815"] as const;
+
+/**
+ * Influenza vaccine service fee (C, no target): doses given by the
+ * hospital (ovst_vaccine) to Thai patients (patient.nationality '99') with
+ * the visit date in the fiscal year; one dose per (visit, vaccine code)
+ * (the same dose is sometimes recorded twice on one visit).
+ * No billed figure: claimed through KTB / MOPH Immunization Center, there
+ * is no fee item in HOSxP.
+ * -> one row.
+ */
+export const PPFS_FLU_SQL = `
+SELECT COUNT(*) AS done_flu
+FROM (
+  SELECT STRAIGHT_JOIN DISTINCT ov.vn, pv.export_vaccine_code
+  FROM ovst_vaccine ov
+  JOIN person_vaccine pv
+    ON pv.person_vaccine_id = ov.person_vaccine_id
+  JOIN ovst o
+    ON o.vn = ov.vn
+  JOIN patient pt
+    ON pt.hn = o.hn
+  WHERE pv.export_vaccine_code IN (${sqlCodeList(FLU_VACCINE_CODES)})
+    AND o.vstdate >= :periodStart
+    AND o.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+    AND pt.nationality = '99'
+) f
+`;
+
+export function ppfsFluParams(ctx: ScreeningSqlContext): QueryParams {
   return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
 }

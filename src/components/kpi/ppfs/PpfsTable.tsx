@@ -60,20 +60,24 @@ function byGapDesc(a: PpfsItem, b: PpfsItem): number {
 export function PpfsTable({
   items,
   fiscalYear,
+  ariaLabel = "รายการ PPFS",
+  title = "รายการ PPFS เรียงตามยอดที่ยังไม่ได้",
 }: {
   items: PpfsItem[];
   fiscalYear: number;
+  ariaLabel?: string;
+  title?: string;
 }) {
   const rows = [...items].sort(byGapDesc);
 
   return (
     <section
-      aria-label="รายการ PPFS"
+      aria-label={ariaLabel}
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">รายการ PPFS เรียงตามยอดที่ยังไม่ได้</h2>
+      <h2 className="text-base font-semibold">{title}</h2>
       <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-        &quot;คิดเงินแล้ว&quot; = จำนวนครั้ง (visit) ของกลุ่มเป้าหมายที่ถูกคิดรายการ ADP ของ สปสช. ตรงกับรายการใน HOSxP ในปีงบฯ นี้ ไม่ใช่สถานะการเบิกจ่ายจริง
+        &quot;คิดเงินแล้ว&quot; = จำนวนครั้ง (visit) ที่ถูกคิดรายการ ADP ของ สปสช. ตรงกับรายการใน HOSxP ในปีงบฯ นี้ (ขอบเขตของแต่ละรายการดูหมายเหตุใต้ชื่อ) ไม่ใช่สถานะการเบิกจ่ายจริง
       </p>
       <dl className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
         {(["A", "B", "C"] as const).map((g) => (

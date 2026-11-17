@@ -6,9 +6,10 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/pp", label: "รายการ PPFS (Fee Schedule)" },
   { href: "/pp/basic", label: "P&P Basic Services" },
+  { href: "/pp/other", label: "รายได้ สปสช. อื่นๆ" },
 ] as const;
 
-/** Sub-navigation shared by /pp and /pp/basic. */
+/** Sub-navigation shared by /pp, /pp/basic and /pp/other. */
 export function PpSubNav() {
   const pathname = usePathname();
 
@@ -16,10 +17,11 @@ export function PpSubNav() {
     <nav aria-label="หมวดย่อย PP" className="overflow-x-auto">
       <ul className="flex min-w-max gap-2">
         {LINKS.map(({ href, label }) => {
+          // /pp is the parent of the others: exact match only
           const active =
-            href === "/pp/basic"
-              ? pathname === href || pathname.startsWith(`${href}/`)
-              : pathname === href;
+            href === "/pp"
+              ? pathname === href
+              : pathname === href || pathname.startsWith(`${href}/`);
           return (
             <li key={href}>
               <Link

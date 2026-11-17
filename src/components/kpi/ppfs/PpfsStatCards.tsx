@@ -29,10 +29,16 @@ function Card({ title, value, sub, Icon, tone }: CardProps) {
   );
 }
 
-export function PpfsStatCards({ totals }: { totals: PpfsTotals }) {
+export function PpfsStatCards({
+  totals,
+  ariaLabel = "สรุปรายได้ PPFS",
+}: {
+  totals: PpfsTotals;
+  ariaLabel?: string;
+}) {
   return (
     <section
-      aria-label="สรุปรายได้คัดกรอง PPFS"
+      aria-label={ariaLabel}
       className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
     >
       <Card

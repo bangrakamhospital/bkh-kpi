@@ -8,7 +8,7 @@ import { HeaderAuth } from "@/components/auth/HeaderAuth";
 import { RequireLogin } from "@/components/auth/RequireLogin";
 
 export const metadata = {
-  title: "PP / รายได้คัดกรอง | โรงพยาบาลบางระกำ KPI",
+  title: "PP / รายได้ สปสช. | โรงพยาบาลบางระกำ KPI",
 };
 
 export default function PpPage(props: PageProps<"/pp">) {
@@ -24,7 +24,7 @@ export default function PpPage(props: PageProps<"/pp">) {
               โรงพยาบาลบางระกำ KPI
             </p>
             <h1 className="mt-0.5 text-sm font-semibold leading-5">
-              PP / รายได้คัดกรอง (PP Fee Schedule)
+              PP / รายได้ สปสช. — รายการ PPFS (PP Fee Schedule)
             </h1>
             <p className="text-xs text-brand-100">
               เงินเป้าหมาย เทียบกับเงินที่ได้แล้ว และส่วนที่ยังไม่ได้ ตามอัตรา สปสช.
