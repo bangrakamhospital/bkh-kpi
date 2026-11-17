@@ -3,8 +3,20 @@ import "server-only";
 import type { RowDataPacket } from "mysql2";
 import { cacheLife, cacheTag, io } from "next/cache";
 
-import { HisQueryError, query, type QueryParams } from "@/lib/db/his";
+import { query } from "@/lib/db/his";
 import { fiscalYearRange, todayIsoDate } from "@/lib/kpi/fiscal-year";
+import {
+  buildItem,
+  computeTotals,
+  type Counts,
+  failedItem,
+  loadOneRow,
+  logItemError,
+  type Num,
+  num,
+  rowOf,
+  service,
+} from "@/lib/kpi/ppfs-common";
 import {
   PPFS_HOSPITAL_ITEMS,
   PPFS_RATE_YEAR,
@@ -14,7 +26,6 @@ import type {
   PpfsItem,
   PpfsPotential,
   PpfsSummary,
-  PpfsTotals,
   PpfsVillageRow,
 } from "@/lib/kpi/ppfs-types";
 import {
@@ -22,41 +33,28 @@ import {
   PPFS_ANC_SQL,
   PPFS_CATCHMENT_SQL,
   PPFS_DELIVERY_SQL,
+  PPFS_FLU_SQL,
+  PPFS_FP_SQL,
   PPFS_PP_MAX_VISITS,
   PPFS_UPT_SQL,
   ppfsAncParams,
   ppfsDeliveryParams,
+  ppfsFluParams,
+  ppfsFpParams,
   ppfsUptParams,
 } from "@/lib/kpi/sql/ppfs-hosxp";
 import type { ScreeningSqlContext } from "@/lib/kpi/sql/screening-common";
 
 /**
- * "PP / รายได้คัดกรอง" — PPFS screening revenue (target vs earned vs gap),
- * HOSxP only, aggregates only: Phase 1 items + hospital-only
- * mother-and-child items (PPFS_HOSPITAL_ITEMS).
+ * "PP / รายได้ สปสช." — PPFS revenue (target vs earned vs gap), HOSxP only,
+ * aggregates only: Phase 1 items + hospital-only mother-and-child and
+ * family-planning / influenza-vaccine items (PPFS_HOSPITAL_ITEMS).
  * Definitions: docs/kpi/ppfs-revenue-feasibility.md ("Implemented").
  * SQL: ./sql/ppfs-hosxp.ts. Rates (applied here, not in SQL): ./ppfs-rates.ts.
+ * Other (non-PP) NHSO revenue: ./nhso-other.ts (/pp/other).
  */
 
 export const PPFS_CACHE_TAG = "kpi:ppfs";
-
-export function computeTotals(items: readonly PpfsItem[]): PpfsTotals {
-  let targetBaht = 0;
-  let gapBaht = 0;
-  let earnedAgainstTarget = 0;
-  let earnedBaht = 0;
-  for (const it of items) {
-    earnedBaht += it.earnedBaht;
-    if (it.targetBaht !== null) {
-      targetBaht += it.targetBaht;
-      earnedAgainstTarget += it.earnedBaht;
-      gapBaht += it.gapBaht ?? 0;
-    }
-  }
-  const coveragePercent =
-    targetBaht > 0 ? Math.min(100, (earnedAgainstTarget / targetBaht) * 100) : 0;
-  return { targetBaht, earnedBaht, gapBaht, coveragePercent };
-}
 
 /**
  * Rendering contract (Cache Components), same as getServiceOverview:
@@ -74,8 +72,6 @@ export async function getPpfsSummary(fiscalYear: number): Promise<PpfsSummary> {
 }
 
 // --- rows -------------------------------------------------------------------
-
-type Num = number | string | null;
 
 interface VillageRow extends RowDataPacket {
   village_id: Num;
@@ -120,53 +116,19 @@ interface UptRow extends RowDataPacket {
   billed_upt: Num;
 }
 
-const num = (v: Num | undefined): number => {
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
-};
+interface FpRow extends RowDataPacket {
+  done_dmpa: Num;
+  billed_dmpa: Num;
+  done_pill: Num;
+  billed_pill: Num;
+}
+
+interface FluRow extends RowDataPacket {
+  done_flu: Num;
+}
 
 const emptyToNull = (s: string | null): string | null =>
   s === null || s.trim() === "" ? null : s.trim();
-
-interface Counts {
-  /** null = no target population (grade C). */
-  target: number | null;
-  done: number;
-  billed: number | null;
-  villages: PpfsVillageRow[] | null;
-  potential?: PpfsPotential | null;
-}
-
-function buildItem(def: PpfsItemDef, c: Counts): PpfsItem {
-  const targetBaht = c.target === null ? null : c.target * def.rate;
-  const earnedBaht = c.done * def.rate;
-  return {
-    ...def,
-    target: c.target,
-    done: c.done,
-    billed: c.billed,
-    targetBaht,
-    earnedBaht,
-    gapBaht: targetBaht === null ? null : Math.max(0, targetBaht - earnedBaht),
-    potential: c.potential ?? null,
-    villages: c.villages,
-  };
-}
-
-function failedItem(def: PpfsItemDef): PpfsItem {
-  return {
-    ...def,
-    target: null,
-    done: 0,
-    billed: null,
-    targetBaht: null,
-    earnedBaht: 0,
-    gapBaht: null,
-    potential: null,
-    villages: def.population === "catchment" ? [] : null,
-    error: "ไม่สามารถดึงข้อมูลรายการนี้ได้",
-  };
-}
 
 async function loadCatchment(
   def: PpfsItemDef,
@@ -199,18 +161,6 @@ async function loadCatchment(
   return { target, done, billed: sql.hasBilled ? billed : null, villages };
 }
 
-/** Runs a one-row aggregate query; throws when it returns no row. */
-async function loadOneRow<T extends RowDataPacket>(
-  label: string,
-  sql: string,
-  params: QueryParams,
-): Promise<T> {
-  const rows = await query<T>(sql, params);
-  const row = rows[0];
-  if (!row) throw new Error(`${label} query returned no row`);
-  return row;
-}
-
 const ANC_VISIT_9_PLUS_LABEL = "ครั้งที่ 9+ (ต้องส่งหลักฐาน)";
 
 /**
@@ -237,20 +187,9 @@ interface ServiceResults {
   anc: PromiseSettledResult<AncRow>;
   delivery: PromiseSettledResult<DeliveryRow>;
   upt: PromiseSettledResult<UptRow>;
+  fp: PromiseSettledResult<FpRow>;
+  flu: PromiseSettledResult<FluRow>;
 }
-
-/** The row of a settled query; rethrows its error when it failed. */
-function rowOf<T>(s: PromiseSettledResult<T>): T {
-  if (s.status === "rejected") throw s.reason;
-  return s.value;
-}
-
-const service = (target: number | null, done: number, billed: number): Counts => ({
-  target,
-  done,
-  billed,
-  villages: null,
-});
 
 /** Counts of a service-based item; throws when its query failed. */
 function serviceCounts(def: PpfsItemDef, res: ServiceResults): Counts {
@@ -291,17 +230,22 @@ function serviceCounts(def: PpfsItemDef, res: ServiceResults): Counts {
       const r = rowOf(res.upt);
       return service(null, num(r.done_upt), num(r.billed_upt));
     }
+    case "FP_DMPA": {
+      const r = rowOf(res.fp);
+      return service(null, num(r.done_dmpa), num(r.billed_dmpa));
+    }
+    case "FP_PILL": {
+      const r = rowOf(res.fp);
+      return service(null, num(r.done_pill), num(r.billed_pill));
+    }
+    case "FLU_VACCINE": {
+      // claimed outside HOSxP (KTB / MOPH IC): no billed figure
+      const r = rowOf(res.flu);
+      return service(null, num(r.done_flu), null);
+    }
     default:
       throw new Error(`not a service item: ${def.code}`);
   }
-}
-
-function logItemError(code: string, err: unknown): void {
-  const name = err instanceof Error ? err.name : "UnknownError";
-  const driverCode = err instanceof HisQueryError ? (err.code ?? "") : "";
-  console.error(
-    `[kpi/ppfs] item ${code} failed: ${name}${driverCode ? ` (${driverCode})` : ""}`,
-  );
 }
 
 async function loadPpfsSummary(
@@ -321,15 +265,18 @@ async function loadPpfsSummary(
   const catchmentDefs = PPFS_HOSPITAL_ITEMS.filter(
     (d) => d.population === "catchment",
   );
-  // Service items share three queries: ANC (5 items), delivery (PP visit
-  // + iodine) and pregnancy test. A failed query fails only its items.
-  const [anc, delivery, upt, ...catchmentSettled] = await Promise.allSettled([
+  // Service items share five queries: ANC (5 items), delivery (PP visit
+  // + iodine), pregnancy test, family planning (DMPA + pill) and influenza
+  // vaccine. A failed query fails only its items.
+  const [anc, delivery, upt, fp, flu, ...catchmentSettled] = await Promise.allSettled([
     loadOneRow<AncRow>("ANC", PPFS_ANC_SQL, ppfsAncParams(ctx)),
     loadOneRow<DeliveryRow>("delivery", PPFS_DELIVERY_SQL, ppfsDeliveryParams(ctx)),
     loadOneRow<UptRow>("UPT", PPFS_UPT_SQL, ppfsUptParams(ctx)),
+    loadOneRow<FpRow>("FP", PPFS_FP_SQL, ppfsFpParams(ctx)),
+    loadOneRow<FluRow>("flu", PPFS_FLU_SQL, ppfsFluParams(ctx)),
     ...catchmentDefs.map((d) => loadCatchment(d, ctx)),
   ] as const);
-  const serviceResults: ServiceResults = { anc, delivery, upt };
+  const serviceResults: ServiceResults = { anc, delivery, upt, fp, flu };
 
   const byCode = new Map<string, PpfsItem>();
   catchmentDefs.forEach((def, i) => {
@@ -337,7 +284,7 @@ async function loadPpfsSummary(
     if (s.status === "fulfilled") {
       byCode.set(def.code, buildItem(def, s.value as Counts));
     } else {
-      logItemError(def.code, s.reason);
+      logItemError("kpi/ppfs", def.code, s.reason);
       byCode.set(def.code, failedItem(def));
     }
   });
@@ -347,7 +294,7 @@ async function loadPpfsSummary(
     try {
       byCode.set(def.code, buildItem(def, serviceCounts(def, serviceResults)));
     } catch (err) {
-      logItemError(def.code, err);
+      logItemError("kpi/ppfs", def.code, err);
       byCode.set(def.code, failedItem(def));
     }
   }

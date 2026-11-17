@@ -158,7 +158,7 @@ export function ageParams(
 export function sqlCodeList(codes: readonly string[]): string {
   if (codes.length === 0) throw new Error("empty code list");
   for (const c of codes) {
-    if (!/^[0-9A-Za-z.]{1,16}$/.test(c)) {
+    if (!/^[0-9A-Za-z._]{1,16}$/.test(c)) {
       throw new Error(`invalid code literal: ${c}`);
     }
   }

@@ -35,7 +35,10 @@ export type PpfsRateCode =
   | "PP_VISIT"
   | "MCH_IODINE"
   | "MCH_UPT"
-  | "NB_TSH";
+  | "NB_TSH"
+  | "FP_DMPA"
+  | "FP_PILL"
+  | "FLU_VACCINE";
 
 export interface PpfsRate {
   code: PpfsRateCode;
@@ -77,6 +80,11 @@ export const PPFS_RATES: readonly PpfsRate[] = [
   // HOSxP price of ADP 30014 (nondrugitems 3002426 / 3002639); unconfirmed.
   { code: "MCH_UPT", name: "ทดสอบการตั้งครรภ์ (UPT)", group: "แม่และเด็ก", rate: 75, unit: "ต่อครั้ง", condition: "หญิงที่สงสัยว่าตั้งครรภ์", grade: "C", rateUnconfirmed: true },
   { code: "NB_TSH", name: "TSH ทารกแรกเกิด", group: "เด็ก", rate: 135, unit: "ต่อราย", condition: "ทารกแรกเกิด", grade: "C" },
+  // Confirmed by the NHSO FY2569 claim guideline (17 Oct 2025): FP003_4, FP003_1.
+  { code: "FP_DMPA", name: "ยาฉีดคุมกำเนิด (DMPA)", group: "วางแผนครอบครัว", rate: 60, unit: "ต่อครั้ง", condition: "หญิงไทยวัยเจริญพันธุ์ทุกสิทธิ ไม่เกิน 5 ครั้งต่อคนต่อปี", grade: "C" },
+  { code: "FP_PILL", name: "ยาเม็ดคุมกำเนิดชนิดฮอร์โมนรวม", group: "วางแผนครอบครัว", rate: 40, unit: "ต่อแผง", condition: "หญิงไทยวัยเจริญพันธุ์ทุกสิทธิ ครั้งละไม่เกิน 3 แผง ไม่เกิน 13 แผงต่อคนต่อปี", grade: "C" },
+  // Service fee only; the vaccine itself is allocated by NHSO (VMI).
+  { code: "FLU_VACCINE", name: "ค่าบริการฉีดวัคซีนไข้หวัดใหญ่", group: "วัคซีน", rate: 20, unit: "ต่อโดส", condition: "คนไทย 7 กลุ่มเสี่ยงทุกสิทธิ (ตัววัคซีน สปสช. จัดสรรให้)", grade: "C" },
 ];
 
 export function ppfsRate(code: PpfsRateCode): PpfsRate {
@@ -111,10 +119,24 @@ export type PpfsMchItemCode =
   | "MCH_IODINE"
   | "MCH_UPT";
 
-/** Every item code of the hospital PPFS page. */
-export type PpfsHospitalItemCode = PpfsItemCode | PpfsMchItemCode;
+/**
+ * Family-planning and influenza-vaccine items of the hospital page only
+ * (HOSxP, no target population: grade C). Kept apart from PpfsItemCode for
+ * the same reason as PpfsMchItemCode.
+ */
+export type PpfsFpVaccineItemCode = "FP_DMPA" | "FP_PILL" | "FLU_VACCINE";
 
-export interface PpfsItemDef<C extends PpfsHospitalItemCode = PpfsHospitalItemCode> {
+/** Every item code of the hospital PPFS page. */
+export type PpfsHospitalItemCode =
+  | PpfsItemCode
+  | PpfsMchItemCode
+  | PpfsFpVaccineItemCode;
+
+/**
+ * Display definition of one revenue item. `C` is the item-code union of the
+ * page: PpfsHospitalItemCode on /pp, NhsoOtherItemCode on /pp/other.
+ */
+export interface PpfsItemDef<C extends string = PpfsHospitalItemCode> {
   code: C;
   name: string;
   group: string;
@@ -258,8 +280,36 @@ export const PPFS_MCH_ITEMS: readonly PpfsItemDef<PpfsMchItemCode>[] = [
   }),
 ];
 
-/** Items of the hospital PPFS page (/pp): Phase 1 + mother-and-child. */
+/**
+ * Family planning + influenza vaccine (hospital page only, HOSxP,
+ * service-based, no target population: grade C). Rates confirmed by the
+ * NHSO FY2569 claim guideline. Definitions and FY2569 checks:
+ * docs/kpi/ppfs-revenue-feasibility.md (10.7).
+ */
+export const PPFS_FP_VACCINE_ITEMS: readonly PpfsItemDef<PpfsFpVaccineItemCode>[] = [
+  fromRate("FP_DMPA", {
+    ...SERVICE,
+    caveat:
+      "ไม่มีข้อมูลกลุ่มเป้าหมาย ทำแล้ว = ครั้ง (visit OPD) ที่หญิงไทยได้ยาฉีด DMPA ในปีงบฯ ไม่เกิน 5 ครั้งต่อคน · คิดเงินแล้ว = ครั้งเดียวกันที่ถูกคิดรายการ FP003_4 · ไม่นับยาที่ฉีดขณะนอน รพ.",
+  }),
+  fromRate("FP_PILL", {
+    ...SERVICE,
+    caveat:
+      "ไม่มีข้อมูลกลุ่มเป้าหมาย ทำแล้ว = จำนวนแผงยาเม็ดฮอร์โมนรวมที่จ่ายให้หญิงไทยที่ OPD ในปีงบฯ (ครั้งละไม่เกิน 3 แผง สะสมไม่เกิน 13 แผงต่อคน) · คิดเงินแล้ว นับเป็นครั้ง (visit) ที่ถูกคิดรายการ FP003_1 ไม่ใช่จำนวนแผง · ยังไม่รวมยาเม็ดคุมกำเนิดฉุกเฉิน (FP003_3, 50 บาท) และชนิดฮอร์โมนเดี่ยว (FP003_2, 80 บาท ยาปิดใช้แล้ว)",
+  }),
+  fromRate("FLU_VACCINE", {
+    ...SERVICE,
+    caveat:
+      "ไม่มีข้อมูลกลุ่มเป้าหมาย ทำแล้ว = โดสวัคซีนไข้หวัดใหญ่ (รหัส 815) ที่ รพ. ฉีดให้คนไทยในปีงบฯ ไม่นับ 817 (ผู้ประกันตน) และ 818 (กลุ่มอื่น) และไม่ได้ตรวจว่าอยู่ใน 7 กลุ่มเสี่ยงจริง · เบิกผ่านระบบ KTB/หมอพร้อม ไม่มีรายการค่าบริการใน HOSxP จึงดูยอดคิดเงินแล้วจาก HOSxP ไม่ได้",
+  }),
+];
+
+/**
+ * Items of the hospital PPFS page (/pp): Phase 1 + mother-and-child +
+ * family planning / influenza vaccine.
+ */
 export const PPFS_HOSPITAL_ITEMS: readonly PpfsItemDef[] = [
   ...PPFS_PHASE1_ITEMS,
   ...PPFS_MCH_ITEMS,
+  ...PPFS_FP_VACCINE_ITEMS,
 ];
