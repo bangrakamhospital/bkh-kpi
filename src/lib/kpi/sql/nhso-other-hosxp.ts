@@ -83,6 +83,84 @@ export function nhsoTelemedParams(ctx: ScreeningSqlContext): QueryParams {
   return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
 }
 
+// --- home drug delivery ------------------------------------------------------
+
+/**
+ * nondrugitems.nhso_adp_code of the home drug delivery fee (50 baht):
+ * icode 3002455 "ค่าจัดส่งยาทางไปรษณีย์" and 3002725 "ค่าจัดส่งยาโดย
+ * Health Rider" both carry DRUGP.
+ */
+const DRUG_DELIVERY_ADP = ["DRUGP"] as const;
+/** opitemrece.icode of the postal delivery fee. */
+const DRUG_DELIVERY_POST_ICODES = ["3002455"] as const;
+/** opitemrece.icode of the Health Rider delivery fee. */
+const DRUG_DELIVERY_RIDER_ICODES = ["3002725"] as const;
+
+/**
+ * Home drug delivery, UC visits (ovst.pttype -> pttype.hipdata_code 'UCS')
+ * in the fiscal year, any ovstist, telehealth not required:
+ *  - post_target_visits = visits with a pharmacy delivery record
+ *    (prscrpt_delivery, unique per vn) that has a parcel tracking number
+ *    (prscrpt_delivery_track not NULL / blank / '-'; FY2569 values are
+ *    only NULL or PB…TH / PC…TH). Records without a number may have been
+ *    cancelled: excluded.
+ *  - post_done_visits   = target visits charged any DRUGP item (postal or
+ *    rider icode), once per visit
+ *  - post_billed_visits = every UC visit charged the postal icode (also
+ *    visits without a delivery record)
+ *  - rider_visits       = UC visits charged the Health Rider icode. HOSxP
+ *    has no delivery record for riders: no target, done = billed.
+ * pttype is LEFT JOINed with the scheme test on COALESCE (as
+ * NHSO_TELEMED_SQL) so the plan stays ovst-by-date first.
+ * -> one row.
+ */
+export const NHSO_DRUG_DELIVERY_SQL = `
+WITH dl AS (
+  SELECT DISTINCT d.vn
+  FROM prscrpt_delivery d
+  JOIN ovst o1
+    ON o1.vn = d.vn
+  WHERE ${IN_FY("o1.vstdate")}
+    AND d.prscrpt_delivery_track IS NOT NULL
+    AND TRIM(d.prscrpt_delivery_track) NOT IN ('', '-')
+),
+b AS (
+  SELECT oi.vn,
+         MAX(oi.icode IN (${sqlCodeList(DRUG_DELIVERY_POST_ICODES)}))  AS post_c,
+         MAX(oi.icode IN (${sqlCodeList(DRUG_DELIVERY_RIDER_ICODES)})) AS rider_c
+  FROM opitemrece oi
+  WHERE oi.icode IN (SELECT n.icode FROM nondrugitems n
+                      WHERE n.nhso_adp_code IN (${sqlCodeList(DRUG_DELIVERY_ADP)}))
+    AND ${IN_FY("oi.vstdate")}
+  GROUP BY oi.vn
+),
+v AS (
+  SELECT dl.vn IS NOT NULL      AS in_target,
+         b.vn IS NOT NULL       AS charged,
+         COALESCE(b.post_c, 0)  AS post_c,
+         COALESCE(b.rider_c, 0) AS rider_c
+  FROM ovst o
+  LEFT JOIN pttype pt
+    ON pt.pttype = o.pttype
+  LEFT JOIN dl
+    ON dl.vn = o.vn
+  LEFT JOIN b
+    ON b.vn = o.vn
+  WHERE ${IN_FY("o.vstdate")}
+    AND (dl.vn IS NOT NULL OR b.vn IS NOT NULL)
+    AND COALESCE(pt.hipdata_code, '') IN (${sqlCodeList(UC_HIPDATA)})
+)
+SELECT COALESCE(SUM(v.in_target), 0)               AS post_target_visits,
+       COALESCE(SUM(v.in_target AND v.charged), 0) AS post_done_visits,
+       COALESCE(SUM(v.post_c), 0)                  AS post_billed_visits,
+       COALESCE(SUM(v.rider_c), 0)                 AS rider_visits
+FROM v
+`;
+
+export function nhsoDrugDeliveryParams(ctx: ScreeningSqlContext): QueryParams {
+  return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
+}
+
 // --- palliative strong opioid ------------------------------------------------
 
 /**

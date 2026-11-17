@@ -23,8 +23,10 @@ import {
 } from "@/lib/kpi/ppfs-common";
 import type { PpfsItem, PpfsSummary } from "@/lib/kpi/ppfs-types";
 import {
+  NHSO_DRUG_DELIVERY_SQL,
   NHSO_PALLIATIVE_OPIOID_SQL,
   NHSO_TELEMED_SQL,
+  nhsoDrugDeliveryParams,
   nhsoPalliativeOpioidParams,
   nhsoTelemedParams,
 } from "@/lib/kpi/sql/nhso-other-hosxp";
@@ -32,7 +34,7 @@ import type { ScreeningSqlContext } from "@/lib/kpi/sql/screening-common";
 
 /**
  * "รายได้ สปสช. อื่นๆ" (/pp/other) — NHSO revenue outside the PP Fee
- * Schedule (telehealth, palliative strong opioid), HOSxP only, aggregates
+ * Schedule (telehealth, home drug delivery, palliative strong opioid), HOSxP only, aggregates
  * only. Same PpfsSummary contract as getPpfsSummary, own items and totals.
  * Definitions: docs/kpi/ppfs-revenue-feasibility.md (10.7).
  */
@@ -59,16 +61,60 @@ interface TelemedRow extends RowDataPacket {
   billed_visits: Num;
 }
 
+interface DrugDeliveryRow extends RowDataPacket {
+  post_target_visits: Num;
+  post_done_visits: Num;
+  post_billed_visits: Num;
+  rider_visits: Num;
+}
+
 interface OpioidRow extends RowDataPacket {
   done_person_months: Num;
   done_persons: Num;
 }
 
-/** One query per item, so a failed query fails only its own item. */
-const LOADERS: Record<NhsoOtherItemCode, (ctx: ScreeningSqlContext) => Promise<Counts>> = {
+/** Queries shared by several items, each run at most once per summary. */
+interface SharedQueries {
+  /** Both drug delivery items (one query): a failure fails both. */
+  drugDelivery: () => Promise<DrugDeliveryRow>;
+}
+
+function sharedQueries(ctx: ScreeningSqlContext): SharedQueries {
+  let drugDelivery: Promise<DrugDeliveryRow> | undefined;
+  return {
+    drugDelivery: () =>
+      (drugDelivery ??= loadOneRow<DrugDeliveryRow>(
+        "DRUG_DELIVERY",
+        NHSO_DRUG_DELIVERY_SQL,
+        nhsoDrugDeliveryParams(ctx),
+      )),
+  };
+}
+
+/**
+ * One query per item (or per SharedQueries entry), so a failed query
+ * fails only the items that use it.
+ */
+const LOADERS: Record<
+  NhsoOtherItemCode,
+  (ctx: ScreeningSqlContext, shared: SharedQueries) => Promise<Counts>
+> = {
   TELEMED: async (ctx) => {
     const r = await loadOneRow<TelemedRow>("TELEMED", NHSO_TELEMED_SQL, nhsoTelemedParams(ctx));
     return service(num(r.target_visits), num(r.done_visits), num(r.billed_visits));
+  },
+  DRUG_DELIVERY_POST: async (_ctx, shared) => {
+    const r = await shared.drugDelivery();
+    return service(
+      num(r.post_target_visits),
+      num(r.post_done_visits),
+      num(r.post_billed_visits),
+    );
+  },
+  DRUG_DELIVERY_RIDER: async (_ctx, shared) => {
+    // HOSxP has no delivery record for riders: no target, done = billed
+    const r = await shared.drugDelivery();
+    return service(null, num(r.rider_visits), num(r.rider_visits));
   },
   PALLIATIVE_OPIOID: async (ctx) => {
     const r = await loadOneRow<OpioidRow>(
@@ -95,8 +141,9 @@ async function loadNhsoOtherSummary(
     dataAsOf: range.end,
   };
 
+  const shared = sharedQueries(ctx);
   const settled = await Promise.allSettled(
-    NHSO_OTHER_ITEMS.map((def) => LOADERS[def.code](ctx)),
+    NHSO_OTHER_ITEMS.map((def) => LOADERS[def.code](ctx, shared)),
   );
   const items: PpfsItem[] = NHSO_OTHER_ITEMS.map((def, i) => {
     const s = settled[i];
