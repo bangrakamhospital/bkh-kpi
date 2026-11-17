@@ -27,7 +27,7 @@ export default function PpOtherPage(props: PageProps<"/pp/other">) {
               รายได้ สปสช. อื่นๆ (นอก PP)
             </h1>
             <p className="text-xs text-brand-100">
-              รายได้จาก สปสช. ที่ไม่ใช่ PP เช่น บริการทางไกล และยาผู้ป่วยระยะท้าย แยกยอดจากรายการ PPFS
+              รายได้จาก สปสช. ที่ไม่ใช่ PP เช่น บริการทางไกล ค่าจัดส่งยาที่บ้าน และยาผู้ป่วยระยะท้าย แยกยอดจากรายการ PPFS
             </p>
           </div>
           <HeaderAuth />
