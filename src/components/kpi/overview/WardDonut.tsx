@@ -1,5 +1,7 @@
 import type { WardOccupancy } from "@/lib/kpi/overview-types";
 import { formatNumber } from "../format";
+import { ExcelDownloadButton } from "./ExcelDownloadButton";
+import { pct1 as pctNum } from "./export-utils";
 import {
   tableClass,
   tdClass,
@@ -35,9 +37,35 @@ export function WardDonut({ wards }: { wards: WardOccupancy[] }) {
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="text-base font-semibold">ผู้ป่วยในตามหอผู้ป่วย</h2>
-        <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
-          {formatNumber(wards.length)} หอ
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+            {formatNumber(wards.length)} หอ
+          </span>
+          <ExcelDownloadButton
+            data={{
+              fileName: "ผู้ป่วยในตามหอผู้ป่วย",
+              title: "ผู้ป่วยในตามหอผู้ป่วย",
+              sheetName: "หอผู้ป่วย",
+              subtitle: "ข้อมูลผู้ป่วยที่นอนอยู่ ณ เวลาที่ออกรายงาน",
+              columns: [
+                { header: "หอผู้ป่วย" },
+                { header: "ผู้ป่วย (คน)", format: "int" },
+                { header: "เตียง", format: "int" },
+                { header: "ครองเตียง (%)", format: "pct" },
+              ],
+              rows: wards.map((w) => [
+                w.name,
+                w.patients,
+                w.beds > 0 ? w.beds : null,
+                w.beds > 0 ? pctNum(w.patients, w.beds) : null,
+              ]),
+              footer: (() => {
+                const beds = wards.reduce((s, w) => s + w.beds, 0);
+                return [["รวม", total, beds > 0 ? beds : null, beds > 0 ? pctNum(total, beds) : null]];
+              })(),
+            }}
+          />
+        </div>
       </div>
       <div className="mt-3 grid items-center gap-6 md:grid-cols-[11rem_1fr]">
         <div

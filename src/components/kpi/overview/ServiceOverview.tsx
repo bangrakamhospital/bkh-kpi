@@ -51,14 +51,14 @@ export async function ServiceOverview({
     <div className="space-y-4">
       <RangePicker range={data.range} />
       <StatCards cards={data.cards} range={data.range} />
-      <HourlyChart hourly={data.hourly} />
+      <HourlyChart hourly={data.hourly} range={data.range} />
       <WardDonut wards={data.wards} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <DepartmentBars items={data.departments} />
-        <PttypeBars items={data.pttypes} />
+        <DepartmentBars items={data.departments} range={data.range} />
+        <PttypeBars items={data.pttypes} range={data.range} />
       </div>
-      <DiseaseGroupTop groups={data.diseaseGroups} />
-      <AgePyramid bands={data.ageSex} />
+      <DiseaseGroupTop groups={data.diseaseGroups} range={data.range} />
+      <AgePyramid bands={data.ageSex} range={data.range} />
     </div>
   );
 }

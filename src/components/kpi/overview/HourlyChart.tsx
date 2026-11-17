@@ -1,6 +1,7 @@
-import type { HourlyVisit } from "@/lib/kpi/overview-types";
+import type { HourlyVisit, OverviewRange } from "@/lib/kpi/overview-types";
 import { formatNumber } from "../format";
 import { ChartCard } from "./ChartCard";
+import { pct1, periodFileSuffix, periodSubtitle } from "./export-utils";
 import {
   tableClass,
   tdClass,
@@ -22,7 +23,7 @@ function niceMax(max: number): number {
 
 const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
-export function HourlyChart({ hourly }: { hourly: HourlyVisit[] }) {
+export function HourlyChart({ hourly, range }: { hourly: HourlyVisit[]; range: OverviewRange }) {
   const peak = hourly.reduce<HourlyVisit | null>(
     (best, h) => (best === null || h.visits > best.visits ? h : best),
     null,
@@ -110,5 +111,31 @@ export function HourlyChart({ hourly }: { hourly: HourlyVisit[] }) {
     </table>
   );
 
-  return <ChartCard title="ช่วงเวลาที่มารับบริการ" chart={chart} table={table} />;
+  const totalVisits = hourly.reduce((s, h) => s + h.visits, 0);
+
+  return (
+    <ChartCard
+      title="ช่วงเวลาที่มารับบริการ"
+      chart={chart}
+      table={table}
+      excel={{
+        fileName: `ช่วงเวลาที่มารับบริการ_${periodFileSuffix(range)}`,
+        title: "ช่วงเวลาที่มารับบริการ",
+        sheetName: "รายชั่วโมง",
+        subtitle: periodSubtitle(range),
+        columns: [
+          { header: "ช่วงเวลา" },
+          { header: "visit", format: "int" },
+          { header: "ร้อยละ", format: "pct" },
+        ],
+        rows: hourly.map((h) => [
+          `${hh(h.hour)}-${String(h.hour).padStart(2, "0")}:59 น.`,
+          h.visits,
+          pct1(h.visits, totalVisits),
+        ]),
+        footer: [["รวม", totalVisits, totalVisits > 0 ? 100 : 0]],
+        notes: hasPeak ? [peakText] : undefined,
+      }}
+    />
+  );
 }
