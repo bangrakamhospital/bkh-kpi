@@ -48,14 +48,17 @@ code in `HOME_WARD_CODES = ["17"]`. Home ward is removed from `wards`.
 
 **ตึกแม่และเด็ก (newborns rooming-in)**: a newborn born here shares the
 mother's bed, so it does not occupy a bed; only a sick baby that is admitted
-does. HOSxP: a baby born here gets an AN at birth with a row in
-`ipt_newborn` (`mother_an` = the mother's AN, mother in ward 04 LR); a sick
-baby admitted later gets a normal AN with no `ipt_newborn` row. FY2569 check
-(ward 03): 125 births age 0-1 d, all with `ipt_newborn`; 20 readmissions
-age 3-16 d, none with it. Rule: in the mother-and-child ward
-(`isMotherChildWard()`: name `/แม่และเด็ก/` or code in
-`MOTHER_CHILD_WARD_CODES = ["03"]`) admissions that have an
-`ipt_newborn` row are moved from `patients`/`patientDays` to
+does. HOSxP rule (`IS_NEWBORN` in `sql/overview-hosxp.ts`, as the user
+specified): **`ipt.ipt_admit_type_id = 4`** (`ipt_admit_type` 4 = แรกเกิด).
+The field is filled since 2019; before that it is NULL, so a NULL type falls
+back to "has an `ipt_newborn` row" (AN created at birth, `mother_an` = the
+mother's AN in ward 04 LR). A sick baby admitted later is type 1 (ทั่วไป)
+and is counted. FY2569 check (ward 03): 125 type-4 births age 0-1 d (all
+with `ipt_newborn`); 20 type-1 readmissions age 3-16 d. In 2025, 5 ward-03
+stays have an `ipt_newborn` row but type ≠ 4; by the rule they are counted.
+In the mother-and-child ward (`isMotherChildWard()`: name `/แม่และเด็ก/` or
+code in `MOTHER_CHILD_WARD_CODES = ["03"]`) newborn admissions are moved
+from `patients`/`patientDays` to
 `newbornsRoomingIn`/`newbornDaysRoomingIn`. So they are excluded from
 `inpatientNow`, ward occupancy and the donut (in other wards newborns count
 normally). The UI shows them as "+ ทารกแรกเกิดอยู่กับแม่ n คน (ไม่คิดเตียง)".

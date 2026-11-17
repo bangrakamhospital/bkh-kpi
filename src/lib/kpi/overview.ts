@@ -56,7 +56,7 @@ export function isHomeWard(code: string, name: string | null): boolean {
 /**
  * Mother-and-child ward ("ตึกแม่และเด็ก", ward 03 at this site). Newborns
  * born here share the mother's bed, so they are not counted as bed-occupying
- * patients there; sick babies admitted (no ipt_newborn row) are counted.
+ * patients there; sick babies admitted (ipt_admit_type_id <> 4) are counted.
  */
 export const MOTHER_CHILD_WARD_CODES: readonly string[] = ["03"];
 const MOTHER_CHILD_WARD_NAME = /แม่และเด็ก/;

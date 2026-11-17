@@ -46,6 +46,17 @@ SELECT
 `;
 
 /**
+ * Newborn admission (born here, shares the mother's bed) — needs
+ * `ipt i LEFT JOIN ipt_newborn n ON n.an = i.an`.
+ * Primary rule: ipt.ipt_admit_type_id = 4 ("แรกเกิด", ipt_admit_type) — the
+ * site's own flag, filled since 2019. Before 2019 the field is NULL, so a
+ * NULL type falls back to having an ipt_newborn row. A sick baby admitted
+ * later is type 1 (ทั่วไป) and is counted. FY2569 ward 03: 125 type-4 (age
+ * 0-1 d, all with ipt_newborn) vs 20 type-1 readmissions (age 3-16 d).
+ */
+const IS_NEWBORN = `(CASE WHEN i.ipt_admit_type_id IS NULL THEN n.an IS NOT NULL ELSE i.ipt_admit_type_id = 4 END)`;
+
+/**
  * Current inpatients (ipt.dchdate IS NULL) per ward, right now — no params.
  * Used only for the "ผู้ป่วยใน ขณะนี้" card (the ward box uses wardStays).
  * -> rows { ward, ward_name, beds, ward_active, patients, newborns }
@@ -53,12 +64,8 @@ SELECT
  * that still has patients. Home ward is NOT filtered here; the TS layer
  * splits it off (see isHomeWard in overview.ts).
  * beds = ward.bedcount (registered beds; = real_bedcount at this site).
- * newborns = admissions born in this hospital (row in ipt_newborn, AN
- * created at birth, rooming-in with the mother). The TS layer does not
- * count them as bed-occupying in the mother-and-child ward. A sick baby
- * admitted later gets a normal AN without an ipt_newborn row, so it is
- * counted (checked FY2569: ward 03 = 125 births age 0-1 d, all with
- * ipt_newborn; 20 readmissions age 3-16 d, none with ipt_newborn).
+ * newborns = rooming-in newborns (see IS_NEWBORN). The TS layer does not
+ * count them as bed-occupying in the mother-and-child ward.
  */
 const wards = `
 SELECT
@@ -70,7 +77,7 @@ SELECT
   COALESCE(c.newborns, 0) AS newborns
 FROM ward w
 LEFT JOIN (
-  SELECT i.ward, COUNT(*) AS patients, COUNT(n.an) AS newborns
+  SELECT i.ward, COUNT(*) AS patients, SUM(${IS_NEWBORN}) AS newborns
   FROM ipt i
   LEFT JOIN ipt_newborn n ON n.an = i.an
   WHERE i.dchdate IS NULL
@@ -92,7 +99,7 @@ WHERE w.ward_active = 'Y' OR c.patients > 0
  *   segment = regdate..first move in that move's oward (or ipt.ward when no
  *   move), then each move's nward until the next move / end. FY2569: 502
  *   ward changes, 459 on the admit day (registration corrections).
- * - newborns/newborn_days = stays with an ipt_newborn row (born here); the TS
+ * - newborns/newborn_days = rooming-in newborns (IS_NEWBORN); the TS
  *   layer moves them back into patients outside the mother-and-child ward.
  * - patients = distinct AN with >= 1 counted day in the ward (a transferred
  *   patient counts in each ward).
@@ -104,7 +111,7 @@ WITH stays AS (
          CASE WHEN i.dchdate IS NULL THEN :to + INTERVAL 1 DAY
               WHEN i.dchdate = i.regdate THEN i.dchdate + INTERVAL 1 DAY
               ELSE i.dchdate END AS end_d,
-         (n.an IS NOT NULL) AS is_newborn
+         ${IS_NEWBORN} AS is_newborn
   FROM ipt i
   LEFT JOIN ipt_newborn n ON n.an = i.an
   WHERE i.ward IS NOT NULL AND i.ward <> ''
