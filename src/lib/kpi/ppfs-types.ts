@@ -9,7 +9,8 @@
  * A = target and service both come from records that match the PPFS
  *     condition directly.
  * B = at least one proxy (risk group, lifetime history, schedule from LMP…).
- * C = no service marker, earned only (not shown in Phase 1).
+ * C = no target population can be counted (target null); only the units
+ *     done / billed are shown (e.g. pregnancy test).
  */
 export type PpfsGrade = "A" | "B" | "C";
 
@@ -59,6 +60,11 @@ export interface PpfsItem {
   group: string;
   /** PPFS rate, baht per unit. */
   rate: number;
+  /**
+   * true = the rate is the HOSxP price of the ADP code, not yet confirmed
+   * against the NHSO announcement (shown as a badge).
+   */
+  rateUnconfirmed: boolean;
   /** e.g. "ต่อคน", "ต่อครั้ง". */
   unit: string;
   /** Eligibility condition text, e.g. "อายุ 50–70 ปี ทุก 2 ปี". */

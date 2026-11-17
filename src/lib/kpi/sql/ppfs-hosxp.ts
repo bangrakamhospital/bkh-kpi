@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { QueryParams } from "@/lib/db/his";
-import type { PpfsItemCode } from "@/lib/kpi/ppfs-rates";
+import type { PpfsHospitalItemCode, PpfsItemCode } from "@/lib/kpi/ppfs-rates";
 
 import { CERVICAL_SCREENING_PP_CODES } from "./screening-cancer-hosxp";
 import {
@@ -20,9 +20,10 @@ import {
 } from "./screening-common";
 
 /**
- * SQL for the "PP / รายได้คัดกรอง" tab (PPFS Phase 1) against HOSxP.
+ * SQL for the "PP / รายได้คัดกรอง" tab (PPFS Phase 1 + mother-and-child
+ * items) against HOSxP.
  * Definitions and FY2569 verification: docs/kpi/ppfs-revenue-feasibility.md
- * ("Implemented Phase 1"). All codes below were verified with db-cli.
+ * ("Implemented", 10.6 for the mother-and-child items). All codes below were verified with db-cli.
  *
  * Catchment items follow the screening pattern (./screening-common): a
  * `ScreeningSqlSpec` (targetWhere on `person p` + screenedSubquery) plus
@@ -54,6 +55,7 @@ const LAB = {
   HBSAG: [122],
   HCV: [219, 430, 1081], // Anti-HCV, Anti-HCV (N), HCV-Ag
   HB: 3,
+  UPT: [67], // urine pregnancy test
 } as const;
 
 /** lab_head.form_name of the CBC (Hb is read from this form only). */
@@ -77,7 +79,27 @@ const ADP = {
   CBC: ["13001"],
   ANC_VISIT: ["30011"],
   ANC_LAB1: ["30012"],
+  ANC_LAB2: ["30013"],
+  ANC_US: ["30010"],
+  ANC_DENTAL: ["30009"],
+  PP_VISIT: ["30015"], // nondrugitems 3001988
+  // HOSxP prices 135 / 75 baht, rates not yet confirmed by NHSO FY2569:
+  MCH_IODINE: ["30016"], // nondrugitems 3002640
+  MCH_UPT: ["30014"], // nondrugitems 3002426, 3002639
 } as const;
+
+/** nondrugitems.icode of the ADP codes (opitemrece.icode IN (…)). */
+function adpIcodes(adpCodes: readonly string[]): string {
+  return `SELECT n.icode FROM nondrugitems n
+                      WHERE n.nhso_adp_code IN (${sqlCodeList(adpCodes)})`;
+}
+
+/** dtmain.tmcode of an ANC dental exam / scaling (any one counts). */
+const ANC_DENTAL_TMCODES = ["000309", "000310", "000292"] as const;
+/** ovstdiag.icd10 of a routine postpartum follow-up (Z39.2). */
+const PP_VISIT_ICD10 = ["Z392"] as const;
+/** drugitems.icode of the iodine + iron + folate tablet (Triferdine). */
+const IODINE_DRUG_ICODES = ["1650047"] as const;
 
 /** Statins in drugitems (opitemrece.icode), TC+HDL exclusion. */
 const STATIN_ICODES = [
@@ -527,7 +549,7 @@ export const PPFS_CATCHMENT_SQL: Record<CatchmentCode, PpfsVillageSql> = {
   CBC_WOMEN: buildPpfsVillageSql(CBC_WOMEN_SPEC),
 };
 
-export function isCatchmentCode(code: PpfsItemCode): code is CatchmentCode {
+export function isCatchmentCode(code: PpfsHospitalItemCode): code is CatchmentCode {
   return code in PPFS_CATCHMENT_SQL;
 }
 
@@ -540,15 +562,34 @@ const ANC_SCHEDULE_DAYS = [84, 140, 182, 210, 238, 252, 266, 280] as const;
  * needs supporting evidence (reported separately as extra_visits).
  */
 const ANC_MAX_VISITS = ANC_SCHEDULE_DAYS.length;
-/** First-trimester lab set 1 is due by GA 12 weeks. */
-const ANC_LAB1_DUE_DAYS = 84;
+/** Gestational age (days from LMP) used by the ANC items. */
+const ANC_GA = {
+  /** First-trimester lab set 1 is due by GA 12 weeks (start of care). */
+  START_DUE: 84,
+  /** Lab orders from GA 28 weeks on are lab set 2, before it lab set 1. */
+  LAB2_FROM: 196,
+  /** Lab set 2 is due at GA 32 weeks. */
+  LAB2_DUE: 224,
+  /** End of a pregnancy when no labor date is known (exclusive). */
+  END: 301,
+} as const;
+
+/** Billed visits of `codes` from the `bill` CTE of PPFS_ANC_SQL. */
+const billedFrom = (codes: readonly string[]) =>
+  `(SELECT COALESCE(SUM(b.visits), 0) FROM bill b
+         WHERE b.adp IN (${sqlCodeList(codes)}))`;
 
 const inFy = (expr: string) => `(${expr} BETWEEN :periodStart AND :dataAsOf)`;
+const lmpPlus = (days: number) => `DATE_ADD(a.lmp, INTERVAL ${days} DAY)`;
 
 /**
- * ANC visit + lab set 1 (B, service-based): pregnancies (person_anc with
- * LMP) of Thai women with at least one ANC service (person_anc_service)
- * at the hospital in the fiscal year, any TYPEAREA.
+ * ANC items (service-based): pregnancies (person_anc with LMP) of Thai
+ * women with at least one ANC service (person_anc_service) at the hospital
+ * in the fiscal year, any TYPEAREA. One query for all five ANC items.
+ * "Start of care in the FY" (exp_start) = GA 12 weeks on/after 1 Oct and
+ * LMP before the end of the fiscal year.
+ *
+ * ANC visit (B):
  *  - target_visits = scheduled visits (ANC_SCHEDULE_DAYS from LMP) that
  *    fall in the fiscal year
  *  - done_visits   = distinct ANC service dates in the fiscal year, at most
@@ -564,11 +605,25 @@ const inFy = (expr: string) => `(${expr} BETWEEN :periodStart AND :dataAsOf)`;
  *    at least one such visit.
  *  - target_visits counts at most one visit per schedule point, i.e. at
  *    most 8 per pregnancy, so it already follows the 1-8 rule.
- *  - target_lab1   = pregnancies whose GA 12 weeks is on/after 1 Oct and
- *    LMP is before the end of the fiscal year (first trimester or start
- *    of care in the FY)
- *  - done_lab1     = those with a 'LAB ANC' order in the fiscal year
- *  - billed_*      = visits of these women charged with ADP 30011 / 30012
+ * Lab set 1 (B):
+ *  - target_lab1 = exp_start
+ *  - done_lab1   = those with a 'LAB ANC' order in the fiscal year before
+ *    GA 28 weeks (later orders are lab set 2). FY2569: 167 (188 when any
+ *    in-FY order counted).
+ * Lab set 2 (B):
+ *  - target_lab2 = pregnancies whose GA 32 weeks falls in the fiscal year
+ *  - done_lab2   = those with a 'LAB ANC' order in the fiscal year at
+ *    GA 28 weeks up to the end of pregnancy (LMP + 300 days)
+ * Ultrasound (B):
+ *  - target_us = exp_start
+ *  - done_us   = those with person_anc_service.ultrasound_flag = 'Y' in
+ *    the fiscal year, at most one per pregnancy (what the hospital bills)
+ * Dental (B):
+ *  - target_dental = exp_start
+ *  - done_dental   = those with a dental exam / scaling (dtmain.tmcode
+ *    ANC_DENTAL_TMCODES) in the fiscal year between LMP and LMP + 300
+ * billed_* = OPD visits (opitemrece.an empty) of these women in the fiscal
+ * year charged with the item's ADP code.
  * -> one row.
  */
 export const PPFS_ANC_SQL = `
@@ -586,9 +641,10 @@ WITH a AS (
 ),
 sched AS (
   SELECT a.person_anc_id,
-         ${ANC_SCHEDULE_DAYS.map((d) => inFy(`DATE_ADD(a.lmp, INTERVAL ${d} DAY)`)).join("\n       + ")} AS exp_visits,
-         (DATE_ADD(a.lmp, INTERVAL ${ANC_LAB1_DUE_DAYS} DAY) >= :periodStart
-          AND a.lmp < DATE_ADD(:dataAsOf, INTERVAL 1 DAY)) AS exp_lab1
+         ${ANC_SCHEDULE_DAYS.map((d) => inFy(lmpPlus(d))).join("\n       + ")} AS exp_visits,
+         (${lmpPlus(ANC_GA.START_DUE)} >= :periodStart
+          AND a.lmp < DATE_ADD(:dataAsOf, INTERVAL 1 DAY)) AS exp_start,
+         ${inFy(lmpPlus(ANC_GA.LAB2_DUE))} AS exp_lab2
   FROM a
 ),
 v AS (
@@ -601,19 +657,51 @@ v AS (
   GROUP BY s.person_anc_id
 ),
 lab AS (
-  SELECT DISTINCT h.hn
-  FROM lab_head h
-  WHERE h.hn IN (SELECT patient_hn FROM a)
-    AND h.order_date >= :periodStart
+  SELECT a.person_anc_id,
+         MAX(h.order_date < ${lmpPlus(ANC_GA.LAB2_FROM)}) AS lab1,
+         MAX(h.order_date >= ${lmpPlus(ANC_GA.LAB2_FROM)}
+             AND h.order_date < ${lmpPlus(ANC_GA.END)}) AS lab2
+  FROM a
+  JOIN lab_head h
+    ON h.hn = a.patient_hn
+  WHERE h.order_date >= :periodStart
     AND h.order_date <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
     AND h.form_name = '${ANC_LAB_FORM}'
+  GROUP BY a.person_anc_id
+),
+us AS (
+  SELECT DISTINCT s.person_anc_id
+  FROM person_anc_service s
+  JOIN a
+    ON a.person_anc_id = s.person_anc_id
+  WHERE s.ultrasound_flag = 'Y'
+    AND s.anc_service_date >= :periodStart
+    AND s.anc_service_date <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+),
+dent AS (
+  SELECT DISTINCT a.person_anc_id
+  FROM a
+  JOIN dtmain d
+    ON d.hn = a.patient_hn
+  WHERE d.tmcode IN (${sqlCodeList(ANC_DENTAL_TMCODES)})
+    AND d.vstdate >= :periodStart
+    AND d.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+    AND d.vstdate >= a.lmp
+    AND d.vstdate <  ${lmpPlus(ANC_GA.END)}
 ),
 bill AS (
   SELECT n.nhso_adp_code AS adp, COUNT(DISTINCT oi.vn) AS visits
   FROM opitemrece oi
   JOIN nondrugitems n
     ON n.icode = oi.icode
-  WHERE n.nhso_adp_code IN (${sqlCodeList([...ADP.ANC_VISIT, ...ADP.ANC_LAB1])})
+  WHERE n.nhso_adp_code IN (${sqlCodeList([
+    ...ADP.ANC_VISIT,
+    ...ADP.ANC_LAB1,
+    ...ADP.ANC_LAB2,
+    ...ADP.ANC_US,
+    ...ADP.ANC_DENTAL,
+  ])})
+    AND (oi.an IS NULL OR oi.an = '')
     AND oi.vstdate >= :periodStart
     AND oi.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
     AND oi.hn IN (SELECT patient_hn FROM a)
@@ -624,21 +712,183 @@ SELECT COUNT(*)                                            AS pregnancies,
        COALESCE(SUM(LEAST(COALESCE(v.visits, 0), ${ANC_MAX_VISITS})), 0) AS done_visits,
        COALESCE(SUM(GREATEST(COALESCE(v.visits, 0) - ${ANC_MAX_VISITS}, 0)), 0) AS extra_visits,
        COALESCE(SUM(COALESCE(v.visits, 0) > ${ANC_MAX_VISITS}), 0) AS extra_pregnancies,
-       COALESCE(SUM(sc.exp_lab1), 0)                       AS target_lab1,
-       COALESCE(SUM(sc.exp_lab1 AND lab.hn IS NOT NULL), 0) AS done_lab1,
-       (SELECT COALESCE(SUM(b.visits), 0) FROM bill b
-         WHERE b.adp IN (${sqlCodeList(ADP.ANC_VISIT)}))   AS billed_visits,
-       (SELECT COALESCE(SUM(b.visits), 0) FROM bill b
-         WHERE b.adp IN (${sqlCodeList(ADP.ANC_LAB1)}))    AS billed_lab1
+       COALESCE(SUM(sc.exp_start), 0)                      AS target_lab1,
+       COALESCE(SUM(sc.exp_start AND lab.lab1 = 1), 0)     AS done_lab1,
+       COALESCE(SUM(sc.exp_lab2), 0)                       AS target_lab2,
+       COALESCE(SUM(sc.exp_lab2 AND lab.lab2 = 1), 0)      AS done_lab2,
+       COALESCE(SUM(sc.exp_start), 0)                      AS target_us,
+       COALESCE(SUM(sc.exp_start AND us.person_anc_id IS NOT NULL), 0) AS done_us,
+       COALESCE(SUM(sc.exp_start), 0)                      AS target_dental,
+       COALESCE(SUM(sc.exp_start AND dent.person_anc_id IS NOT NULL), 0) AS done_dental,
+       ${billedFrom(ADP.ANC_VISIT)} AS billed_visits,
+       ${billedFrom(ADP.ANC_LAB1)} AS billed_lab1,
+       ${billedFrom(ADP.ANC_LAB2)} AS billed_lab2,
+       ${billedFrom(ADP.ANC_US)} AS billed_us,
+       ${billedFrom(ADP.ANC_DENTAL)} AS billed_dental
 FROM a
 JOIN sched sc
   ON sc.person_anc_id = a.person_anc_id
 LEFT JOIN v
   ON v.person_anc_id = a.person_anc_id
 LEFT JOIN lab
-  ON lab.hn = a.patient_hn
+  ON lab.person_anc_id = a.person_anc_id
+LEFT JOIN us
+  ON us.person_anc_id = a.person_anc_id
+LEFT JOIN dent
+  ON dent.person_anc_id = a.person_anc_id
 `;
 
 export function ppfsAncParams(ctx: ScreeningSqlContext): QueryParams {
+  return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
+}
+
+// --- service-based delivery (postpartum) -----------------------------------
+
+/** Postpartum window: days after the labor date (inclusive). */
+const POSTPARTUM_DAYS = 42;
+/** PPFS pays up to 3 postpartum visits per woman. */
+export const PPFS_PP_MAX_VISITS = 3;
+
+/**
+ * Thai women who gave birth in the fiscal year, one row per hn with the
+ * earliest labor date: IPD deliveries (ipt_pregnancy -> ipt.hn) plus
+ * labor dates recorded on the ANC record (person_anc -> person.patient_hn).
+ */
+const DELIVERY_CTE = `
+d0 AS (
+  SELECT i.hn, pg.labor_date
+  FROM ipt_pregnancy pg
+  JOIN ipt i
+    ON i.an = pg.an
+  JOIN patient pt
+    ON pt.hn = i.hn
+  WHERE pg.labor_date BETWEEN :periodStart AND :dataAsOf
+    AND pt.nationality = '99'
+  UNION ALL
+  SELECT p.patient_hn, pa.labor_date
+  FROM person_anc pa
+  JOIN person p
+    ON p.person_id = pa.person_id
+  WHERE pa.labor_date BETWEEN :periodStart AND :dataAsOf
+    AND p.nationality = '99'
+),
+d AS (
+  -- latest date: an earlier ipt_pregnancy row is usually a false-labour /
+  -- preterm admission before the real delivery (FY2569: 2 women, 21-29 d apart)
+  SELECT hn, MAX(labor_date) AS labor_date
+  FROM d0
+  WHERE hn IS NOT NULL AND hn <> ''
+  GROUP BY hn
+)`;
+
+/**
+ * Postpartum visit (B, ceiling) + iodine/iron after delivery (B), both on
+ * DELIVERY_CTE (`d`):
+ *  - deliveries     = women in d; target PP = deliveries × PPFS_PP_MAX_VISITS,
+ *    target iodine = deliveries (computed in TypeScript)
+ *  - done_pp        = distinct OPD visit dates 1-42 days after labor with
+ *    ICD-10 Z392 or charged ADP 30015, at most PPFS_PP_MAX_VISITS per woman
+ *  - billed_pp      = those visit dates charged with ADP 30015
+ *  - done_iodine    = women dispensed IODINE_DRUG_ICODES (IPD or OPD)
+ *    from the labor date to +42 days
+ *  - billed_iodine  = visits (vn) charged ADP 30016 in the same window
+ *    (visits, like every other "คิดเงินแล้ว (ครั้ง)" figure)
+ * Cohort by labor date: a woman delivering late in the fiscal year has her
+ * 42-day window (and services) partly in the next fiscal year; they still
+ * count here. The next year's cohort is a different set of deliveries, so
+ * nothing is counted twice or dropped.
+ * -> one row.
+ */
+export const PPFS_DELIVERY_SQL = `
+WITH ${DELIVERY_CTE},
+pv AS (
+  SELECT d.hn, o.vstdate,
+         ROW_NUMBER() OVER (PARTITION BY d.hn ORDER BY o.vstdate) AS rn,
+         MAX(oi.icode IS NOT NULL) AS billed
+  FROM d
+  JOIN ovst o
+    ON o.hn = d.hn
+   AND o.vstdate >  d.labor_date
+   AND o.vstdate <= DATE_ADD(d.labor_date, INTERVAL ${POSTPARTUM_DAYS} DAY)
+  LEFT JOIN opitemrece oi
+    ON oi.vn = o.vn
+   AND oi.icode IN (${adpIcodes(ADP.PP_VISIT)})
+  WHERE oi.icode IS NOT NULL
+     OR EXISTS (
+          SELECT 1
+          FROM ovstdiag x
+          WHERE x.vn = o.vn
+            AND x.icd10 IN (${sqlCodeList(PP_VISIT_ICD10)})
+        )
+  GROUP BY d.hn, o.vstdate
+),
+rx AS (
+  SELECT d.hn,
+         MAX(oi.icode IN (${sqlCodeList(IODINE_DRUG_ICODES)})) AS dispensed,
+         -- rows are the drug or an ADP 30016 item only
+         COUNT(DISTINCT CASE WHEN oi.icode NOT IN (${sqlCodeList(IODINE_DRUG_ICODES)})
+                             THEN oi.vn END) AS billed
+  FROM d
+  JOIN opitemrece oi
+    ON oi.hn = d.hn
+   AND oi.vstdate >= d.labor_date
+   AND oi.vstdate <= DATE_ADD(d.labor_date, INTERVAL ${POSTPARTUM_DAYS} DAY)
+  WHERE oi.icode IN (${sqlCodeList(IODINE_DRUG_ICODES)})
+     OR oi.icode IN (${adpIcodes(ADP.MCH_IODINE)})
+  GROUP BY d.hn
+)
+SELECT (SELECT COUNT(*) FROM d)                                       AS deliveries,
+       (SELECT COALESCE(SUM(pv.rn <= ${PPFS_PP_MAX_VISITS}), 0) FROM pv)   AS done_pp,
+       (SELECT COALESCE(SUM(pv.rn <= ${PPFS_PP_MAX_VISITS} AND pv.billed), 0) FROM pv) AS billed_pp,
+       (SELECT COALESCE(SUM(rx.dispensed), 0) FROM rx)                AS done_iodine,
+       (SELECT COALESCE(SUM(rx.billed), 0) FROM rx)                   AS billed_iodine
+`;
+
+export function ppfsDeliveryParams(ctx: ScreeningSqlContext): QueryParams {
+  return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
+}
+
+// --- pregnancy test (no target) --------------------------------------------
+
+/**
+ * Pregnancy test (C, no target): OPD visits (lab_head.vn not an admission
+ * in an_stat) of Thai women (patient.sex '2') with a resulted urine
+ * pregnancy test (lab LAB.UPT) ordered in the fiscal year.
+ *  - done_upt   = those visits
+ *  - billed_upt = those visits charged with ADP 30014
+ * Includes pre-operative / pre-X-ray tests that may not be PP services.
+ * -> one row.
+ */
+export const PPFS_UPT_SQL = `
+WITH t AS (
+  SELECT DISTINCT h.vn
+  FROM lab_head h
+  JOIN lab_order lo
+    ON lo.lab_order_number = h.lab_order_number
+  JOIN patient pt
+    ON pt.hn = h.hn
+  WHERE lo.lab_items_code IN (${sqlIntList(LAB.UPT)})
+    AND h.order_date >= :periodStart
+    AND h.order_date <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+    AND lo.lab_order_result IS NOT NULL AND lo.lab_order_result <> ''
+    AND pt.nationality = '99'
+    AND pt.sex = '2'
+    AND NOT EXISTS (SELECT 1 FROM an_stat x WHERE x.an = h.vn)
+),
+b AS (
+  SELECT DISTINCT oi.vn
+  FROM opitemrece oi
+  WHERE oi.icode IN (${adpIcodes(ADP.MCH_UPT)})
+    AND oi.vstdate >= :periodStart
+    AND oi.vstdate <  DATE_ADD(:dataAsOf, INTERVAL 1 DAY)
+)
+SELECT COUNT(*)              AS done_upt,
+       COUNT(b.vn)           AS billed_upt
+FROM t
+LEFT JOIN b
+  ON b.vn = t.vn
+`;
+
+export function ppfsUptParams(ctx: ScreeningSqlContext): QueryParams {
   return { periodStart: ctx.periodStart, dataAsOf: ctx.dataAsOf };
 }
