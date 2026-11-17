@@ -1,9 +1,9 @@
-import type { DiseaseGroups } from "@/lib/kpi/overview-types";
+import type { DiseaseGroups, OverviewRange } from "@/lib/kpi/overview-types";
 import { DiseaseGroupCard } from "./DiseaseGroupCard";
 import { IpdDiseaseGroupCard } from "./IpdDiseaseGroupCard";
 
 /** Top 10 disease groups: OPD (รง.504) and IPD (รง.505), side by side. */
-export function DiseaseGroupTop({ groups }: { groups: DiseaseGroups }) {
+export function DiseaseGroupTop({ groups, range }: { groups: DiseaseGroups; range: OverviewRange }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <DiseaseGroupCard
@@ -11,10 +11,11 @@ export function DiseaseGroupTop({ groups }: { groups: DiseaseGroups }) {
         source="กลุ่มโรค รง.504 ตามวินิจฉัยหลัก (วันที่รับบริการ)"
         unit="ครั้ง"
         ranking={groups.opd}
+        range={range}
         unclassifiedNote="รหัส Z ตรวจสุขภาพ/รับวัคซีน/ติดตามอาการ, รหัส U ฯลฯ"
         uncodedLabel="ยังไม่ลงวินิจฉัยหลัก"
       />
-      <IpdDiseaseGroupCard admit={groups.ipdAdmit} discharge={groups.ipd} />
+      <IpdDiseaseGroupCard admit={groups.ipdAdmit} discharge={groups.ipd} range={range} />
     </div>
   );
 }

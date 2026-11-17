@@ -1,6 +1,7 @@
-import type { NamedCount } from "@/lib/kpi/overview-types";
+import type { NamedCount, OverviewRange } from "@/lib/kpi/overview-types";
 import { formatNumber } from "../format";
 import { ChartCard } from "./ChartCard";
+import { pct1 as pctNum, periodFileSuffix, periodSubtitle } from "./export-utils";
 import {
   tableClass,
   tdClass,
@@ -39,12 +40,14 @@ function CountBars({
   items,
   otherLabel,
   colHeader,
+  range,
 }: {
   title: string;
   unit: string;
   items: NamedCount[];
   otherLabel: (n: number) => string;
   colHeader: string;
+  range: OverviewRange;
 }) {
   const rows = group(items, otherLabel);
   const total = items.reduce((s, i) => s + i.visits, 0);
@@ -105,13 +108,30 @@ function CountBars({
       badge={`${formatNumber(items.length)} ${unit}`}
       chart={chart}
       table={table}
+      excel={{
+        fileName: `${title.replace(/\s+/g, "_")}_${periodFileSuffix(range)}`,
+        title,
+        sheetName: colHeader,
+        subtitle: periodSubtitle(range),
+        columns: [
+          { header: "ลำดับ", format: "int" },
+          { header: "รหัส" },
+          { header: colHeader },
+          { header: "visit", format: "int" },
+          { header: "ร้อยละ", format: "pct" },
+        ],
+        // Full list (no "อื่นๆ" grouping) so the report is complete.
+        rows: items.map((i, idx) => [idx + 1, i.code, i.name, i.visits, pctNum(i.visits, total)]),
+        footer: [["", "", "รวม", total, total > 0 ? 100 : 0]],
+      }}
     />
   );
 }
 
-export function DepartmentBars({ items }: { items: NamedCount[] }) {
+export function DepartmentBars({ items, range }: { items: NamedCount[]; range: OverviewRange }) {
   return (
     <CountBars
+      range={range}
       title="visit ตามแผนก"
       unit="แผนก"
       items={items}
@@ -121,9 +141,10 @@ export function DepartmentBars({ items }: { items: NamedCount[] }) {
   );
 }
 
-export function PttypeBars({ items }: { items: NamedCount[] }) {
+export function PttypeBars({ items, range }: { items: NamedCount[]; range: OverviewRange }) {
   return (
     <CountBars
+      range={range}
       title="visit ตามกองทุน"
       unit="กองทุน"
       items={items}

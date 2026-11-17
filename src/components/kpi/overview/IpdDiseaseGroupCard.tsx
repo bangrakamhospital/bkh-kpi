@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { DiseaseGroupRanking } from "@/lib/kpi/overview-types";
+import type { DiseaseGroupRanking, OverviewRange } from "@/lib/kpi/overview-types";
 import { DiseaseGroupCard } from "./DiseaseGroupCard";
 
 type IpdView = "admit" | "discharge";
@@ -32,9 +32,11 @@ const VIEW_CONFIG: Record<
 export function IpdDiseaseGroupCard({
   admit,
   discharge,
+  range,
 }: {
   admit: DiseaseGroupRanking;
   discharge: DiseaseGroupRanking;
+  range: OverviewRange;
 }) {
   const [view, setView] = useState<IpdView>("admit");
   const cfg = VIEW_CONFIG[view];
@@ -110,6 +112,8 @@ export function IpdDiseaseGroupCard({
       uncodedLabel={cfg.uncodedLabel}
       uncodedHint={cfg.uncodedHint}
       controls={controls}
+      range={range}
+      viewLabel={OPTIONS.find((o) => o.value === view)?.label}
     />
   );
 }

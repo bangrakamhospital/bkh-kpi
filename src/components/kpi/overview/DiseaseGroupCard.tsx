@@ -1,6 +1,7 @@
-import type { DiseaseGroupRanking } from "@/lib/kpi/overview-types";
+import type { DiseaseGroupRanking, OverviewRange } from "@/lib/kpi/overview-types";
 import { formatNumber } from "../format";
 import { ChartCard } from "./ChartCard";
+import { pct1 as pctNum, periodFileSuffix, periodSubtitle } from "./export-utils";
 import {
   tableClass,
   tdClass,
@@ -23,7 +24,12 @@ export function DiseaseGroupCard({
   uncodedLabel = "ยังไม่ลงวินิจฉัยหลัก",
   uncodedHint,
   controls,
+  range,
+  viewLabel,
 }: {
+  range: OverviewRange;
+  /** Extra label for the Excel report (e.g. which IPD view is selected). */
+  viewLabel?: string;
   title: string;
   source: string;
   unit: string;
@@ -149,6 +155,29 @@ export function DiseaseGroupCard({
       chart={chart}
       table={table}
       controls={controls}
+      excel={{
+        fileName: `${title.replace(/\s+/g, "_")}${viewLabel ? `_${viewLabel.replace(/\s+/g, "")}` : ""}_${periodFileSuffix(range)}`,
+        title: viewLabel ? `${title} · ${viewLabel}` : title,
+        sheetName: title.replace(/^10 อันดับ/, "").trim(),
+        subtitle: periodSubtitle(range),
+        columns: [
+          { header: "อันดับ", format: "int" },
+          { header: "กลุ่มโรค" },
+          { header: "ICD-10" },
+          { header: unit, format: "int" },
+          { header: "ร้อยละ", format: "pct" },
+        ],
+        // All classified groups (chart shows top 10 only).
+        rows: ranking.groups.map((r, i) => [i + 1, r.name, r.icd, r.count, pctNum(r.count, total)]),
+        footer: [["", "รวมที่จัดกลุ่มได้", "", total, total > 0 ? 100 : 0]],
+        notes: [
+          source,
+          ...(ranking.unclassified > 0
+            ? [`ไม่จัดกลุ่ม ${formatNumber(ranking.unclassified)} ${unit} (${unclassifiedNote})`]
+            : []),
+          ...(ranking.uncoded > 0 ? [`${uncodedLabel} ${formatNumber(ranking.uncoded)} ${unit}`] : []),
+        ],
+      }}
     />
   );
 }

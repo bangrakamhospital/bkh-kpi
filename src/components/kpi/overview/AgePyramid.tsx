@@ -1,6 +1,7 @@
-import type { AgeSexBand } from "@/lib/kpi/overview-types";
+import type { AgeSexBand, OverviewRange } from "@/lib/kpi/overview-types";
 import { formatNumber } from "../format";
 import { ChartCard } from "./ChartCard";
+import { periodFileSuffix, periodSubtitle } from "./export-utils";
 import {
   tableClass,
   tdClass,
@@ -11,7 +12,7 @@ import {
   trClass,
 } from "./table-styles";
 
-export function AgePyramid({ bands }: { bands: AgeSexBand[] }) {
+export function AgePyramid({ bands, range }: { bands: AgeSexBand[]; range: OverviewRange }) {
   const total = bands.reduce((s, b) => s + b.male + b.female, 0);
   const max = bands.reduce((m, b) => Math.max(m, b.male, b.female), 0);
   const rows = [...bands].reverse(); // oldest at top
@@ -76,6 +77,28 @@ export function AgePyramid({ bands }: { bands: AgeSexBand[] }) {
       badge={`รวม ${formatNumber(total)} คน`}
       chart={chart}
       table={table}
+      excel={{
+        fileName: `ผู้รับบริการตามเพศและอายุ_${periodFileSuffix(range)}`,
+        title: "ผู้รับบริการตามเพศและอายุ",
+        sheetName: "เพศและอายุ",
+        subtitle: periodSubtitle(range),
+        columns: [
+          { header: "กลุ่มอายุ (ปี)" },
+          { header: "ชาย (คน)", format: "int" },
+          { header: "หญิง (คน)", format: "int" },
+          { header: "รวม (คน)", format: "int" },
+        ],
+        rows: rows.map((b) => [b.band, b.male, b.female, b.male + b.female]),
+        footer: [
+          [
+            "รวม",
+            bands.reduce((s, b) => s + b.male, 0),
+            bands.reduce((s, b) => s + b.female, 0),
+            total,
+          ],
+        ],
+        notes: ["นับผู้รับบริการไม่ซ้ำคน (HN) ในช่วงวันที่ที่เลือก · ที่มา: HOSxP"],
+      }}
     />
   );
 }
