@@ -29,8 +29,8 @@ const GRADE_INFO: Record<PpfsGrade, { label: string; hint: string }> = {
     hint: "บางส่วนต้องใช้ข้อมูลอื่นแทนเงื่อนไขจริง (เช่น ใช้ช่วงอายุแทนกลุ่มเสี่ยง หรือเห็นเฉพาะประวัติใน รพ.) ตัวเลขอาจคลาดเคลื่อน",
   },
   C: {
-    label: "นับได้เฉพาะยอดคิดเงิน",
-    hint: "ไม่มีข้อมูลบริการให้นับเป้าหมาย นับได้เฉพาะรายการที่คิดเงินแล้ว",
+    label: "ไม่มีเป้าหมาย",
+    hint: "ไม่มีข้อมูลกลุ่มเป้าหมาย นับได้เฉพาะบริการที่ทำแล้ว ไม่รวมในเงินเป้าหมายและยอดที่ยังไม่ได้",
   },
 };
 
@@ -38,6 +38,9 @@ const chipClass =
   "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold";
 
 const NONE = "—";
+
+const RATE_UNCONFIRMED_HINT =
+  "อัตราจากราคาที่ตั้งใน HOSxP รอยืนยันกับประกาศ สปสช. ปี 2569";
 
 const potentialClass = "block text-xs font-medium text-amber-800 dark:text-amber-300";
 
@@ -73,7 +76,7 @@ export function PpfsTable({
         &quot;คิดเงินแล้ว&quot; = จำนวนครั้ง (visit) ของกลุ่มเป้าหมายที่ถูกคิดรายการ ADP ของ สปสช. ตรงกับรายการใน HOSxP ในปีงบฯ นี้ ไม่ใช่สถานะการเบิกจ่ายจริง
       </p>
       <dl className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
-        {(["A", "B"] as const).map((g) => (
+        {(["A", "B", "C"] as const).map((g) => (
           <div key={g} className="flex flex-wrap items-center gap-1.5">
             <dt className={`${chipClass} ${GRADE_CLASS[g]}`}>{GRADE_INFO[g].label}</dt>
             <dd>{GRADE_INFO[g].hint}</dd>
@@ -172,6 +175,14 @@ export function PpfsTable({
                     <span className="block text-xs text-zinc-600 dark:text-zinc-400">
                       {it.unit}
                     </span>
+                    {it.rateUnconfirmed && (
+                      <span
+                        title={RATE_UNCONFIRMED_HINT}
+                        className={`${chipClass} mt-0.5 bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-300`}
+                      >
+                        รอยืนยันอัตรา
+                      </span>
+                    )}
                   </td>
                   <td className={tdRightClass}>
                     {it.target === null ? (

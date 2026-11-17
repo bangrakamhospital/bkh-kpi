@@ -3,10 +3,10 @@ import "server-only";
 import type { RowDataPacket } from "mysql2";
 import { cacheLife, cacheTag, io } from "next/cache";
 
-import { HisQueryError, query } from "@/lib/db/his";
+import { HisQueryError, query, type QueryParams } from "@/lib/db/his";
 import { fiscalYearRange, todayIsoDate } from "@/lib/kpi/fiscal-year";
 import {
-  PPFS_PHASE1_ITEMS,
+  PPFS_HOSPITAL_ITEMS,
   PPFS_RATE_YEAR,
   type PpfsItemDef,
 } from "@/lib/kpi/ppfs-rates";
@@ -21,14 +21,20 @@ import {
   isCatchmentCode,
   PPFS_ANC_SQL,
   PPFS_CATCHMENT_SQL,
+  PPFS_DELIVERY_SQL,
+  PPFS_PP_MAX_VISITS,
+  PPFS_UPT_SQL,
   ppfsAncParams,
+  ppfsDeliveryParams,
+  ppfsUptParams,
 } from "@/lib/kpi/sql/ppfs-hosxp";
 import type { ScreeningSqlContext } from "@/lib/kpi/sql/screening-common";
 
 /**
  * "PP / รายได้คัดกรอง" — PPFS screening revenue (target vs earned vs gap),
- * Phase 1, HOSxP only, aggregates only.
- * Definitions: docs/kpi/ppfs-revenue-feasibility.md ("Implemented Phase 1").
+ * HOSxP only, aggregates only: Phase 1 items + hospital-only
+ * mother-and-child items (PPFS_HOSPITAL_ITEMS).
+ * Definitions: docs/kpi/ppfs-revenue-feasibility.md ("Implemented").
  * SQL: ./sql/ppfs-hosxp.ts. Rates (applied here, not in SQL): ./ppfs-rates.ts.
  */
 
@@ -69,28 +75,52 @@ export async function getPpfsSummary(fiscalYear: number): Promise<PpfsSummary> {
 
 // --- rows -------------------------------------------------------------------
 
+type Num = number | string | null;
+
 interface VillageRow extends RowDataPacket {
-  village_id: number | string | null;
+  village_id: Num;
   village_moo: string | null;
   village_name: string | null;
   eligible: number | string;
   numerator: number | string;
-  billed: number | string | null;
+  billed: Num;
 }
 
 interface AncRow extends RowDataPacket {
   pregnancies: number | string;
-  target_visits: number | string | null;
-  done_visits: number | string | null;
-  extra_visits: number | string | null;
-  extra_pregnancies: number | string | null;
-  target_lab1: number | string | null;
-  done_lab1: number | string | null;
-  billed_visits: number | string | null;
-  billed_lab1: number | string | null;
+  target_visits: Num;
+  done_visits: Num;
+  extra_visits: Num;
+  extra_pregnancies: Num;
+  target_lab1: Num;
+  done_lab1: Num;
+  target_lab2: Num;
+  done_lab2: Num;
+  target_us: Num;
+  done_us: Num;
+  target_dental: Num;
+  done_dental: Num;
+  billed_visits: Num;
+  billed_lab1: Num;
+  billed_lab2: Num;
+  billed_us: Num;
+  billed_dental: Num;
 }
 
-const num = (v: number | string | null | undefined): number => {
+interface DeliveryRow extends RowDataPacket {
+  deliveries: Num;
+  done_pp: Num;
+  billed_pp: Num;
+  done_iodine: Num;
+  billed_iodine: Num;
+}
+
+interface UptRow extends RowDataPacket {
+  done_upt: Num;
+  billed_upt: Num;
+}
+
+const num = (v: Num | undefined): number => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
@@ -99,7 +129,8 @@ const emptyToNull = (s: string | null): string | null =>
   s === null || s.trim() === "" ? null : s.trim();
 
 interface Counts {
-  target: number;
+  /** null = no target population (grade C). */
+  target: number | null;
   done: number;
   billed: number | null;
   villages: PpfsVillageRow[] | null;
@@ -107,7 +138,7 @@ interface Counts {
 }
 
 function buildItem(def: PpfsItemDef, c: Counts): PpfsItem {
-  const targetBaht = c.target * def.rate;
+  const targetBaht = c.target === null ? null : c.target * def.rate;
   const earnedBaht = c.done * def.rate;
   return {
     ...def,
@@ -116,7 +147,7 @@ function buildItem(def: PpfsItemDef, c: Counts): PpfsItem {
     billed: c.billed,
     targetBaht,
     earnedBaht,
-    gapBaht: Math.max(0, targetBaht - earnedBaht),
+    gapBaht: targetBaht === null ? null : Math.max(0, targetBaht - earnedBaht),
     potential: c.potential ?? null,
     villages: c.villages,
   };
@@ -168,10 +199,15 @@ async function loadCatchment(
   return { target, done, billed: sql.hasBilled ? billed : null, villages };
 }
 
-async function loadAnc(ctx: ScreeningSqlContext): Promise<AncRow> {
-  const rows = await query<AncRow>(PPFS_ANC_SQL, ppfsAncParams(ctx));
+/** Runs a one-row aggregate query; throws when it returns no row. */
+async function loadOneRow<T extends RowDataPacket>(
+  label: string,
+  sql: string,
+  params: QueryParams,
+): Promise<T> {
+  const rows = await query<T>(sql, params);
   const row = rows[0];
-  if (!row) throw new Error("ANC query returned no row");
+  if (!row) throw new Error(`${label} query returned no row`);
   return row;
 }
 
@@ -196,6 +232,70 @@ function ancVisit9Plus(rate: number, r: AncRow): PpfsPotential {
   };
 }
 
+/** Settled results of the service-based queries (one row each). */
+interface ServiceResults {
+  anc: PromiseSettledResult<AncRow>;
+  delivery: PromiseSettledResult<DeliveryRow>;
+  upt: PromiseSettledResult<UptRow>;
+}
+
+/** The row of a settled query; rethrows its error when it failed. */
+function rowOf<T>(s: PromiseSettledResult<T>): T {
+  if (s.status === "rejected") throw s.reason;
+  return s.value;
+}
+
+const service = (target: number | null, done: number, billed: number): Counts => ({
+  target,
+  done,
+  billed,
+  villages: null,
+});
+
+/** Counts of a service-based item; throws when its query failed. */
+function serviceCounts(def: PpfsItemDef, res: ServiceResults): Counts {
+  switch (def.code) {
+    case "ANC_VISIT": {
+      const r = rowOf(res.anc);
+      return {
+        ...service(num(r.target_visits), num(r.done_visits), num(r.billed_visits)),
+        potential: ancVisit9Plus(def.rate, r),
+      };
+    }
+    case "ANC_LAB1": {
+      const r = rowOf(res.anc);
+      return service(num(r.target_lab1), num(r.done_lab1), num(r.billed_lab1));
+    }
+    case "ANC_LAB2": {
+      const r = rowOf(res.anc);
+      return service(num(r.target_lab2), num(r.done_lab2), num(r.billed_lab2));
+    }
+    case "ANC_US": {
+      const r = rowOf(res.anc);
+      return service(num(r.target_us), num(r.done_us), num(r.billed_us));
+    }
+    case "ANC_DENTAL": {
+      const r = rowOf(res.anc);
+      return service(num(r.target_dental), num(r.done_dental), num(r.billed_dental));
+    }
+    case "PP_VISIT": {
+      // target = women who gave birth × visits paid per woman
+      const r = rowOf(res.delivery);
+      return service(num(r.deliveries) * PPFS_PP_MAX_VISITS, num(r.done_pp), num(r.billed_pp));
+    }
+    case "MCH_IODINE": {
+      const r = rowOf(res.delivery);
+      return service(num(r.deliveries), num(r.done_iodine), num(r.billed_iodine));
+    }
+    case "MCH_UPT": {
+      const r = rowOf(res.upt);
+      return service(null, num(r.done_upt), num(r.billed_upt));
+    }
+    default:
+      throw new Error(`not a service item: ${def.code}`);
+  }
+}
+
 function logItemError(code: string, err: unknown): void {
   const name = err instanceof Error ? err.name : "UnknownError";
   const driverCode = err instanceof HisQueryError ? (err.code ?? "") : "";
@@ -218,14 +318,18 @@ async function loadPpfsSummary(
     dataAsOf: range.end,
   };
 
-  const catchmentDefs = PPFS_PHASE1_ITEMS.filter(
+  const catchmentDefs = PPFS_HOSPITAL_ITEMS.filter(
     (d) => d.population === "catchment",
   );
-  // ANC visit + lab set 1 share one query.
-  const [ancSettled, ...catchmentSettled] = await Promise.allSettled([
-    loadAnc(ctx),
+  // Service items share three queries: ANC (5 items), delivery (PP visit
+  // + iodine) and pregnancy test. A failed query fails only its items.
+  const [anc, delivery, upt, ...catchmentSettled] = await Promise.allSettled([
+    loadOneRow<AncRow>("ANC", PPFS_ANC_SQL, ppfsAncParams(ctx)),
+    loadOneRow<DeliveryRow>("delivery", PPFS_DELIVERY_SQL, ppfsDeliveryParams(ctx)),
+    loadOneRow<UptRow>("UPT", PPFS_UPT_SQL, ppfsUptParams(ctx)),
     ...catchmentDefs.map((d) => loadCatchment(d, ctx)),
   ] as const);
+  const serviceResults: ServiceResults = { anc, delivery, upt };
 
   const byCode = new Map<string, PpfsItem>();
   catchmentDefs.forEach((def, i) => {
@@ -238,33 +342,17 @@ async function loadPpfsSummary(
     }
   });
 
-  for (const def of PPFS_PHASE1_ITEMS) {
+  for (const def of PPFS_HOSPITAL_ITEMS) {
     if (def.population !== "service") continue;
-    if (ancSettled.status === "rejected") {
-      logItemError(def.code, ancSettled.reason);
+    try {
+      byCode.set(def.code, buildItem(def, serviceCounts(def, serviceResults)));
+    } catch (err) {
+      logItemError(def.code, err);
       byCode.set(def.code, failedItem(def));
-      continue;
     }
-    const r = ancSettled.value;
-    const counts: Counts =
-      def.code === "ANC_LAB1"
-        ? {
-            target: num(r.target_lab1),
-            done: num(r.done_lab1),
-            billed: num(r.billed_lab1),
-            villages: null,
-          }
-        : {
-            target: num(r.target_visits),
-            done: num(r.done_visits),
-            billed: num(r.billed_visits),
-            villages: null,
-            potential: ancVisit9Plus(def.rate, r),
-          };
-    byCode.set(def.code, buildItem(def, counts));
   }
 
-  const items = PPFS_PHASE1_ITEMS.map((d) => byCode.get(d.code)).filter(
+  const items = PPFS_HOSPITAL_ITEMS.map((d) => byCode.get(d.code)).filter(
     (x): x is PpfsItem => x !== undefined,
   );
   const failed = items.filter((it) => it.error !== undefined).length;
