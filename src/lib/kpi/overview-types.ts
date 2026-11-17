@@ -32,7 +32,7 @@ export interface OverviewCards {
   er: CountWithPrev;
   /** new admissions (regdate in range) — unit คน */
   admitNew: CountWithPrev;
-  /** current inpatients right now (not discharged), excluding home ward */
+  /** current bed-occupying inpatients right now (not discharged), excluding home ward and rooming-in newborns */
   inpatientNow: number;
   /** total beds of the wards counted in inpatientNow */
   bedTotal: number;
@@ -48,8 +48,11 @@ export interface HourlyVisit {
 export interface WardOccupancy {
   ward: string; // ward code
   name: string;
+  /** bed-occupying inpatients (excludes newbornsRoomingIn) */
   patients: number;
   beds: number; // 0 if unknown
+  /** newborns born here sharing the mother's bed — not counted in patients/beds (ตึกแม่และเด็ก only) */
+  newbornsRoomingIn: number;
 }
 
 export interface NamedCount {

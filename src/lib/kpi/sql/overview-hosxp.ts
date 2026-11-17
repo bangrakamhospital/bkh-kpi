@@ -47,11 +47,17 @@ SELECT
 
 /**
  * Current inpatients (ipt.dchdate IS NULL) per ward, right now — no params.
- * -> rows { ward, ward_name, beds, ward_active, patients }
+ * -> rows { ward, ward_name, beds, ward_active, patients, newborns }
  * Returns every active ward (also with 0 patients) plus any inactive ward
  * that still has patients. Home ward is NOT filtered here; the TS layer
  * splits it off (see isHomeWard in overview.ts).
  * beds = ward.bedcount (registered beds; = real_bedcount at this site).
+ * newborns = admissions born in this hospital (row in ipt_newborn, AN
+ * created at birth, rooming-in with the mother). The TS layer does not
+ * count them as bed-occupying in the mother-and-child ward. A sick baby
+ * admitted later gets a normal AN without an ipt_newborn row, so it is
+ * counted (checked FY2569: ward 03 = 125 births age 0-1 d, all with
+ * ipt_newborn; 20 readmissions age 3-16 d, none with ipt_newborn).
  */
 const wards = `
 SELECT
@@ -59,11 +65,13 @@ SELECT
   w.name AS ward_name,
   COALESCE(w.bedcount, 0) AS beds,
   w.ward_active,
-  COALESCE(c.patients, 0) AS patients
+  COALESCE(c.patients, 0) AS patients,
+  COALESCE(c.newborns, 0) AS newborns
 FROM ward w
 LEFT JOIN (
-  SELECT i.ward, COUNT(*) AS patients
+  SELECT i.ward, COUNT(*) AS patients, COUNT(n.an) AS newborns
   FROM ipt i
+  LEFT JOIN ipt_newborn n ON n.an = i.an
   WHERE i.dchdate IS NULL
   GROUP BY i.ward
 ) c ON c.ward = w.ward

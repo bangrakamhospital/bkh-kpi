@@ -54,6 +54,18 @@ export function isHomeWard(code: string, name: string | null): boolean {
 }
 
 /**
+ * Mother-and-child ward ("ตึกแม่และเด็ก", ward 03 at this site). Newborns
+ * born here share the mother's bed, so they are not counted as bed-occupying
+ * patients there; sick babies admitted (no ipt_newborn row) are counted.
+ */
+export const MOTHER_CHILD_WARD_CODES: readonly string[] = ["03"];
+const MOTHER_CHILD_WARD_NAME = /แม่และเด็ก/;
+
+export function isMotherChildWard(code: string, name: string | null): boolean {
+  return MOTHER_CHILD_WARD_CODES.includes(code) || MOTHER_CHILD_WARD_NAME.test(name ?? "");
+}
+
+/**
  * pttype.hipdata_code (NHSO main fund) -> display group. Codes not listed
  * fall into OTHER_PTTYPE_GROUP.
  */
@@ -127,6 +139,7 @@ interface WardRow extends RowDataPacket {
   beds: number | string;
   ward_active: string | null;
   patients: number | string;
+  newborns: number | string;
 }
 interface HourRow extends RowDataPacket {
   hour: number | string | null;
@@ -249,16 +262,19 @@ function toWards(rows: readonly WardRow[]): {
   let homeWardNow = 0;
   const wards: WardOccupancy[] = [];
   for (const r of rows) {
-    const patients = num(r.patients);
+    const all = num(r.patients);
     if (isHomeWard(r.ward, r.ward_name)) {
-      homeWardNow += patients;
+      homeWardNow += all;
       continue;
     }
+    // Rooming-in newborns do not take a bed in the mother-and-child ward.
+    const newbornsRoomingIn = isMotherChildWard(r.ward, r.ward_name) ? num(r.newborns) : 0;
     wards.push({
       ward: r.ward,
       name: r.ward_name?.trim() || r.ward,
-      patients,
+      patients: all - newbornsRoomingIn,
       beds: num(r.beds),
+      newbornsRoomingIn,
     });
   }
   wards.sort((a, b) => b.patients - a.patients || a.ward.localeCompare(b.ward));

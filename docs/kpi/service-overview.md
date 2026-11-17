@@ -46,6 +46,21 @@ identified by ward name `Home ward` (ward code `17`, spclty 09, 20 beds on
 paper); `isHomeWard()` matches the name (`/home\s*ward|โฮมวอร์ด/i`) or
 code in `HOME_WARD_CODES = ["17"]`. Home ward is removed from `wards`.
 
+**ตึกแม่และเด็ก (newborns rooming-in)**: a newborn born here shares the
+mother's bed, so it does not occupy a bed; only a sick baby that is admitted
+does. HOSxP: a baby born here gets an AN at birth with a row in
+`ipt_newborn` (`mother_an` = the mother's AN, mother in ward 04 LR); a sick
+baby admitted later gets a normal AN with no `ipt_newborn` row. FY2569 check
+(ward 03): 125 births age 0-1 d, all with `ipt_newborn`; 20 readmissions
+age 3-16 d, none with it. Rule: in the mother-and-child ward
+(`isMotherChildWard()`: name `/แม่และเด็ก/` or code in
+`MOTHER_CHILD_WARD_CODES = ["03"]`) current admissions that have an
+`ipt_newborn` row are moved from `patients` to `newbornsRoomingIn`. So
+they are excluded from `inpatientNow`, ward occupancy and the donut. The UI
+shows them as "+ ทารกแรกเกิดอยู่กับแม่ n คน (ไม่คิดเตียง)". Limitation: a
+baby born here who becomes sick while still on the birth AN is not
+detectable and stays uncounted.
+
 ## Charts
 
 - **hourly**: visits in range by `HOUR(ovst.vsttime)`, 24 entries 0..23 (zeros filled).
