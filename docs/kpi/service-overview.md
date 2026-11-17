@@ -35,7 +35,7 @@ All date predicates are `col BETWEEN :from AND :to` on indexed date columns
 | ER (ครั้ง) `er` | `er_regist` rows with `vstdate` in range whose `vn` still exists in `ovst` (all ER registrations, not only urgent triage levels) | `er_regist`, `ovst` |
 | Admit ใหม่ `admitNew` | `ipt.regdate` in range, all wards **including home ward** | `ipt` |
 | ผู้ป่วยในขณะนี้ `inpatientNow` | current admissions `ipt.dchdate IS NULL`, joined to `ward` (drops 10 stale 2024 rows with `ward` NULL), **excluding home ward**. Not range-dependent | `ipt`, `ward` |
-| เตียง `bedTotal` | sum of `ward.bedcount` over the wards in `wards` (active wards + inactive wards that still have patients), excluding home ward. `bedcount` = `real_bedcount` at this site | `ward` |
+| เตียง `bedTotal` | sum of `ward.bedcount` over active wards + inactive wards that still have patients (SQL `wards`), excluding home ward. `bedcount` = `real_bedcount` at this site | `ward` |
 | Home ward `homeWardNow` | current admissions in the home ward | `ipt`, `ward` |
 
 Occupancy % (UI) = `inpatientNow / bedTotal`.
@@ -54,12 +54,35 @@ baby admitted later gets a normal AN with no `ipt_newborn` row. FY2569 check
 (ward 03): 125 births age 0-1 d, all with `ipt_newborn`; 20 readmissions
 age 3-16 d, none with it. Rule: in the mother-and-child ward
 (`isMotherChildWard()`: name `/แม่และเด็ก/` or code in
-`MOTHER_CHILD_WARD_CODES = ["03"]`) current admissions that have an
-`ipt_newborn` row are moved from `patients` to `newbornsRoomingIn`. So
-they are excluded from `inpatientNow`, ward occupancy and the donut. The UI
-shows them as "+ ทารกแรกเกิดอยู่กับแม่ n คน (ไม่คิดเตียง)". Limitation: a
-baby born here who becomes sick while still on the birth AN is not
-detectable and stays uncounted.
+`MOTHER_CHILD_WARD_CODES = ["03"]`) admissions that have an
+`ipt_newborn` row are moved from `patients`/`patientDays` to
+`newbornsRoomingIn`/`newbornDaysRoomingIn`. So they are excluded from
+`inpatientNow`, ward occupancy and the donut (in other wards newborns count
+normally). The UI shows them as "+ ทารกแรกเกิดอยู่กับแม่ n คน (ไม่คิดเตียง)".
+Limitation: a baby born here who becomes sick while still on the birth AN
+is not detectable and stays uncounted.
+
+## Ward box `wards` (follows the date range)
+
+The card `inpatientNow` is a right-now snapshot; the ward box
+(`WardDonut`) follows `from..to` (SQL `wardStays`):
+
+- stays overlapping the range: `regdate <= :to AND (dchdate IS NULL OR dchdate >= :from)`.
+- **patient-days** (วันนอน) = midnight census: day d counts when
+  `seg_start <= d < seg_end`, clipped to the range. Still admitted → end
+  `:to + 1` (`:to` is never after today). Same-day admit/discharge = 1 day.
+- **ward segments** follow `iptbedmove` ward changes (`oward <> nward`):
+  regdate → first move in the first move's `oward` (or `ipt.ward` if no
+  move), then each `nward` until the next move / end. FY2569: 502 ward
+  changes, 459 on the admit day (registration corrections), 43 later.
+- `patients` = distinct AN with ≥ 1 day in the ward (a transferred patient
+  counts in each ward, so the sum can exceed real patients).
+- occupancy % = `patientDays × 100 / (beds × days)`, days = inclusive day
+  count of the range. Donut shares = patient-days; centre = average daily
+  census (`Σ patientDays / days`). Home ward excluded.
+- Check (2026-11-17): range = today gives exactly the snapshot counts per
+  ward (01:26, 02:32, 04:3, 18:1, 19:6, 03: 0 + newborn 1). FY2569 range
+  query ~0.5 s.
 
 ## Charts
 

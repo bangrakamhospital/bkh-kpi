@@ -47,6 +47,7 @@ SELECT
 
 /**
  * Current inpatients (ipt.dchdate IS NULL) per ward, right now — no params.
+ * Used only for the "ผู้ป่วยใน ขณะนี้" card (the ward box uses wardStays).
  * -> rows { ward, ward_name, beds, ward_active, patients, newborns }
  * Returns every active ward (also with 0 patients) plus any inactive ward
  * that still has patients. Home ward is NOT filtered here; the TS layer
@@ -76,6 +77,78 @@ LEFT JOIN (
   GROUP BY i.ward
 ) c ON c.ward = w.ward
 WHERE w.ward_active = 'Y' OR c.patients > 0
+`;
+
+/**
+ * Inpatient stays per ward within :from..:to (the ward box follows the range).
+ * -> rows { ward, ward_name, beds, ward_active, patients, patient_days,
+ *           newborns, newborn_days }
+ * - Stays overlapping the range: regdate <= :to AND (not discharged OR
+ *   dchdate >= :from). :to is never after today (overview-range clamps it).
+ * - Patient-days = midnight census: day d counts when the patient is in the
+ *   ward on d (seg_start <= d < seg_end). Still admitted -> end = :to + 1;
+ *   same-day admit/discharge counts as 1 day (Thai bed-occupancy rule).
+ * - Ward segments follow iptbedmove ward changes (oward <> nward): first
+ *   segment = regdate..first move in that move's oward (or ipt.ward when no
+ *   move), then each move's nward until the next move / end. FY2569: 502
+ *   ward changes, 459 on the admit day (registration corrections).
+ * - newborns/newborn_days = stays with an ipt_newborn row (born here); the TS
+ *   layer moves them back into patients outside the mother-and-child ward.
+ * - patients = distinct AN with >= 1 counted day in the ward (a transferred
+ *   patient counts in each ward).
+ * Home ward is NOT filtered here (TS splits it off).
+ */
+const wardStays = `
+WITH stays AS (
+  SELECT i.an, i.ward AS last_ward, i.regdate,
+         CASE WHEN i.dchdate IS NULL THEN :to + INTERVAL 1 DAY
+              WHEN i.dchdate = i.regdate THEN i.dchdate + INTERVAL 1 DAY
+              ELSE i.dchdate END AS end_d,
+         (n.an IS NOT NULL) AS is_newborn
+  FROM ipt i
+  LEFT JOIN ipt_newborn n ON n.an = i.an
+  WHERE i.ward IS NOT NULL AND i.ward <> ''
+    AND i.regdate <= :to
+    AND (i.dchdate IS NULL OR i.dchdate >= :from)
+),
+moves AS (
+  SELECT b.an, b.movedate, b.oward, b.nward,
+         ROW_NUMBER() OVER (PARTITION BY b.an ORDER BY b.movedate, b.movetime, b.iptbedmove_id) AS rn,
+         LEAD(b.movedate) OVER (PARTITION BY b.an ORDER BY b.movedate, b.movetime, b.iptbedmove_id) AS next_move
+  FROM iptbedmove b
+  JOIN stays s ON s.an = b.an
+  WHERE b.nward <> '' AND b.oward <> b.nward
+),
+segs AS (
+  SELECT s.an, s.is_newborn, COALESCE(NULLIF(m.oward, ''), s.last_ward) AS ward,
+         s.regdate AS seg_start, COALESCE(m.movedate, s.end_d) AS seg_end
+  FROM stays s
+  LEFT JOIN moves m ON m.an = s.an AND m.rn = 1
+  UNION ALL
+  SELECT m.an, s.is_newborn, m.nward AS ward,
+         m.movedate AS seg_start, LEAST(COALESCE(m.next_move, s.end_d), s.end_d) AS seg_end
+  FROM moves m
+  JOIN stays s ON s.an = m.an
+),
+seg_days AS (
+  SELECT ward, an, is_newborn,
+         GREATEST(DATEDIFF(LEAST(seg_end, :to + INTERVAL 1 DAY),
+                           GREATEST(seg_start, :from)), 0) AS d
+  FROM segs
+)
+SELECT
+  w.ward,
+  w.name AS ward_name,
+  COALESCE(w.bedcount, 0) AS beds,
+  w.ward_active,
+  COUNT(DISTINCT CASE WHEN x.d > 0 AND NOT x.is_newborn THEN x.an END) AS patients,
+  COALESCE(SUM(CASE WHEN NOT x.is_newborn THEN x.d END), 0) AS patient_days,
+  COUNT(DISTINCT CASE WHEN x.d > 0 AND x.is_newborn THEN x.an END) AS newborns,
+  COALESCE(SUM(CASE WHEN x.is_newborn THEN x.d END), 0) AS newborn_days
+FROM ward w
+LEFT JOIN seg_days x ON x.ward = w.ward
+GROUP BY w.ward, w.name, w.bedcount, w.ward_active
+HAVING w.ward_active = 'Y' OR patient_days + newborn_days > 0
 `;
 
 /** -> rows { hour (0-23), visits } — hours with 0 visits are absent. */
@@ -335,6 +408,7 @@ GROUP BY g.id, no_dx, n.name1, r.ranges
 export const OVERVIEW_SQL = {
   cards,
   wards,
+  wardStays,
   hourly,
   departments,
   pttypes,

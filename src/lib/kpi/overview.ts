@@ -141,6 +141,16 @@ interface WardRow extends RowDataPacket {
   patients: number | string;
   newborns: number | string;
 }
+interface WardStayRow extends RowDataPacket {
+  ward: string;
+  ward_name: string | null;
+  beds: number | string;
+  ward_active: string | null;
+  patients: number | string;
+  patient_days: number | string;
+  newborns: number | string;
+  newborn_days: number | string;
+}
 interface HourRow extends RowDataPacket {
   hour: number | string | null;
   visits: number | string;
@@ -194,6 +204,7 @@ async function loadServiceOverview(
     curCards,
     prevCards,
     wardRows,
+    wardStayRows,
     hourRows,
     depRows,
     ptRows,
@@ -205,6 +216,7 @@ async function loadServiceOverview(
     query<CardsRow>(OVERVIEW_SQL.cards, cur),
     query<CardsRow>(OVERVIEW_SQL.cards, prev),
     query<WardRow>(OVERVIEW_SQL.wards),
+    query<WardStayRow>(OVERVIEW_SQL.wardStays, cur),
     query<HourRow>(OVERVIEW_SQL.hourly, cur),
     query<DepRow>(OVERVIEW_SQL.departments, cur),
     query<PttypeRow>(OVERVIEW_SQL.pttypes, cur),
@@ -223,7 +235,7 @@ async function loadServiceOverview(
     prev: num(p?.[k]),
   });
 
-  const { wards, homeWardNow } = toWards(wardRows);
+  const now = toWardSnapshot(wardRows);
 
   return {
     range: { preset, from, to, prevFrom, prevTo },
@@ -232,12 +244,12 @@ async function loadServiceOverview(
       opdVisits: pair("opd_visits"),
       er: pair("er"),
       admitNew: pair("admit_new"),
-      inpatientNow: wards.reduce((s, w) => s + w.patients, 0),
-      bedTotal: wards.reduce((s, w) => s + w.beds, 0),
-      homeWardNow,
+      inpatientNow: now.inpatientNow,
+      bedTotal: now.bedTotal,
+      homeWardNow: now.homeWardNow,
     },
     hourly: toHourly(hourRows),
-    wards,
+    wards: toWardStays(wardStayRows),
     departments: toDepartments(depRows),
     pttypes: toPttypes(ptRows),
     ageSex: toAgeSex(asRows),
@@ -255,12 +267,15 @@ async function loadServiceOverview(
 
 // --- mapping ------------------------------------------------------------------
 
-function toWards(rows: readonly WardRow[]): {
-  wards: WardOccupancy[];
+/** Right-now figures for the inpatient card (not range-dependent). */
+function toWardSnapshot(rows: readonly WardRow[]): {
+  inpatientNow: number;
+  bedTotal: number;
   homeWardNow: number;
 } {
+  let inpatientNow = 0;
+  let bedTotal = 0;
   let homeWardNow = 0;
-  const wards: WardOccupancy[] = [];
   for (const r of rows) {
     const all = num(r.patients);
     if (isHomeWard(r.ward, r.ward_name)) {
@@ -268,17 +283,36 @@ function toWards(rows: readonly WardRow[]): {
       continue;
     }
     // Rooming-in newborns do not take a bed in the mother-and-child ward.
-    const newbornsRoomingIn = isMotherChildWard(r.ward, r.ward_name) ? num(r.newborns) : 0;
+    const roomingIn = isMotherChildWard(r.ward, r.ward_name) ? num(r.newborns) : 0;
+    inpatientNow += all - roomingIn;
+    bedTotal += num(r.beds);
+  }
+  return { inpatientNow, bedTotal, homeWardNow };
+}
+
+/** Ward box: stays / patient-days within the selected range. */
+function toWardStays(rows: readonly WardStayRow[]): WardOccupancy[] {
+  const wards: WardOccupancy[] = [];
+  for (const r of rows) {
+    if (isHomeWard(r.ward, r.ward_name)) continue;
+    const mch = isMotherChildWard(r.ward, r.ward_name);
+    const nb = num(r.newborns);
+    const nbDays = num(r.newborn_days);
+    // Newborns only skip a bed in the mother-and-child ward; elsewhere they count.
     wards.push({
       ward: r.ward,
       name: r.ward_name?.trim() || r.ward,
-      patients: all - newbornsRoomingIn,
+      patients: num(r.patients) + (mch ? 0 : nb),
+      patientDays: num(r.patient_days) + (mch ? 0 : nbDays),
       beds: num(r.beds),
-      newbornsRoomingIn,
+      newbornsRoomingIn: mch ? nb : 0,
+      newbornDaysRoomingIn: mch ? nbDays : 0,
     });
   }
-  wards.sort((a, b) => b.patients - a.patients || a.ward.localeCompare(b.ward));
-  return { wards, homeWardNow };
+  wards.sort(
+    (a, b) => b.patientDays - a.patientDays || b.patients - a.patients || a.ward.localeCompare(b.ward),
+  );
+  return wards;
 }
 
 function toHourly(rows: readonly HourRow[]): HourlyVisit[] {

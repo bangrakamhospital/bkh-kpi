@@ -52,7 +52,7 @@ export async function ServiceOverview({
       <RangePicker range={data.range} />
       <StatCards cards={data.cards} range={data.range} />
       <HourlyChart hourly={data.hourly} range={data.range} />
-      <WardDonut wards={data.wards} />
+      <WardDonut wards={data.wards} range={data.range} />
       <div className="grid gap-4 lg:grid-cols-2">
         <DepartmentBars items={data.departments} range={data.range} />
         <PttypeBars items={data.pttypes} range={data.range} />

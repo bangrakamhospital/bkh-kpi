@@ -48,11 +48,14 @@ export interface HourlyVisit {
 export interface WardOccupancy {
   ward: string; // ward code
   name: string;
-  /** bed-occupying inpatients (excludes newbornsRoomingIn) */
+  /** distinct bed-occupying admissions (AN) with >= 1 day in the ward within the range */
   patients: number;
+  /** bed-days (midnight census, same-day stay = 1) within the range */
+  patientDays: number;
   beds: number; // 0 if unknown
   /** newborns born here sharing the mother's bed — not counted in patients/beds (ตึกแม่และเด็ก only) */
   newbornsRoomingIn: number;
+  newbornDaysRoomingIn: number;
 }
 
 export interface NamedCount {
