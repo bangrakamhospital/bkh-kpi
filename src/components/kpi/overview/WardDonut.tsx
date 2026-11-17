@@ -20,8 +20,12 @@ const PALETTE = [
 const RADIUS = 15.915; // circumference ~= 100 so dash lengths are percentages
 const pct1 = new Intl.NumberFormat("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
+const NEWBORN_NOTE =
+  "ตึกแม่และเด็ก: ทารกแรกเกิดที่อยู่กับแม่ไม่คิดเตียง (ใช้เตียงร่วมกับแม่) · คิดเตียงเฉพาะเด็กป่วยที่ admit";
+
 export function WardDonut({ wards }: { wards: WardOccupancy[] }) {
   const total = wards.reduce((s, w) => s + w.patients, 0);
+  const newbornTotal = wards.reduce((s, w) => s + w.newbornsRoomingIn, 0);
   const shares = wards.map((w) => (total > 0 ? (w.patients / total) * 100 : 0));
   const segments = wards.map((w, i) => ({
     w,
@@ -49,20 +53,25 @@ export function WardDonut({ wards }: { wards: WardOccupancy[] }) {
               subtitle: "ข้อมูลผู้ป่วยที่นอนอยู่ ณ เวลาที่ออกรายงาน",
               columns: [
                 { header: "หอผู้ป่วย" },
-                { header: "ผู้ป่วย (คน)", format: "int" },
+                { header: "ผู้ป่วยที่คิดเตียง (คน)", format: "int" },
+                { header: "ทารกแรกเกิดอยู่กับแม่ (ไม่คิดเตียง)", format: "int" },
                 { header: "เตียง", format: "int" },
                 { header: "ครองเตียง (%)", format: "pct" },
               ],
               rows: wards.map((w) => [
                 w.name,
                 w.patients,
+                w.newbornsRoomingIn,
                 w.beds > 0 ? w.beds : null,
                 w.beds > 0 ? pctNum(w.patients, w.beds) : null,
               ]),
               footer: (() => {
                 const beds = wards.reduce((s, w) => s + w.beds, 0);
-                return [["รวม", total, beds > 0 ? beds : null, beds > 0 ? pctNum(total, beds) : null]];
+                return [
+                  ["รวม", total, newbornTotal, beds > 0 ? beds : null, beds > 0 ? pctNum(total, beds) : null],
+                ];
               })(),
+              notes: [NEWBORN_NOTE],
             }}
           />
         </div>
@@ -128,6 +137,11 @@ export function WardDonut({ wards }: { wards: WardOccupancy[] }) {
                       />
                       {s.w.name}
                     </span>
+                    {s.w.newbornsRoomingIn > 0 && (
+                      <span className="mt-0.5 block pl-5 text-zinc-600 dark:text-zinc-400">
+                        + ทารกแรกเกิดอยู่กับแม่ {formatNumber(s.w.newbornsRoomingIn)} คน (ไม่คิดเตียง)
+                      </span>
+                    )}
                   </th>
                   <td className={tdRightClass}>{formatNumber(s.w.patients)}</td>
                   <td className={tdRightClass}>{s.w.beds > 0 ? formatNumber(s.w.beds) : "-"}</td>
@@ -145,6 +159,7 @@ export function WardDonut({ wards }: { wards: WardOccupancy[] }) {
               )}
             </tbody>
           </table>
+          <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">{NEWBORN_NOTE}</p>
         </div>
       </div>
     </section>
