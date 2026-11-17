@@ -14,11 +14,12 @@ import { safeNextPath } from "./redirect";
 export const LOGIN_REQUIRED_PAGES = [
   "/hospital",
   "/pp",
+  "/delivery",
   "/district/pp",
   "/strategy",
 ] as const;
 
-/** True for /hospital, /pp, /district/pp, /strategy and their sub-paths (not /ppx). */
+/** True for /hospital, /pp, /delivery, /district/pp, /strategy and their sub-paths (not /ppx). */
 export function isLoginRequiredPath(pathname: string): boolean {
   return LOGIN_REQUIRED_PAGES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
