@@ -1,17 +1,16 @@
 import type { DentalExcluded, DentalUnitRow } from "@/lib/kpi/dental-clinic-types";
 import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
+  subClass,
   tableClass,
   tdClass,
   tdRightClass,
-  theadClass,
   thClass,
+  theadClass,
   thRightClass,
   trClass,
 } from "../overview/table-styles";
 import { formatBaht, formatDecimal, formatNumber } from "../format";
-
-const subClass = "block text-xs font-normal text-zinc-600 dark:text-zinc-400";
 
 export function DentalUnitTable({
   units,

@@ -13,7 +13,6 @@ import type {
   DentalItemRow,
   DentalMoney,
   DentalMonthRow,
-  DentalPayGroupCode,
   DentalPayGroupRow,
   DentalSchemeCode,
   DentalSchemeRow,
@@ -36,7 +35,13 @@ import {
   DENTAL_WAIT_SQL,
   dentalClinicParams,
 } from "@/lib/kpi/sql/dental-clinic-hosxp";
-import { NCD_SCHEME_INDEX, NCD_SCHEME_RULES } from "@/lib/kpi/sql/ncd-clinic-hosxp";
+import {
+  CLINIC_SCHEME_INDEX,
+  PAY_GROUPS,
+  SCHEME_NAMES,
+  isSchemeCode,
+  payGroupOf,
+} from "@/lib/kpi/sql/clinic-scheme-hosxp";
 
 /**
  * "คลินิกทันตกรรม" (/clinic/dental) — the hospital's dental rooms (008 in
@@ -48,33 +53,6 @@ import { NCD_SCHEME_INDEX, NCD_SCHEME_RULES } from "@/lib/kpi/sql/ncd-clinic-hos
 export const DENTAL_CLINIC_CACHE_TAG = "kpi:dental-clinic";
 
 const CLINIC_NAME = "กลุ่มงานทันตกรรม โรงพยาบาลบางระกำ";
-
-/** Copy of the NCD scheme labels (ncd-clinic.ts keeps them private). */
-const SCHEME_NAMES: Readonly<Record<DentalSchemeCode, string>> = {
-  UC_OWN: "UC / บัตรทอง ลงทะเบียน รพ.บางระกำ (เหมาจ่ายรายหัว)",
-  SSS_OWN: "ประกันสังคม รพ.บางระกำเป็นสถานพยาบาลหลัก",
-  NRH_OWN: "ต่างด้าวประกันสุขภาพ ขึ้นทะเบียน รพ.บางระกำ",
-  OFC: "ข้าราชการ / เบิกกรมบัญชีกลาง",
-  LGO: "อปท.",
-  GOV: "หน่วยงานรัฐอื่น (กทม. พัทยา รฟท. ฯลฯ)",
-  SSS_OTHER: "ประกันสังคมต่างพื้นที่",
-  UC_OTHER: "UC / บัตรทอง ต่างพื้นที่",
-  CSH: "ชำระเงินเอง",
-  OTHER: "อื่นๆ (ต่างด้าวไม่มีประกัน, พ.ร.บ., ไม่ระบุ)",
-};
-
-const PAY_GROUPS: readonly { code: DentalPayGroupCode; name: string; rule: string }[] = [
-  {
-    code: "FULL",
-    name: "สิทธิเกิดรายได้เต็มจำนวน",
-    rule: "เรียกเก็บตามรายการบริการ: ข้าราชการ, อปท., หน่วยงานรัฐอื่น, ประกันสังคม/UC ต่างพื้นที่, ชำระเงินเอง, อื่นๆ",
-  },
-  {
-    code: "CAPITATION",
-    name: "รายรับเรียกเก็บไม่เต็มจำนวน",
-    rule: "รพ.บางระกำเป็นหน่วยบริการหลัก (hospmain 11252) ของกองทุนเหมาจ่าย: UC, ประกันสังคม, ต่างด้าวประกันสุขภาพ",
-  },
-];
 
 const UNITS: readonly { code: DentalUnitCode; name: string; depcodes: readonly string[] }[] = [
   { code: "HOSPITAL", name: "ห้องตรวจทันตกรรม (ในโรงพยาบาล)", depcodes: [DENTAL_HOSPITAL_DEPCODE] },
@@ -191,13 +169,6 @@ function money(a: Acc): DentalMoney {
   };
 }
 
-const payGroupOf = (code: DentalSchemeCode): DentalPayGroupCode =>
-  NCD_SCHEME_RULES.find((r) => r.code === code)?.payGroup ?? "FULL";
-
-function isSchemeCode(code: string): code is DentalSchemeCode {
-  return (NCD_SCHEME_INDEX as readonly string[]).includes(code);
-}
-
 function indicator(
   d: Omit<DentalIndicator, "percent" | "pass">,
 ): DentalIndicator {
@@ -251,7 +222,7 @@ async function loadDentalClinicSummary(
   const cn = (col: string) => num(c[col]);
 
   // --- visits and money by scheme / month / unit
-  const byScheme = new Map<DentalSchemeCode, Acc>(NCD_SCHEME_INDEX.map((s) => [s, emptyAcc()]));
+  const byScheme = new Map<DentalSchemeCode, Acc>(CLINIC_SCHEME_INDEX.map((s) => [s, emptyAcc()]));
   const byMonth = new Map<string, { FULL: Acc; CAPITATION: Acc; HOSPITAL: number; OUTREACH: number }>(
     range.months.map((m) => [m, { FULL: emptyAcc(), CAPITATION: emptyAcc(), HOSPITAL: 0, OUTREACH: 0 }]),
   );
@@ -288,7 +259,7 @@ async function loadDentalClinicSummary(
       code,
       name: SCHEME_NAMES[code],
       payGroup: payGroupOf(code),
-      persons: cn(`s${NCD_SCHEME_INDEX.indexOf(code)}`),
+      persons: cn(`s${CLINIC_SCHEME_INDEX.indexOf(code)}`),
       visits: a.visits,
       bahtPerVisit: per(a.baht, a.visits),
       ...money(a),
@@ -296,7 +267,7 @@ async function loadDentalClinicSummary(
   };
 
   const payGroups: DentalPayGroupRow[] = PAY_GROUPS.map((g) => {
-    const codes = NCD_SCHEME_INDEX.filter((s) => payGroupOf(s) === g.code);
+    const codes = CLINIC_SCHEME_INDEX.filter((s) => payGroupOf(s) === g.code);
     const a = emptyAcc();
     for (const s of codes) addAcc(a, byScheme.get(s)!);
     return {

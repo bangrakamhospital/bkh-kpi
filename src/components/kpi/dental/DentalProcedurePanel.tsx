@@ -6,19 +6,20 @@ import type {
 } from "@/lib/kpi/dental-clinic-types";
 import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
+  chipClass,
+  subClass,
   tableClass,
   tdClass,
   tdRightClass,
-  theadClass,
   thClass,
+  theadClass,
   thRightClass,
   trClass,
 } from "../overview/table-styles";
 import { formatBaht, formatNumber } from "../format";
+import { StatTile } from "../clinic/StatTile";
 
-const chipClass =
-  "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold";
-const subClass = "block text-xs font-normal text-zinc-600 dark:text-zinc-400";
+const nowrapChipClass = `${chipClass} whitespace-nowrap`;
 
 const KIND: Record<DentalCategoryKind, { label: string; tone: string }> = {
   EXAM: {
@@ -34,16 +35,6 @@ const KIND: Record<DentalCategoryKind, { label: string; tone: string }> = {
     tone: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-300",
   },
 };
-
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-      <p className="text-xs text-zinc-600 dark:text-zinc-400">{label}</p>
-      <p className="mt-0.5 break-words text-base font-bold tabular-nums">{value}</p>
-      {sub && <p className="text-xs text-zinc-600 dark:text-zinc-400">{sub}</p>}
-    </div>
-  );
-}
 
 const NOTE =
   "หัตถการ = แถวใน dtmain (1 รายการต่อซี่ ต่อขากรรไกร หรือต่อช่องปาก) ซี่ = dtmain.tcount บาท = ราคาหัตถการที่ HOSxP คิด (dtmain.fee) ไม่รวมยา/วัสดุที่คิดแยก กลุ่มหัตถการตามกลุ่ม dttm ของ HOSxP คน/visit ของแต่ละกลุ่มนับไม่ซ้ำภายในกลุ่ม";
@@ -118,22 +109,22 @@ export function DentalProcedurePanel({
       <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{NOTE}</p>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
+        <StatTile
           label="ตรวจ/วินิจฉัย (รายการ)"
           value={formatNumber(byKind("EXAM"))}
           sub={`${share(byKind("EXAM"))} ของหัตถการทั้งหมด`}
         />
-        <Stat
+        <StatTile
           label="ส่งเสริมป้องกัน (รายการ)"
           value={formatNumber(byKind("PREVENTIVE"))}
           sub={`${share(byKind("PREVENTIVE"))} · OHI ฟลูออไรด์ sealant`}
         />
-        <Stat
+        <StatTile
           label="รักษา (รายการ)"
           value={formatNumber(byKind("TREATMENT"))}
           sub={`${share(byKind("TREATMENT"))} ของหัตถการทั้งหมด`}
         />
-        <Stat
+        <StatTile
           label="อุดฟันแท้ : ถอนฟันแท้ (ซี่)"
           value={f.ratio === null ? "–" : `${formatNumber(f.ratio)} : 1`}
           sub={`อุด ${formatNumber(f.fillingTeeth)} / ถอน ${formatNumber(f.extractionTeeth)} ซี่ · ฟันน้ำนม อุด ${formatNumber(f.primaryFillingTeeth)} / ถอน ${formatNumber(f.primaryExtractionTeeth)}`}
@@ -159,7 +150,7 @@ export function DentalProcedurePanel({
                   <th scope="row" className={`${tdClass} text-left font-medium`}>
                     <span className="flex flex-wrap items-center gap-1.5">
                       {c.name}
-                      <span className={`${chipClass} ${KIND[c.kind].tone}`}>{KIND[c.kind].label}</span>
+                      <span className={`${nowrapChipClass} ${KIND[c.kind].tone}`}>{KIND[c.kind].label}</span>
                     </span>
                   </th>
                   <td className={tdRightClass}>{formatNumber(c.procedures)}</td>

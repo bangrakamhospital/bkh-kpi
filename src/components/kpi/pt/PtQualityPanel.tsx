@@ -3,19 +3,17 @@ import { InfoPopover } from "../InfoPopover";
 import { ProgressBar } from "../ProgressBar";
 import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
+  footClass,
+  mutedClass,
   tableClass,
   tdClass,
   tdRightClass,
-  theadClass,
   thClass,
+  theadClass,
   thRightClass,
   trClass,
 } from "../overview/table-styles";
 import { formatNumber, formatPercent } from "../format";
-
-const footClass =
-  "border-t-2 border-zinc-300 bg-zinc-50 font-semibold dark:border-zinc-700 dark:bg-zinc-900";
-const mutedClass = "text-zinc-600 dark:text-zinc-400";
 
 const pctText = (n: number, d: number) => (d > 0 ? `${formatPercent((n / d) * 100)}%` : "–");
 

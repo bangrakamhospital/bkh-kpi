@@ -20,7 +20,13 @@ import type {
   PtSchemeCode,
   PtSchemeRow,
 } from "@/lib/kpi/pt-clinic-types";
-import { NCD_SCHEME_INDEX, NCD_SCHEME_RULES } from "@/lib/kpi/sql/ncd-clinic-hosxp";
+import {
+  CLINIC_SCHEME_INDEX,
+  PAY_GROUPS,
+  SCHEME_NAMES,
+  isSchemeCode,
+  payGroupOf,
+} from "@/lib/kpi/sql/clinic-scheme-hosxp";
 import {
   PT_COHORT_SQL,
   PT_DAYS_SQL,
@@ -46,33 +52,6 @@ import {
 export const PT_CLINIC_CACHE_TAG = "kpi:pt-clinic";
 
 const CLINIC_NAME = "งานกายภาพบำบัด โรงพยาบาลบางระกำ";
-
-/** Same labels as /clinic/ncd (ncd-clinic.ts keeps its own copy, not exported). */
-const SCHEME_NAMES: Readonly<Record<PtSchemeCode, string>> = {
-  UC_OWN: "UC / บัตรทอง ลงทะเบียน รพ.บางระกำ (เหมาจ่ายรายหัว)",
-  SSS_OWN: "ประกันสังคม รพ.บางระกำเป็นสถานพยาบาลหลัก",
-  NRH_OWN: "ต่างด้าวประกันสุขภาพ ขึ้นทะเบียน รพ.บางระกำ",
-  OFC: "ข้าราชการ / เบิกกรมบัญชีกลาง",
-  LGO: "อปท.",
-  GOV: "หน่วยงานรัฐอื่น (กทม. พัทยา รฟท. ฯลฯ)",
-  SSS_OTHER: "ประกันสังคมต่างพื้นที่",
-  UC_OTHER: "UC / บัตรทอง ต่างพื้นที่",
-  CSH: "ชำระเงินเอง",
-  OTHER: "อื่นๆ (ต่างด้าวไม่มีประกัน, พ.ร.บ., ไม่ระบุ)",
-};
-
-const PAY_GROUPS: readonly { code: PtPayGroupCode; name: string; rule: string }[] = [
-  {
-    code: "FULL",
-    name: "สิทธิเกิดรายได้เต็มจำนวน",
-    rule: "เรียกเก็บตามรายการบริการ: ข้าราชการ, อปท., หน่วยงานรัฐอื่น, ประกันสังคม/UC ต่างพื้นที่, ชำระเงินเอง, อื่นๆ (ต่างด้าวไม่มีประกัน, พ.ร.บ.)",
-  },
-  {
-    code: "CAPITATION",
-    name: "รายรับเรียกเก็บไม่เต็มจำนวน",
-    rule: "รพ.บางระกำเป็นหน่วยบริการหลัก (hospmain 11252) ของกองทุนเหมาจ่าย: UC, ประกันสังคม, ต่างด้าวประกันสุขภาพ",
-  },
-];
 
 const DIAGNOSES: readonly { code: PtDxRow["code"]; name: string; icd10: string; col: string }[] = [
   { code: "STROKE", name: "โรคหลอดเลือดสมอง / ผลตามหลัง", icd10: "I60–I69", col: "stroke" },
@@ -190,13 +169,6 @@ function money(a: MoneyAcc): PtMoney {
   };
 }
 
-const payGroupOf = (code: PtSchemeCode): PtPayGroupCode =>
-  NCD_SCHEME_RULES.find((r) => r.code === code)?.payGroup ?? "FULL";
-
-function isSchemeCode(code: string): code is PtSchemeCode {
-  return (NCD_SCHEME_INDEX as readonly string[]).includes(code);
-}
-
 interface IndicatorDef {
   code: string;
   name: string;
@@ -256,7 +228,7 @@ async function loadPtClinicSummary(
   const cn = (col: string) => num(c[col]);
 
   // --- visits and money by scheme / month
-  const byScheme = new Map<PtSchemeCode, MoneyAcc>(NCD_SCHEME_INDEX.map((s) => [s, emptyMoney()]));
+  const byScheme = new Map<PtSchemeCode, MoneyAcc>(CLINIC_SCHEME_INDEX.map((s) => [s, emptyMoney()]));
   const byMonth = new Map<string, Record<PtPayGroupCode, MoneyAcc>>(
     range.months.map((m) => [m, { FULL: emptyMoney(), CAPITATION: emptyMoney() }]),
   );
@@ -271,7 +243,7 @@ async function loadPtClinicSummary(
 
   const schemeRow = (code: PtSchemeCode): PtSchemeRow => {
     const a = byScheme.get(code)!;
-    const i = NCD_SCHEME_INDEX.indexOf(code);
+    const i = CLINIC_SCHEME_INDEX.indexOf(code);
     return {
       code,
       name: SCHEME_NAMES[code],
@@ -284,7 +256,7 @@ async function loadPtClinicSummary(
   };
 
   const payGroups: PtPayGroupRow[] = PAY_GROUPS.map((g) => {
-    const codes = NCD_SCHEME_INDEX.filter((s) => payGroupOf(s) === g.code);
+    const codes = CLINIC_SCHEME_INDEX.filter((s) => payGroupOf(s) === g.code);
     const acc = emptyMoney();
     for (const s of codes) addAcc(acc, byScheme.get(s)!);
     return {

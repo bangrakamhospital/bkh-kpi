@@ -3,11 +3,12 @@ import { InfoPopover } from "../InfoPopover";
 import { ProgressBar } from "../ProgressBar";
 import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
+  chipClass,
   tableClass,
   tdClass,
   tdRightClass,
-  theadClass,
   thClass,
+  theadClass,
   thRightClass,
   trClass,
 } from "../overview/table-styles";
@@ -19,9 +20,6 @@ const GROUPS: { code: NcdIndicator["group"]; label: string }[] = [
   { code: "CKD", label: "โรคไต (CKD)" },
   { code: "LAB", label: "การตรวจ lab" },
 ];
-
-const chipClass =
-  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold";
 
 function targetText(i: NcdIndicator): string {
   if (i.target === null || i.targetOperator === null) return "ไม่มีเกณฑ์";

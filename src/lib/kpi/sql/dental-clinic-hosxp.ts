@@ -4,7 +4,8 @@ import type { QueryParams } from "@/lib/db/his";
 import type { DentalCategoryCode, DentalCategoryKind } from "@/lib/kpi/dental-clinic-types";
 import { HOSPITAL_HOSPCODE } from "@/lib/kpi/district-areas";
 
-import { NCD_DEPCODES, NCD_ICD, NCD_SCHEME_INDEX, NCD_SCHEME_RULES } from "./ncd-clinic-hosxp";
+import { SCHEME_CODE_EXPR, SCHEME_INDEX_EXPR, schemePersonColumns } from "./clinic-scheme-hosxp";
+import { NCD_DEPCODES, NCD_ICD } from "./ncd-clinic-hosxp";
 import { sqlCodeList } from "./screening-common";
 
 /**
@@ -141,33 +142,6 @@ ${DENTAL_CATEGORIES.filter((c) => c.groups.length > 0)
 
 const TREATMENT_CODES = DENTAL_CATEGORIES.filter((c) => c.kind === "TREATMENT").map((c) => c.code);
 
-const OWN_MAIN = "COALESCE(vs.hospmain, '') = :hospcode";
-
-/** -> scheme code ('UC_OWN', …, 'OTHER'), on `pt` (pttype) and `vs` (vn_stat); same rules as NCD. */
-const SCHEME_CODE_EXPR = `CASE
-${NCD_SCHEME_RULES.map((r) => {
-  const main =
-    r.hospmain === "own" ? ` AND ${OWN_MAIN}` : r.hospmain === "other" ? ` AND NOT (${OWN_MAIN})` : "";
-  return `      WHEN pt.hipdata_code IN (${sqlCodeList(r.hipdata)})${main} THEN '${r.code}'`;
-}).join("\n")}
-      ELSE 'OTHER' END`;
-
-/** -> scheme index in NCD_SCHEME_INDEX. */
-const SCHEME_INDEX_EXPR = `CASE
-${NCD_SCHEME_RULES.map((r, i) => {
-  const main =
-    r.hospmain === "own" ? ` AND ${OWN_MAIN}` : r.hospmain === "other" ? ` AND NOT (${OWN_MAIN})` : "";
-  return `      WHEN pt.hipdata_code IN (${sqlCodeList(r.hipdata)})${main} THEN ${i}`;
-}).join("\n")}
-      ELSE ${NCD_SCHEME_RULES.length} END`;
-
-export const DENTAL_CAPITATION_MASK = NCD_SCHEME_INDEX.reduce(
-  (m, code, i) =>
-    NCD_SCHEME_RULES.find((r) => r.code === code)?.payGroup === "CAPITATION" ? m | (1 << i) : m,
-  0,
-);
-export const DENTAL_FULL_MASK = ((1 << NCD_SCHEME_INDEX.length) - 1) & ~DENTAL_CAPITATION_MASK;
-
 const DENTAL_ROOMS = sqlCodeList(DENTAL_DEPCODES);
 const ALL_DENTAL_ROOMS = sqlCodeList([...DENTAL_DEPCODES, ...PCU_DENTAL_DEPCODES]);
 const PCU = sqlCodeList(PCU_DEPCODES);
@@ -274,10 +248,6 @@ const MONTH_COLUMNS = Array.from(
   (_, i) => `  SUM((c.month_mask & ${1 << i}) <> 0) AS m${i},`,
 ).join("\n");
 
-const SCHEME_COLUMNS = NCD_SCHEME_INDEX.map(
-  (_, i) => `  SUM((c.scheme_mask & ${1 << i}) <> 0) AS s${i},`,
-).join("\n");
-
 const AGE_INDEX_EXPR = `CASE
 ${DENTAL_AGE_GROUPS.filter((g) => g.below !== null)
   .map((g, i) => `        WHEN vs.age_y < ${intRange(g.below as number)} THEN ${i}`)
@@ -292,7 +262,7 @@ const AGE_COLUMNS = DENTAL_AGE_GROUPS.map(
  * Distinct people of the dental visits in scope (HOSPITAL + OUTREACH, PCU
  * excluded), one row:
  *  - persons; m0..m11 per fiscal month; s0..s9 per scheme
- *    (NCD_SCHEME_INDEX); pay_full / pay_capitation; hospital / outreach
+ *    (CLINIC_SCHEME_INDEX); pay_full / pay_capitation; hospital / outreach
  *  - a0..a3 per age group at the visit (+ a<i>_visits)
  *  - treated (>= 1 treatment procedure); elder_denture (a denture
  *    delivered at age >= 60); elders (people with a visit at >= 60)
@@ -301,10 +271,8 @@ export const DENTAL_COHORT_SQL = `
 SELECT
   COUNT(*) AS persons,
 ${MONTH_COLUMNS}
-${SCHEME_COLUMNS}
+${schemePersonColumns()}
 ${AGE_COLUMNS}
-  SUM((c.scheme_mask & ${DENTAL_FULL_MASK}) <> 0)       AS pay_full,
-  SUM((c.scheme_mask & ${DENTAL_CAPITATION_MASK}) <> 0) AS pay_capitation,
   SUM((c.unit_mask & 1) <> 0) AS hospital,
   SUM((c.unit_mask & 2) <> 0) AS outreach,
   SUM(c.treat)                AS treated,

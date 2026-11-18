@@ -4,25 +4,11 @@
  * patient-level data. Definitions: docs/kpi/ncd-clinic.md.
  */
 
-/** Payment groups of the infographic. */
-export type NcdPayGroupCode =
-  /** "สิทธิเกิดรายได้เต็มจำนวน": billed fee-for-service. */
-  | "FULL"
-  /** "รายรับเรียกเก็บไม่เต็มจำนวน": capitation, the hospital is the main unit. */
-  | "CAPITATION";
+import type { ClinicPayGroupCode, ClinicSchemeCode } from "./clinic-scheme-types";
 
-/** Scheme rows, in display order (capitation first, then fee-for-service). */
-export type NcdSchemeCode =
-  | "UC_OWN"
-  | "SSS_OWN"
-  | "NRH_OWN"
-  | "OFC"
-  | "LGO"
-  | "GOV"
-  | "SSS_OTHER"
-  | "UC_OTHER"
-  | "CSH"
-  | "OTHER";
+/** Payment groups / scheme rows: shared by every /clinic/* page. */
+export type NcdPayGroupCode = ClinicPayGroupCode;
+export type NcdSchemeCode = ClinicSchemeCode;
 
 /** Disease groups (ICD-10 on any clinic visit of the year). */
 export type NcdDiseaseCode = "DM" | "HT" | "DLP" | "ASTHMA" | "OTHER";

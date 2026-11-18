@@ -31,7 +31,7 @@
 ค่ารายการของแผนกอื่นใน visit ที่ลงทะเบียนห้องฟัน (เช่น ค่าบริการผู้ป่วยนอก) แสดงเป็นหมายเหตุ (`registeredOtherBaht`) ไม่รวมในยอด
 บาทเป็น "ค่าที่ HOSxP คิด" ไม่ใช่รายรับจริง (กลุ่มเหมาจ่ายได้เงินรายหัว)
 
-**สิทธิ** ใช้กติกาเดียวกับ `/clinic/ncd` (import `NCD_SCHEME_RULES` / `NCD_SCHEME_INDEX` แบบอ่านอย่างเดียว): `ovst.pttype` → `pttype.hipdata_code` + `vn_stat.hospmain = 11252` → กลุ่ม "เต็มจำนวน" (FULL) / "เหมาจ่าย hospmain = รพ." (CAPITATION)
+**สิทธิ** ใช้กติกาเดียวกับ `/clinic/ncd` (กติกากลาง `src/lib/kpi/sql/clinic-scheme-hosxp.ts` ใช้ร่วมทุกหน้า /clinic): `ovst.pttype` → `pttype.hipdata_code` + `vn_stat.hospmain = 11252` → กลุ่ม "เต็มจำนวน" (FULL) / "เหมาจ่าย hospmain = รพ." (CAPITATION)
 
 ## 3. กลุ่มหัตถการ (`dttm.dttm_group_id`)
 

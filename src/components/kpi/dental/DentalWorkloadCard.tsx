@@ -1,15 +1,6 @@
 import type { DentalWait, DentalWorkload } from "@/lib/kpi/dental-clinic-types";
 import { formatDecimal, formatNumber, formatPercent } from "../format";
-
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-      <p className="text-xs text-zinc-600 dark:text-zinc-400">{label}</p>
-      <p className="mt-0.5 break-words text-base font-bold tabular-nums">{value}</p>
-      {sub && <p className="text-xs text-zinc-600 dark:text-zinc-400">{sub}</p>}
-    </div>
-  );
-}
+import { StatTile } from "../clinic/StatTile";
 
 const minutes = (v: number | null) => (v === null ? "–" : `${formatNumber(v)} นาที`);
 
@@ -30,38 +21,38 @@ export function DentalWorkloadCard({
         ห้องตรวจทันตกรรมในโรงพยาบาล (008) วันทำการ = วันที่มี visit อย่างน้อย 1 ราย ทันตบุคลากร = ผู้บันทึกหัตถการ (dtmain.doctor ที่ไม่ซ้ำ)
       </p>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="วันทำการ" value={formatNumber(w.clinicDays)} sub="วัน" />
-        <Stat
+        <StatTile label="วันทำการ" value={formatNumber(w.clinicDays)} sub="วัน" />
+        <StatTile
           label="visit ต่อวัน (เฉลี่ย / สูงสุด)"
           value={`${formatDecimal(w.avgVisitsPerDay)} / ${formatNumber(w.maxVisitsPerDay)}`}
           sub={`หัตถการเฉลี่ย ${formatDecimal(w.avgProceduresPerDay)} รายการ/วัน`}
         />
-        <Stat
+        <StatTile
           label="ทันตบุคลากรต่อวัน (เฉลี่ย)"
           value={formatDecimal(w.avgStaffPerDay)}
           sub={`ทั้งปี ${formatNumber(w.staff)} คน`}
         />
-        <Stat
+        <StatTile
           label="visit ต่อทันตบุคลากร-วัน"
           value={formatDecimal(w.visitsPerStaffDay)}
           sub="คู่ (ผู้บันทึก, visit) ÷ บุคลากร-วัน"
         />
-        <Stat
+        <StatTile
           label="ออกหน่วย (วัน / visit ต่อวัน)"
           value={`${formatNumber(w.outreachDays)} / ${formatDecimal(w.outreachVisitsPerDay)}`}
           sub={`ทันตบุคลากรออกหน่วย ${formatNumber(w.outreachStaff)} คน`}
         />
-        <Stat
+        <StatTile
           label="มาตามนัด"
           value={w.appointmentsKeptPercent === null ? "–" : `${formatPercent(w.appointmentsKeptPercent)}%`}
           sub={`${formatNumber(w.appointmentsKept)} จาก ${formatNumber(w.appointments)} นัด (ถึงวันนัดแล้ว)`}
         />
-        <Stat
+        <StatTile
           label="ลงทะเบียน → บันทึกหัตถการแรก (มัธยฐาน)"
           value={minutes(t.medianMinutes)}
           sub={`เฉลี่ย ${minutes(t.meanMinutes)} · P90 ${minutes(t.p90Minutes)}`}
         />
-        <Stat
+        <StatTile
           label="ได้รับบริการภายใน 60 นาที"
           value={t.within60Percent === null ? "–" : `${formatPercent(t.within60Percent)}%`}
           sub={`วัดได้ ${formatNumber(t.measured)} จาก ${formatNumber(t.visits)} visit`}

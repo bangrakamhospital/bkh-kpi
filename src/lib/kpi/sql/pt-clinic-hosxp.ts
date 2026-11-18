@@ -4,7 +4,7 @@ import type { QueryParams } from "@/lib/db/his";
 import { HOSPITAL_HOSPCODE } from "@/lib/kpi/district-areas";
 import type { PtDxCode, PtImcCode } from "@/lib/kpi/pt-clinic-types";
 
-import { NCD_SCHEME_INDEX, NCD_SCHEME_RULES } from "./ncd-clinic-hosxp";
+import { SCHEME_CODE_EXPR, SCHEME_INDEX_EXPR, schemePersonColumns } from "./clinic-scheme-hosxp";
 import { sqlCodeList } from "./screening-common";
 
 /**
@@ -97,36 +97,6 @@ export const PT_ELDERLY_AGE = 60;
 const range = (col: string, [from, to]: readonly [string, string]) =>
   `(${col} >= '${from}' AND ${col} < '${to}')`;
 
-// --- scheme (same rules as /clinic/ncd, imported read-only) -------------------
-
-const OWN_MAIN = "COALESCE(vs.hospmain, '') = :hospcode";
-
-/** CASE over NCD_SCHEME_RULES, on `pt` (pttype) and `vs` (vn_stat). */
-function schemeCase(value: (index: number) => string): string {
-  const whens = NCD_SCHEME_RULES.map((r, i) => {
-    const main =
-      r.hospmain === "own"
-        ? ` AND ${OWN_MAIN}`
-        : r.hospmain === "other"
-          ? ` AND NOT (${OWN_MAIN})`
-          : "";
-    return `    WHEN pt.hipdata_code IN (${sqlCodeList(r.hipdata)})${main} THEN ${value(i)}`;
-  });
-  return `CASE
-${whens.join("\n")}
-    ELSE ${value(NCD_SCHEME_RULES.length)} END`;
-}
-
-const SCHEME_CODE_EXPR = schemeCase((i) => `'${NCD_SCHEME_INDEX[i]}'`);
-const SCHEME_INDEX_EXPR = schemeCase((i) => String(i));
-
-const CAPITATION_MASK = NCD_SCHEME_INDEX.reduce(
-  (m, code, i) =>
-    NCD_SCHEME_RULES.find((r) => r.code === code)?.payGroup === "CAPITATION" ? m | (1 << i) : m,
-  0,
-);
-const FULL_MASK = ((1 << NCD_SCHEME_INDEX.length) - 1) & ~CAPITATION_MASK;
-
 // --- shared fragments --------------------------------------------------------
 
 const IN_FY = (col: string) =>
@@ -193,10 +163,6 @@ const MONTH_COLUMNS = Array.from(
   (_, i) => `       SUM((c.month_mask & ${1 << i}) <> 0) AS m${i},`,
 ).join("\n");
 
-const SCHEME_COLUMNS = NCD_SCHEME_INDEX.map(
-  (_, i) => `       SUM((c.scheme_mask & ${1 << i}) <> 0) AS s${i},`,
-).join("\n");
-
 /** Bit i of dx_mask = DX_KEYS[i] on any diagnosis (ovstdiag) of the visit. */
 const DX_MASK_EXPR = `COALESCE((SELECT BIT_OR(CASE
 ${DX_KEYS.map((k, i) => `             WHEN ${range("d.icd10", PT_DX[k])} THEN ${1 << i}`).join("\n")}
@@ -207,7 +173,7 @@ ${DX_KEYS.map((k, i) => `             WHEN ${range("d.icd10", PT_DX[k])} THEN ${
 /**
  * One row. Cohort = distinct hn with >= 1 PT visit in the fiscal year.
  *  - persons, m0..m11 (people per fiscal month, 0 = Oct), s0..s9 (people
- *    per scheme NCD_SCHEME_INDEX[i]), pay_full / pay_capitation
+ *    per scheme CLINIC_SCHEME_INDEX[i]), pay_full / pay_capitation
  *  - stroke / neuro / msk / injury: people with the group on any PT visit
  *    (groups overlap); dx_other = none of them; *_visits = visits
  *  - elderly: people aged >= 60 at a PT visit (vn_stat.age_y)
@@ -217,9 +183,7 @@ ${DX_KEYS.map((k, i) => `             WHEN ${range("d.icd10", PT_DX[k])} THEN ${
 export const PT_COHORT_SQL = `
 SELECT COUNT(*) AS persons,
 ${MONTH_COLUMNS}
-${SCHEME_COLUMNS}
-       SUM((c.scheme_mask & ${FULL_MASK}) <> 0)       AS pay_full,
-       SUM((c.scheme_mask & ${CAPITATION_MASK}) <> 0) AS pay_capitation,
+${schemePersonColumns("c", "       ")}
 ${DX_KEYS.map(
   (k, i) => `       SUM((c.dx_mask & ${1 << i}) <> 0) AS ${k.toLowerCase()},
        SUM(c.${k.toLowerCase()}_visits) AS ${k.toLowerCase()}_visits,`,
