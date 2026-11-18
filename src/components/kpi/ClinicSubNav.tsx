@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 /** Clinics of the "ประมาณการรายได้แยกคลินิก" group; add new clinics here (e.g. กายภาพบำบัด). */
 const LINKS = [
   { href: "/clinic/ncd", label: "คลินิกโรคเรื้อรัง" },
+  { href: "/clinic/pt", label: "คลินิกกายภาพ" },
+  { href: "/clinic/dental", label: "คลินิกทันตกรรม" },
 ] as const;
 
 /** Sub-navigation shared by the /clinic/* pages. */
