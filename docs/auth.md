@@ -1,6 +1,6 @@
 # การเข้าสู่ระบบ (Authentication)
 
-หลักการ: **หน้า `/` และ `/district` ดูตัวเลขสรุปได้ทุกคน ส่วนหน้า `/hospital`, `/pp`, `/delivery`, `/district/pp`, `/strategy` และรายชื่อผู้รับบริการต้องเข้าสู่ระบบ (บัญชี `approved`) ก่อน**
+หลักการ: **หน้า `/` และ `/district` ดูตัวเลขสรุปได้ทุกคน ส่วนหน้า `/hospital`, `/pp`, `/delivery`, `/ncd`, `/district/pp`, `/strategy` และรายชื่อผู้รับบริการต้องเข้าสู่ระบบ (บัญชี `approved`) ก่อน**
 
 การเข้าสู่ระบบใช้ **SSO ผ่าน PLK Health ID / MOPH Provider ID (OpenID Connect) อย่างเดียว** หน้าเว็บไม่มีฟอร์มชื่อผู้ใช้/รหัสผ่านแล้ว
 การล็อกอินด้วยรหัสผ่าน (Credentials) เปิดได้เฉพาะกรณีฉุกเฉินด้วย `AUTH_PASSWORD_LOGIN=true` และใช้ได้ผ่าน API เท่านั้น (ดูหัวข้อ "ทดสอบด้วย curl")
@@ -8,7 +8,7 @@
 | Route | สิทธิ์ |
 | --- | --- |
 | `/` (ผู้รับบริการ), `/district` (ตัวชี้วัดทั้งอำเภอ) | สาธารณะ |
-| `/hospital` (ตัวชี้วัดในโรงพยาบาล), `/pp` (PP / รายได้ สปสช. รวม `/pp/basic`, `/pp/other`), `/delivery` (ค่าส่งยาที่บ้าน), `/district/pp` (PP รายได้อำเภอ), `/strategy` (ยุทธศาสตร์ & HA) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ไม่ผ่าน -> 307 `/login?callbackUrl=<path?query>` |
+| `/hospital` (ตัวชี้วัดในโรงพยาบาล), `/pp` (PP / รายได้ สปสช. รวม `/pp/basic`, `/pp/other`), `/delivery` (ค่าส่งยาที่บ้าน), `/ncd` (NCD Clinic), `/district/pp` (PP รายได้อำเภอ), `/strategy` (ยุทธศาสตร์ & HA) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ไม่ผ่าน -> 307 `/login?callbackUrl=<path?query>` |
 | `GET /api/kpi/screening/villages` (ตัวเลขรายหมู่ ของหน้า `/hospital`) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ทุกรหัสตัวชี้วัด |
 | `GET /api/kpi/screening/persons` (รายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
 | `GET /api/kpi/screening/export` (Excel มีชีตรายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |

@@ -49,6 +49,16 @@ const bahtFormat = new Intl.NumberFormat("th-TH", {
   maximumFractionDigits: 0,
 });
 
+const oneDecimalFormat = new Intl.NumberFormat("th-TH", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/** 115.83 -> "115.8" (one decimal, for averages) */
+export function formatDecimal(value: number): string {
+  return oneDecimalFormat.format(value);
+}
+
 /** 12345.6 -> "12,346" (number only; put "บาท" in the label/header) */
 export function formatBaht(value: number): string {
   return bahtFormat.format(value);

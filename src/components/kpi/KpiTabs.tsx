@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, HandCoins, MapPinned, Target, Truck, Users } from "lucide-react";
+import { Building2, HandCoins, HeartPulse, MapPinned, Target, Truck, Users } from "lucide-react";
 
 const TABS = [
   { href: "/", label: "ผู้รับบริการ", Icon: Users },
   { href: "/hospital", label: "ตัวชี้วัดในโรงพยาบาล", Icon: Building2 },
   { href: "/pp", label: "PP / รายได้ สปสช.", Icon: HandCoins },
   { href: "/delivery", label: "ค่าส่งยาที่บ้าน", Icon: Truck },
+  { href: "/ncd", label: "NCD Clinic", Icon: HeartPulse },
   { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ / PP รายได้อำเภอ", Icon: MapPinned },
   { href: "/strategy", label: "ยุทธศาสตร์ & HA", Icon: Target },
 ] as const;
