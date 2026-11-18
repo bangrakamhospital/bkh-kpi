@@ -8,7 +8,7 @@ import { PTTYPE_GROUPS } from "@/lib/kpi/overview";
 import { sqlCodeList } from "./screening-common";
 
 /**
- * SQL for "NCD Clinic" (/ncd): the hospital's chronic-disease clinic
+ * SQL for "คลินิกโรคเรื้อรัง" (/clinic/ncd): the hospital's chronic-disease clinic
  * (DM / HT / DLP / asthma-COPD), quality indicators and charges, against
  * HOSxP only (never HDC). Aggregates only: no hn / name / cid leaves the
  * database. Definitions and FY2569 verification: docs/kpi/ncd-clinic.md.

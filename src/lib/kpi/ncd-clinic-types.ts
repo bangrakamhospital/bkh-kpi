@@ -1,5 +1,5 @@
 /**
- * Types of the "NCD Clinic" report (/ncd). Pure module (no server-only),
+ * Types of the "คลินิกโรคเรื้อรัง" report (/clinic/ncd). Pure module (no server-only),
  * shared by the loader (./ncd-clinic.ts) and the UI. Aggregates only: no
  * patient-level data. Definitions: docs/kpi/ncd-clinic.md.
  */

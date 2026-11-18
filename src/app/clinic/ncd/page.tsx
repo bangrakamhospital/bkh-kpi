@@ -1,16 +1,17 @@
 import { FiscalYearSuspense } from "@/components/kpi/FiscalYearSuspense";
 import Image from "next/image";
 import { NcdClinicDashboard } from "@/components/kpi/ncd/NcdClinicDashboard";
+import { ClinicSubNav } from "@/components/kpi/ClinicSubNav";
 import { KpiTabs } from "@/components/kpi/KpiTabs";
 import { PageViewAudit } from "@/components/audit/PageViewAudit";
 import { HeaderAuth } from "@/components/auth/HeaderAuth";
 import { RequireLogin } from "@/components/auth/RequireLogin";
 
 export const metadata = {
-  title: "NCD Clinic | โรงพยาบาลบางระกำ KPI",
+  title: "คลินิกโรคเรื้อรัง | ประมาณการรายได้แยกคลินิก | โรงพยาบาลบางระกำ KPI",
 };
 
-export default function NcdPage(props: PageProps<"/ncd">) {
+export default function ClinicNcdPage(props: PageProps<"/clinic/ncd">) {
   return (
     <>
       <header className="bg-linear-to-r from-brand-700 via-brand-800 to-brand-900 pb-12 pt-5 text-white">
@@ -23,10 +24,10 @@ export default function NcdPage(props: PageProps<"/ncd">) {
               โรงพยาบาลบางระกำ KPI
             </p>
             <h1 className="mt-0.5 text-sm font-semibold leading-5">
-              NCD Clinic — คุณภาพตัวชี้วัดและรายได้คลินิกโรคเรื้อรัง (DM / HT / DLP)
+              ประมาณการรายได้แยกคลินิก — คลินิกโรคเรื้อรัง (DM / HT / DLP)
             </h1>
             <p className="text-xs text-brand-100">
-              ผู้รับบริการ ค่าใช้จ่ายแยกสิทธิ ตัวชี้วัดคุณภาพ และระยะเวลารอคอย
+              ผู้รับบริการ ค่าใช้จ่ายแยกสิทธิ ตัวชี้วัดคุณภาพ และระยะเวลารอคอย ของคลินิก NCD
             </p>
           </div>
           <HeaderAuth />
@@ -34,11 +35,14 @@ export default function NcdPage(props: PageProps<"/ncd">) {
         <div className="mx-auto mt-4 w-full max-w-6xl px-4 sm:px-6">
           <KpiTabs />
         </div>
+        <div className="mx-auto mt-3 w-full max-w-6xl px-4 sm:px-6">
+          <ClinicSubNav />
+        </div>
       </header>
       <main className="mx-auto -mt-8 w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
-        <PageViewAudit path="/ncd" searchParams={props.searchParams} />
+        <PageViewAudit path="/clinic/ncd" searchParams={props.searchParams} />
         <FiscalYearSuspense searchParams={props.searchParams}>
-          <RequireLogin path="/ncd" searchParams={props.searchParams}>
+          <RequireLogin path="/clinic/ncd" searchParams={props.searchParams}>
             <NcdClinicDashboard searchParams={props.searchParams} />
           </RequireLogin>
         </FiscalYearSuspense>

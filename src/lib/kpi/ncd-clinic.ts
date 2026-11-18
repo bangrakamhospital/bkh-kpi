@@ -37,7 +37,7 @@ import {
 } from "@/lib/kpi/sql/ncd-clinic-hosxp";
 
 /**
- * "NCD Clinic" (/ncd) — the hospital's chronic-disease clinic (ovst.main_dep
+ * "คลินิกโรคเรื้อรัง" (/clinic/ncd) — the hospital's chronic-disease clinic (ovst.main_dep
  * 062 / 047): people, quality indicators, waiting time, workload and
  * charges by scheme. HOSxP only (never HDC), aggregates only.
  * Definitions: docs/kpi/ncd-clinic.md. SQL: ./sql/ncd-clinic-hosxp.ts.

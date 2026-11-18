@@ -5,7 +5,7 @@ import { loginRedirectPath } from "@/lib/auth/protected-paths";
 import { isAuthConfigured } from "@/lib/auth/settings";
 
 /**
- * Login gate for the pages in LOGIN_REQUIRED_PAGES (/hospital, /pp, /delivery, /ncd, /district/pp,
+ * Login gate for the pages in LOGIN_REQUIRED_PAGES (/hospital, /pp, /delivery, /clinic, /district/pp,
  * /strategy):
  * no APPROVED session -> 307 /login?callbackUrl=<path?query>.
  *
@@ -62,5 +62,5 @@ export async function proxy(request: NextRequest): Promise<Response> {
 
 export const config = {
   // Keep in sync with LOGIN_REQUIRED_PAGES (matcher must be static).
-  matcher: ["/hospital/:path*", "/pp/:path*", "/delivery/:path*", "/ncd/:path*", "/district/pp/:path*", "/strategy/:path*"],
+  matcher: ["/hospital/:path*", "/pp/:path*", "/delivery/:path*", "/clinic/:path*", "/district/pp/:path*", "/strategy/:path*"],
 };
