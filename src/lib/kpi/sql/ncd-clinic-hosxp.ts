@@ -466,11 +466,17 @@ ORDER BY x.d
  * registration (patients queue from ~06:00 for fasting blood).
  */
 export const NCD_WAIT_MEASURES = {
-  /** Arrival -> doctor room (service2; dep 047 for 93% of clinic visits). */
+  /**
+   * Arrival -> doctor exam finished. service2 (dep 047 for 93% of clinic
+   * visits) is stamped when the doctor room sends the patient on: it equals
+   * ovst_service_time OPD-DOCTOR service_end_datetime (+-1 min) for 92% of
+   * FY2570 visits. The exam itself is short (median 1.5 min), so this is
+   * effectively "seen by the doctor".
+   */
   DOCTOR: ["o.vsttime", "s.service2"],
   /** Arrival -> drugs dispensed (service7; dep 013 pharmacy). */
   PHARMACY: ["o.vsttime", "s.service7"],
-  /** Vital signs done at the screening point (service1) -> doctor room. */
+  /** Screening finished (service1 = OPD-SCREEN end at 062) -> doctor exam finished. */
   SCREEN_TO_DOCTOR: ["s.service1", "s.service2"],
 } as const;
 
@@ -484,6 +490,9 @@ const WAIT_KEYS = Object.keys(NCD_WAIT_MEASURES) as NcdWaitMeasure[];
  * timestamp, negative or more than WAIT_MAX_MINUTES (not measured; FY2569
  * ~3% to the doctor, ~4% to the pharmacy). Each visit appears once per
  * measure, so the counts of a (measure, has_lab) add up to its visits.
+ * Today's visits are left out (o.vstdate < CURDATE()): patients still
+ * waiting have no service2 / service7 yet, so only the quick ones would be
+ * measured (2026-11-18 midday: 52 of 134 visits without service2).
  * One pass over the visits (CROSS JOIN with the measure list).
  * -> ~350 rows; medians are computed in TS.
  */
@@ -507,6 +516,7 @@ ${WAIT_KEYS.map(
   LEFT JOIN service_time s
     ON s.vn = o.vn
   WHERE ${NCD_VISIT_WHERE}
+    AND o.vstdate < CURDATE()
 ) t
 CROSS JOIN (
   ${WAIT_KEYS.map((k, i) => (i === 0 ? `SELECT '${k}' AS measure` : `SELECT '${k}'`)).join("\n  UNION ALL ")}
