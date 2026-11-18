@@ -18,8 +18,8 @@ export function KpiTabs() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="หมวดตัวชี้วัด" className="overflow-x-auto">
-      <ul className="flex min-w-max gap-1 border-b border-white/20">
+    <nav aria-label="หมวดตัวชี้วัด">
+      <ul className="flex flex-wrap gap-x-1 border-b border-white/20">
         {TABS.map(({ href, label, Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
