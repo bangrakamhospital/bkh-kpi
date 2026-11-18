@@ -14,12 +14,13 @@ import { sqlCodeList } from "./screening-common";
  * database. Definitions and FY2569 verification: docs/kpi/ncd-clinic.md.
  * Codes verified with db-cli (2026-11-18).
  *
- * Four queries, run in parallel by the loader (each 2.5–9 s for FY2569):
+ * Five queries, run in parallel by the loader (each 2.5–9 s for FY2569):
  *   NCD_VISITS_SQL   visits and charges per (month, scheme)
  *   NCD_COHORT_SQL   one row: distinct people (per month / scheme / pay
  *                    group / disease) and every quality count
  *   NCD_DAYS_SQL     per clinic date: visits, physicians, appointments
  *   NCD_WAIT_SQL     waiting-time histogram, with / without lab
+ *   NCD_HOSXP_STEPS_SQL  5 steps of the HOSxP waiting-time report (one row)
  * A CTE referenced more than once is re-evaluated by MariaDB, so each
  * query reads the clinic visits exactly once.
  *
@@ -523,6 +524,97 @@ CROSS JOIN (
 ) m
 GROUP BY m.measure, t.has_lab, bucket
 ORDER BY m.measure, t.has_lab, bucket
+`;
+
+// --- 5. waiting time, HOSxP report definition --------------------------------------
+
+/**
+ * Steps of HOSxP reporttemplate "CUSTOM- ระยะเวลาในการรับบริการในเวลาราชการ
+ * (8.30 น.-16.00 น.)" (whole-hospital OPD), restricted to the clinic. Each
+ * step = [from, to] over the per-visit timestamps below (MIN of the
+ * ovst_service_time type prefix; rx_finish = MAX rx_dispenser_datetime).
+ * TOTAL is the report's "รวม" (steps 2–5, without the wait for screening);
+ * NEW_TO_RX adds step 1.
+ */
+export const NCD_HOSXP_STEPS = {
+  WAIT_SCREEN: ["new_visit", "begin_screen"],
+  SCREEN: ["begin_screen", "end_screen"],
+  WAIT_DOCTOR: ["end_screen", "begin_doctor"],
+  DOCTOR: ["begin_doctor", "end_doctor"],
+  WAIT_RX: ["end_doctor", "rx_finish"],
+  TOTAL: ["begin_screen", "rx_finish"],
+  NEW_TO_RX: ["new_visit", "rx_finish"],
+} as const;
+
+export type NcdHosxpStep = keyof typeof NCD_HOSXP_STEPS;
+
+/** Steps that must each last > 1 minute (the report's HAVING); in time order. */
+const HOSXP_CHAIN = ["WAIT_SCREEN", "SCREEN", "WAIT_DOCTOR", "DOCTOR", "WAIT_RX"] as const;
+const HOSXP_STEP_KEYS = Object.keys(NCD_HOSXP_STEPS) as NcdHosxpStep[];
+
+/** Seconds between two timestamps, the report's TIME_TO_SEC(b) - TIME_TO_SEC(a) (time of day only). */
+const stepSec = (k: NcdHosxpStep) =>
+  `TIME_TO_SEC(x.${NCD_HOSXP_STEPS[k][1]}) - TIME_TO_SEC(x.${NCD_HOSXP_STEPS[k][0]})`;
+
+/**
+ * One row: the HOSxP report's statistics for the clinic. Population =
+ * clinic visits of the fiscal year registered 06:00–16:00 (ovst.vsttime),
+ * today left out like NCD_WAIT_SQL (the only difference from the report;
+ * none for a closed year). A visit counts (`ok`) when its timestamps are in
+ * order new < begin_screen < end_screen < begin_doctor < end_doctor <
+ * rx_finish and every step lasts > 1 minute. new_visit = OPD-NEW-VISIT end,
+ * else TIMESTAMP(vstdate, vsttime). Minutes are TIME_TO_SEC differences /
+ * 60 as in the report, averages / min / max ROUNDed to 2 like the report;
+ * medians by MEDIAN() window (MariaDB 10.3+) over the `ok` visits.
+ * Plan: ovst range on vstdate, ovst_service_time and rx_dispenser_detail
+ * by ix_vn per clinic visit (FY2569 ~4 s).
+ * Columns: visits, persons (population), ok_visits, ok_persons, and per
+ * step <key>_avg / _min / _max / _med (key lower-cased).
+ */
+export const NCD_HOSXP_STEPS_SQL = `
+SELECT COUNT(*) AS visits,
+       COUNT(DISTINCT z.hn) AS persons,
+       COALESCE(SUM(z.ok), 0) AS ok_visits,
+       COUNT(DISTINCT IF(z.ok = 1, z.hn, NULL)) AS ok_persons,
+${HOSXP_STEP_KEYS.map((k) => {
+  const c = k.toLowerCase();
+  return `       ROUND(AVG(IF(z.ok = 1, z.${c}, NULL)), 2) AS ${c}_avg,
+       ROUND(MIN(IF(z.ok = 1, z.${c}, NULL)), 2) AS ${c}_min,
+       ROUND(MAX(IF(z.ok = 1, z.${c}, NULL)), 2) AS ${c}_max,
+       ROUND(MAX(z.${c}_med), 2) AS ${c}_med`;
+}).join(",\n")}
+FROM (
+  SELECT y.*,
+${HOSXP_STEP_KEYS.map((k) => {
+  const c = k.toLowerCase();
+  return `         MEDIAN(IF(y.ok = 1, y.${c}, NULL)) OVER () AS ${c}_med`;
+}).join(",\n")}
+  FROM (
+    SELECT x.hn,
+${HOSXP_STEP_KEYS.map((k) => `           (${stepSec(k)}) / 60 AS ${k.toLowerCase()}`).join(",\n")},
+           IF(${HOSXP_CHAIN.map((k) => `x.${NCD_HOSXP_STEPS[k][0]} < x.${NCD_HOSXP_STEPS[k][1]}`).join("\n              AND ")}
+${HOSXP_CHAIN.map((k) => `              AND ${stepSec(k)} > 60`).join("\n")}, 1, 0) AS ok
+    FROM (
+      SELECT o.hn,
+             COALESCE(MIN(IF(t.ovst_service_time_type_code LIKE 'OPD-NEW-VISIT%', t.service_end_datetime, NULL)),
+                      TIMESTAMP(o.vstdate, o.vsttime)) AS new_visit,
+             MIN(IF(t.ovst_service_time_type_code LIKE 'OPD-SCREEN%', t.service_begin_datetime, NULL)) AS begin_screen,
+             MIN(IF(t.ovst_service_time_type_code LIKE 'OPD-SCREEN%', t.service_end_datetime, NULL)) AS end_screen,
+             MIN(IF(t.ovst_service_time_type_code LIKE 'OPD-DOCTOR%', t.service_begin_datetime, NULL)) AS begin_doctor,
+             MIN(IF(t.ovst_service_time_type_code LIKE 'OPD-DOCTOR%', t.service_end_datetime, NULL)) AS end_doctor,
+             (SELECT MAX(r.rx_dispenser_datetime)
+                FROM rx_dispenser_detail r
+               WHERE r.vn = o.vn) AS rx_finish
+      FROM ovst o
+      LEFT JOIN ovst_service_time t
+        ON t.vn = o.vn
+      WHERE ${NCD_VISIT_WHERE}
+        AND o.vstdate < CURDATE()
+        AND o.vsttime BETWEEN '06:00:00' AND '16:00:00'
+      GROUP BY o.vn, o.hn, o.vstdate, o.vsttime
+    ) x
+  ) y
+) z
 `;
 
 export function ncdClinicParams(periodStart: string, dataAsOf: string): QueryParams {

@@ -137,7 +137,7 @@ export async function NcdClinicDashboard({
         hba1c={data.hba1cUse}
         glucose={data.glucoseTests}
       />
-      <NcdWaitingCard waiting={data.waiting} />
+      <NcdWaitingCard waiting={data.waiting} hosxpSteps={data.hosxpSteps} />
       <NcdWorkloadCard workload={data.workload} />
       <NcdMonthTable
         months={months}

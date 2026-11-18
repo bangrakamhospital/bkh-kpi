@@ -6,12 +6,12 @@
 
 | ส่วน | ไฟล์ |
 |---|---|
-| SQL | `src/lib/kpi/sql/ncd-clinic-hosxp.ts` (`NCD_VISITS_SQL`, `NCD_COHORT_SQL`, `NCD_DAYS_SQL`, `NCD_WAIT_SQL`) |
+| SQL | `src/lib/kpi/sql/ncd-clinic-hosxp.ts` (`NCD_VISITS_SQL`, `NCD_COHORT_SQL`, `NCD_DAYS_SQL`, `NCD_WAIT_SQL`, `NCD_HOSXP_STEPS_SQL`) |
 | loader | `src/lib/kpi/ncd-clinic.ts` (`getNcdClinicSummary(fiscalYear)`, cache tag `kpi:ncd-clinic`) |
 | types | `src/lib/kpi/ncd-clinic-types.ts` (`NcdClinicSummary`) |
 | UI | `src/components/kpi/ncd/*`, route `src/app/clinic/ncd/page.tsx` (`/ncd` redirect มาที่นี่) |
 
-Cache: `io()` ก่อน, `"use cache"` ต่อปีงบฯ, `cacheLife("hours")` ปีที่ยังไม่สิ้นสุด / `"days"` ปีที่ปิดแล้ว 4 คิวรีรันขนานกัน (FY2569: 3.0 / 5.2 / 2.3 / 2.7 วินาที) ถ้าคิวรีใดล้มเหลวหน้าแสดงข้อความผิดพลาด ไม่ cache MariaDB ประเมิน CTE ใหม่ทุกครั้งที่ถูกอ้างอิง (คิวรีแบบ UNION หลาย CTE ใช้ 38 วินาที) จึงออกแบบให้แต่ละคิวรีอ่าน visit ของคลินิกครั้งเดียว: จำนวนคนต่อเดือน/สิทธิใช้ bitmask ต่อคน (`BIT_OR(1 << index)`) ในคิวรีเดียวกับตัวชี้วัดคุณภาพ, ทั้งปีของแพทย์ใช้ `WITH ROLLUP`, เวลารอคอยใช้ `CROSS JOIN` กับรายการ measure
+Cache: `io()` ก่อน, `"use cache"` ต่อปีงบฯ, `cacheLife("hours")` ปีที่ยังไม่สิ้นสุด / `"days"` ปีที่ปิดแล้ว 5 คิวรีรันขนานกัน (FY2569: 3.0 / 5.2 / 2.3 / 2.7 / 3.2 วินาที) ถ้าคิวรีใดล้มเหลวหน้าแสดงข้อความผิดพลาด ไม่ cache MariaDB ประเมิน CTE ใหม่ทุกครั้งที่ถูกอ้างอิง (คิวรีแบบ UNION หลาย CTE ใช้ 38 วินาที) จึงออกแบบให้แต่ละคิวรีอ่าน visit ของคลินิกครั้งเดียว: จำนวนคนต่อเดือน/สิทธิใช้ bitmask ต่อคน (`BIT_OR(1 << index)`) ในคิวรีเดียวกับตัวชี้วัดคุณภาพ, ทั้งปีของแพทย์ใช้ `WITH ROLLUP`, เวลารอคอยใช้ `CROSS JOIN` กับรายการ measure
 
 ## ขอบเขตและสมมติฐาน
 
@@ -88,6 +88,7 @@ Cache: `io()` ก่อน, `"use cache"` ต่อปีงบฯ, `cacheLife("
 | `hba1cUse` | `personsOverLimit` = DM ที่ตรวจ HbA1c > 2 ครั้ง/ปี (สปสช. จ่าย ≤ 2), `excessTests` = Σ(ครั้ง − 2), `excessBaht` = excessTests × 230 (ประมาณการ เบิกไม่ได้) นับทุกสิทธิ |
 | `glucoseTests` | visit คลินิกที่มี FBS lab (76/817) vs DTX (306) ใน lab ของ vn นั้น (แนวคิด FBS → DTX ลดต้นทุน) ไม่มีข้อมูลต้นทุนน้ำยา ค่าบริการทั้งสองแบบ 40 บาทเท่ากัน จึงแสดงเฉพาะจำนวน |
 | `waiting` | แยก visit มี lab (มี `lab_head` ใน vn) / ไม่มี lab: `toDoctor` = `vsttime` → `service2`, `toPharmacy` = `vsttime` → `service7`, `screenToDoctor` = `service1` → `service2` มัธยฐาน / P90 จาก histogram ช่องละ 10 นาที (linear ในช่อง) ค่าเฉลี่ยจากจุดกึ่งกลางช่อง ตัด visit ที่ไม่มีเวลา, ติดลบ หรือ > 720 นาที (`measured` < `visits`) และไม่นับ visit ของวันนี้ (`vstdate < CURDATE()`: คนที่ยังรออยู่ยังไม่มี `service2`/`service7` จะเหลือแต่คนที่เสร็จเร็ว) `service_time` เก็บแค่เวลา งานที่ข้ามวันจึงติดลบและถูกตัด "พบแพทย์" = แพทย์ตรวจเสร็จ (ไม่ใช่เวลาเข้าห้อง; ต่างกันมัธยฐาน ~1.5 นาที) |
+| `hosxpSteps` | 5 ขั้นตอนตามนิยามรายงาน HOSxP ReportBuilder "CUSTOM- ระยะเวลาในการรับบริการในเวลาราชการ (8.30 น.-16.00 น.)" (รายงานเป็นของ OPD ทั้ง รพ.; ที่นี่เฉพาะ visit คลินิก) ประชากร = visit คลินิกในปีงบฯ ที่ `vsttime` 06:00–16:00 ไม่นับวันนี้ (`vstdate < CURDATE()` ความต่างเดียวจากรายงาน ปีที่ปิดแล้วผลเท่ากัน) เวลาต่อ visit จาก `ovst_service_time`: `new_visit` = MIN `OPD-NEW-VISIT%` `service_end_datetime` (ไม่มีใช้ `TIMESTAMP(vstdate, vsttime)`), `begin/end_screen` = MIN `OPD-SCREEN%` begin/end, `begin/end_doctor` = MIN `OPD-DOCTOR%` begin/end, `rx_finish` = MAX `rx_dispenser_detail.rx_dispenser_datetime` คัดเฉพาะ visit ที่เรียงครบ new < begin_screen < end_screen < begin_doctor < end_doctor < rx_finish และทุกขั้น > 1 นาที (`qualifyingVisits`) ขั้น 1 รอซักประวัติ, 2 ซักประวัติ, 3 รอตรวจ, 4 ตรวจ, 5 รอรับยา, `TOTAL` = รวมของรายงาน (rx_finish − begin_screen = ขั้น 2–5 ไม่รวมรอซักประวัติ), `NEW_TO_RX` = ขั้น 1–5 นาทีจาก `TIME_TO_SEC` ต่าง / 60 เหมือนรายงาน เฉลี่ย/ต่ำสุด/สูงสุด `ROUND(…, 2)` ใน SQL มัธยฐานจาก `MEDIAN() OVER ()` (MariaDB 10.11) นับเป็น visit ไม่ใช่คน |
 | `workload` | `clinicDays` = วันที่มี visit, เฉลี่ย/สูงสุด visit ต่อวัน, `daysOverTarget` = วันที่ visit > 120 (แนวคิด "นัดไม่เกิน 100–120 ราย/วัน"), นัด (`oapp.nextdate`) เฉลี่ย/สูงสุด/วันที่เกิน 120, มาตามนัด %, `physicians` = แพทย์ไม่ซ้ำทั้งปี, `avgPhysiciansPerDay`, `visitsPerPhysicianDay` = visit ที่แพทย์ตรวจ ÷ แพทย์-วัน, `days` = รายวัน (วันที่, visit, นัด, แพทย์) |
 | `months` | 12 เดือน ต.ค.–ก.ย.: คน, visit, บาทแยกหมวด, visit/บาทกลุ่มเต็มจำนวน vs เหมาจ่าย, วันคลินิก, visit/วัน เฉลี่ยและสูงสุด |
 
@@ -134,6 +135,18 @@ DM lab panel: HbA1c 98.4%, LDL 96.7%, Chol 96.7%, Cr 99.0%, **K 71.9%**, FBS 99.
 **FBS vs DTX:** visit มี FBS lab 18,847 vs DTX 164 (FBS 99.1%) — ยังแทบไม่ใช้ DTX แทน FBS
 
 **เวลารอคอย (มัธยฐาน นาที, ไม่มี lab 5,650 visit / มี lab 22,248 visit):** มาถึง → พบแพทย์ 206 / 220, มาถึง → รับยา 303 / 333, ซักประวัติเสร็จ → พบแพทย์ 80 / 72 (P90 รับยา 457 / 474) ผู้ป่วยมาลงทะเบียนตั้งแต่ราว 06:00 เพื่อเจาะเลือดอดอาหาร เวลาจาก "มาถึง" จึงรวมการรอก่อนคลินิกเปิด
+
+**เวลารอคอยแบบรายงาน HOSxP (`hosxpSteps`, นาที):** visit ผ่านเงื่อนไข 13,453 จาก 25,912 (06:00–16:00) = 5,627 จาก 7,153 คน ตรงกับรายงาน HOSxP ที่กรองเฉพาะ main_dep 062/047 ทุกช่อง
+
+| ขั้น | เฉลี่ย | มัธยฐาน | ต่ำสุด | สูงสุด |
+|---|---:|---:|---:|---:|
+| 1 รอซักประวัติ | 139.08 | 143.05 | 1.48 | 348.45 |
+| 2 ซักประวัติ | 3.87 | 3.03 | 1.02 | 174.07 |
+| 3 รอตรวจ | 67.83 | 63.05 | 1.02 | 424.28 |
+| 4 ตรวจ | 2.44 | 1.60 | 1.02 | 301.57 |
+| 5 รอรับยา | 154.82 | 132.87 | 1.47 | 682.48 |
+| รวม (ขั้น 2–5) | 228.97 | 213.12 | 8.92 | 690.07 |
+| ห้องบัตร → รับยา (ขั้น 1–5) | 368.05 | 354.93 | 15.65 | 866.05 |
 
 ## ตรวจทานเวลารอคอย ปีงบฯ 2570 (1 ต.ค.–17 พ.ย. 2569, ตรวจ 2026-11-18 ด้วย db-cli)
 
