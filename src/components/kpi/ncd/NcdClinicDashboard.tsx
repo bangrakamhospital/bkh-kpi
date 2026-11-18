@@ -20,7 +20,7 @@ import { NcdWorkloadCard } from "./NcdWorkloadCard";
  * year-on-year comparison. Earlier years were not validated.
  */
 const MIN_FISCAL_YEAR = 2568;
-const BASE_PATH = "/ncd";
+const BASE_PATH = "/clinic/ncd";
 
 type FyParam = string | string[] | undefined;
 

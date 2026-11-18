@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // /access#<code>: external-auditor sign-in link. The code is only in the
   // fragment; still, never leak the URL via Referer and never cache.
+  // The NCD tab moved under the "ประมาณการรายได้แยกคลินิก" group.
+  async redirects() {
+    return [{ source: "/ncd", destination: "/clinic/ncd", permanent: false }];
+  },
   async headers() {
     return [
       {

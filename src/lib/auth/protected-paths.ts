@@ -15,12 +15,12 @@ export const LOGIN_REQUIRED_PAGES = [
   "/hospital",
   "/pp",
   "/delivery",
-  "/ncd",
+  "/clinic",
   "/district/pp",
   "/strategy",
 ] as const;
 
-/** True for /hospital, /pp, /delivery, /ncd, /district/pp, /strategy and their sub-paths (not /ppx). */
+/** True for /hospital, /pp, /delivery, /clinic, /district/pp, /strategy and their sub-paths (not /ppx). */
 export function isLoginRequiredPath(pathname: string): boolean {
   return LOGIN_REQUIRED_PAGES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),

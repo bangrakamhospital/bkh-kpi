@@ -9,7 +9,7 @@ const TABS = [
   { href: "/hospital", label: "ตัวชี้วัดในโรงพยาบาล", Icon: Building2 },
   { href: "/pp", label: "PP / รายได้ สปสช.", Icon: HandCoins },
   { href: "/delivery", label: "ค่าส่งยาที่บ้าน", Icon: Truck },
-  { href: "/ncd", label: "NCD Clinic", Icon: HeartPulse },
+  { href: "/clinic", label: "ประมาณการรายได้แยกคลินิก", Icon: HeartPulse },
   { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ / PP รายได้อำเภอ", Icon: MapPinned },
   { href: "/strategy", label: "ยุทธศาสตร์ & HA", Icon: Target },
 ] as const;

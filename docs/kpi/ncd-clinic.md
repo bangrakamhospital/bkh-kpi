@@ -1,4 +1,4 @@
-# NCD Clinic (`/ncd`)
+# คลินิกโรคเรื้อรัง (`/clinic/ncd`, กลุ่มเมนู "ประมาณการรายได้แยกคลินิก")
 
 แท็บ "NCD Clinic" รายงานคลินิกโรคไม่ติดต่อเรื้อรังของโรงพยาบาล (เบาหวาน ความดันโลหิตสูง ไขมันผิดปกติ หอบหืด/COPD) ทั้ง **คุณภาพตัวชี้วัด** และ **ค่าใช้จ่าย/รายได้ตามสิทธิ** ตามปีงบประมาณ (1 ต.ค.–30 ก.ย.) จาก HOSxP เท่านั้น (ไม่ใช้ HDC) ข้อมูลสรุปเท่านั้น ไม่มีข้อมูลระบุตัวผู้ป่วย แรงบันดาลใจจาก infographic รายงาน NCD clinic ของโรงพยาบาลอื่น
 
@@ -9,7 +9,7 @@
 | SQL | `src/lib/kpi/sql/ncd-clinic-hosxp.ts` (`NCD_VISITS_SQL`, `NCD_COHORT_SQL`, `NCD_DAYS_SQL`, `NCD_WAIT_SQL`) |
 | loader | `src/lib/kpi/ncd-clinic.ts` (`getNcdClinicSummary(fiscalYear)`, cache tag `kpi:ncd-clinic`) |
 | types | `src/lib/kpi/ncd-clinic-types.ts` (`NcdClinicSummary`) |
-| UI | `src/components/kpi/ncd/*`, route `src/app/ncd/page.tsx` |
+| UI | `src/components/kpi/ncd/*`, route `src/app/clinic/ncd/page.tsx` (`/ncd` redirect มาที่นี่) |
 
 Cache: `io()` ก่อน, `"use cache"` ต่อปีงบฯ, `cacheLife("hours")` ปีที่ยังไม่สิ้นสุด / `"days"` ปีที่ปิดแล้ว 4 คิวรีรันขนานกัน (FY2569: 3.0 / 5.2 / 2.3 / 2.7 วินาที) ถ้าคิวรีใดล้มเหลวหน้าแสดงข้อความผิดพลาด ไม่ cache MariaDB ประเมิน CTE ใหม่ทุกครั้งที่ถูกอ้างอิง (คิวรีแบบ UNION หลาย CTE ใช้ 38 วินาที) จึงออกแบบให้แต่ละคิวรีอ่าน visit ของคลินิกครั้งเดียว: จำนวนคนต่อเดือน/สิทธิใช้ bitmask ต่อคน (`BIT_OR(1 << index)`) ในคิวรีเดียวกับตัวชี้วัดคุณภาพ, ทั้งปีของแพทย์ใช้ `WITH ROLLUP`, เวลารอคอยใช้ `CROSS JOIN` กับรายการ measure
 
