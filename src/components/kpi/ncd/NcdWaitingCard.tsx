@@ -1,4 +1,4 @@
-import type { NcdWaitRow, NcdWaitStats } from "@/lib/kpi/ncd-clinic-types";
+import type { NcdHosxpSteps, NcdWaitRow, NcdWaitStats } from "@/lib/kpi/ncd-clinic-types";
 import {
   tableClass,
   tdClass,
@@ -18,6 +18,69 @@ const MEASURES: { key: "toDoctor" | "toPharmacy" | "screenToDoctor"; label: stri
 
 const minutes = (v: number | null) => (v === null ? "–" : formatNumber(Math.round(v)));
 
+const decimal2 = new Intl.NumberFormat("th-TH", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+/** Minutes with 2 decimals, as in the HOSxP report. */
+const minutes2 = (v: number | null) => (v === null ? "–" : decimal2.format(v));
+
+/** Steps that summarise several steps (shown after a divider, bold). */
+const SUMMARY_STEPS = new Set(["TOTAL", "NEW_TO_RX"]);
+
+function HosxpStepsTable({ data }: { data: NcdHosxpSteps }) {
+  return (
+    <div className="mt-5">
+      <h3 className="text-sm font-semibold">5 ขั้นตอนแบบรายงาน HOSxP (เฉพาะ NCD)</h3>
+      <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+        visit ที่มีเวลาครบทุกขั้น {formatNumber(data.qualifyingVisits)} จาก{" "}
+        {formatNumber(data.visits)} ครั้ง ({formatNumber(data.qualifyingPersons)} จาก{" "}
+        {formatNumber(data.persons)} คน) ลงทะเบียน 06:00–16:00
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className={`${tableClass} min-w-[44rem]`}>
+          <thead className={theadClass}>
+            <tr>
+              <th scope="col" className={thClass}>ขั้นตอน</th>
+              <th scope="col" className={thClass}>ช่วงเวลา</th>
+              <th scope="col" className={thRightClass}>เฉลี่ย (นาที)</th>
+              <th scope="col" className={thRightClass}>มัธยฐาน (นาที)</th>
+              <th scope="col" className={thRightClass}>ต่ำสุด (นาที)</th>
+              <th scope="col" className={thRightClass}>สูงสุด (นาที)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.steps.map((s) => {
+              const summary = SUMMARY_STEPS.has(s.code);
+              return (
+                <tr
+                  key={s.code}
+                  className={`${trClass} ${summary ? "bg-zinc-50 font-semibold dark:bg-zinc-900" : ""}`}
+                >
+                  <th scope="row" className={`${tdClass} text-left font-medium`}>{s.label}</th>
+                  <td className={`${tdClass} text-zinc-600 dark:text-zinc-400`}>{s.span}</td>
+                  <td className={tdRightClass}>{minutes2(s.meanMinutes)}</td>
+                  <td className={tdRightClass}>{minutes2(s.medianMinutes)}</td>
+                  <td className={tdRightClass}>{minutes2(s.minMinutes)}</td>
+                  <td className={tdRightClass}>{minutes2(s.maxMinutes)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+        รายงาน HOSxP ReportBuilder &quot;CUSTOM- ระยะเวลาในการรับบริการในเวลาราชการ (8.30 น.-16.00 น.)&quot;
+        เป็นของ OPD ทั้ง รพ. (ลงทะเบียน 06:00–16:00) นับเป็น visit ไม่ใช่คน ใช้ค่าเฉลี่ย
+        คัดเฉพาะ visit ที่มีเวลาครบและเรียงลำดับทุกขั้น (แต่ละขั้น &gt; 1 นาที) และ &quot;รวม&quot;
+        ไม่รวมการรอซักประวัติ ตารางนี้ใช้นิยามเดียวกันแต่เฉพาะ NCD ต่างจากรายงานเพียงไม่นับ visit
+        ของวันนี้ (ปีที่ปิดแล้วผลเท่ากัน) ส่วนตารางแรกใช้นิยามของหน้าเว็บ: นับจากลงทะเบียน, ใช้มัธยฐาน
+        และนับทุก visit ที่มีเวลา
+      </p>
+    </div>
+  );
+}
+
 function Cells({ s }: { s: NcdWaitStats }) {
   return (
     <>
@@ -29,7 +92,13 @@ function Cells({ s }: { s: NcdWaitStats }) {
   );
 }
 
-export function NcdWaitingCard({ waiting }: { waiting: NcdWaitRow[] }) {
+export function NcdWaitingCard({
+  waiting,
+  hosxpSteps,
+}: {
+  waiting: NcdWaitRow[];
+  hosxpSteps: NcdHosxpSteps;
+}) {
   const rows = [...waiting].sort((a, b) => Number(a.withLab) - Number(b.withLab));
   return (
     <section
@@ -68,6 +137,7 @@ export function NcdWaitingCard({ waiting }: { waiting: NcdWaitRow[] }) {
           ))}
         </table>
       </div>
+      <HosxpStepsTable data={hosxpSteps} />
     </section>
   );
 }

@@ -9,6 +9,9 @@ import type {
   NcdClinicSummary,
   NcdDayRow,
   NcdDiseaseRow,
+  NcdHosxpStepCode,
+  NcdHosxpStepRow,
+  NcdHosxpSteps,
   NcdIndicator,
   NcdLabPanelRow,
   NcdMoney,
@@ -27,6 +30,8 @@ import {
   NCD_DAYS_SQL,
   NCD_DEPCODES,
   NCD_HBA1C_BILLABLE_PER_YEAR,
+  NCD_HOSXP_STEPS,
+  NCD_HOSXP_STEPS_SQL,
   NCD_SCHEME_INDEX,
   NCD_SCHEME_RULES,
   NCD_VISITS_SQL,
@@ -121,8 +126,24 @@ interface WaitRowDb extends RowDataPacket {
   n: Num;
 }
 
+/** One row: visits / persons / ok_visits / ok_persons and <step>_avg|_min|_max|_med. */
+type HosxpStepsRowDb = RowDataPacket & Record<string, Num>;
+
+/** Labels of the HOSxP report steps (keys = NCD_HOSXP_STEPS). */
+const HOSXP_STEP_LABELS: Readonly<Record<NcdHosxpStepCode, { label: string; span: string }>> = {
+  WAIT_SCREEN: { label: "1. รอซักประวัติ", span: "ห้องบัตร → เริ่มซักประวัติ" },
+  SCREEN: { label: "2. ซักประวัติ", span: "เริ่ม → เสร็จซักประวัติ" },
+  WAIT_DOCTOR: { label: "3. รอตรวจ", span: "เสร็จซักประวัติ → เริ่มตรวจ" },
+  DOCTOR: { label: "4. ตรวจ", span: "เริ่ม → เสร็จตรวจ" },
+  WAIT_RX: { label: "5. รอรับยา", span: "เสร็จตรวจ → จ่ายยาเสร็จ" },
+  TOTAL: { label: "รวม (ขั้น 2–5)", span: "เริ่มซักประวัติ → จ่ายยาเสร็จ" },
+  NEW_TO_RX: { label: "ห้องบัตร → รับยา (ขั้น 1–5)", span: "ห้องบัตร → จ่ายยาเสร็จ" },
+};
+
 // --- helpers ------------------------------------------------------------------
 
+const numOrNull = (v: Num | undefined): number | null =>
+  v === null || v === undefined ? null : num(v);
 const round1 = (x: number) => Math.round(x * 10) / 10;
 const round2 = (x: number) => Math.round(x * 100) / 100;
 const pct = (n: number, d: number): number | null => (d > 0 ? round1((n / d) * 100) : null);
@@ -251,7 +272,7 @@ const repeatTarget = (fy: number) => (fy >= 2570 ? 4 : 5);
 /**
  * Rendering contract identical to getDrugDeliverySummary: `await io()`
  * first, render the caller inside <Suspense>; cached per fiscal year
- * ("hours" running year, "days" closed year). Four queries in parallel; a
+ * ("hours" running year, "days" closed year). Five queries in parallel; a
  * failure throws (the page shows an error, nothing is cached). Invalidate
  * with revalidateTag(NCD_CLINIC_CACHE_TAG).
  */
@@ -270,11 +291,12 @@ async function loadNcdClinicSummary(
 
   const range = fiscalYearRange(fiscalYear);
   const params = ncdClinicParams(range.start, range.end);
-  const [visitRows, cohortRows, dayRows, waitRows] = await Promise.all([
+  const [visitRows, cohortRows, dayRows, waitRows, stepRows] = await Promise.all([
     query<VisitRow>(NCD_VISITS_SQL, params),
     query<CohortRow>(NCD_COHORT_SQL, params),
     query<DayRow>(NCD_DAYS_SQL, params),
     query<WaitRowDb>(NCD_WAIT_SQL, params),
+    query<HosxpStepsRowDb>(NCD_HOSXP_STEPS_SQL, params),
   ]);
   const c: Record<string, Num> = cohortRows[0] ?? {};
   const cn = (col: string) => num(c[col]);
@@ -577,6 +599,26 @@ async function loadNcdClinicSummary(
     screenToDoctor: stats("SCREEN_TO_DOCTOR", lab),
   }));
 
+  // --- waiting time, HOSxP report definition
+  const h: Record<string, Num> = stepRows[0] ?? {};
+  const hosxpSteps: NcdHosxpSteps = {
+    visits: num(h.visits),
+    persons: num(h.persons),
+    qualifyingVisits: num(h.ok_visits),
+    qualifyingPersons: num(h.ok_persons),
+    steps: (Object.keys(NCD_HOSXP_STEPS) as NcdHosxpStepCode[]).map((code): NcdHosxpStepRow => {
+      const c = code.toLowerCase();
+      return {
+        code,
+        ...HOSXP_STEP_LABELS[code],
+        meanMinutes: numOrNull(h[`${c}_avg`]),
+        medianMinutes: numOrNull(h[`${c}_med`]),
+        minMinutes: numOrNull(h[`${c}_min`]),
+        maxMinutes: numOrNull(h[`${c}_max`]),
+      };
+    }),
+  };
+
   const excessTests = cn("dm_a1c_excess_tests");
 
   // Exactly one cacheLife call per invocation (see cacheLife docs).
@@ -617,6 +659,7 @@ async function loadNcdClinicSummary(
       fbsPercent: pct(fbsVisits, fbsVisits + dtxVisits),
     },
     waiting,
+    hosxpSteps,
     workload,
     updatedAt: new Date().toISOString(),
   };

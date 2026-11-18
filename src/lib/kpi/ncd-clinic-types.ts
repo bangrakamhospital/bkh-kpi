@@ -163,6 +163,48 @@ export interface NcdWaitRow {
   screenToDoctor: NcdWaitStats;
 }
 
+/** Step codes of the HOSxP waiting-time report, display order. */
+export type NcdHosxpStepCode =
+  | "WAIT_SCREEN"
+  | "SCREEN"
+  | "WAIT_DOCTOR"
+  | "DOCTOR"
+  | "WAIT_RX"
+  | "TOTAL"
+  | "NEW_TO_RX";
+
+/** One step of the HOSxP report definition over the qualifying visits. */
+export interface NcdHosxpStepRow {
+  /** Step code (see NCD_HOSXP_STEPS in sql/ncd-clinic-hosxp.ts). */
+  code: NcdHosxpStepCode;
+  /** Thai label, e.g. "1. รอซักประวัติ". */
+  label: string;
+  /** Timestamps the step runs between, e.g. "ห้องบัตร → เริ่มซักประวัติ". */
+  span: string;
+  /** Mean minutes, 2 decimals as in the HOSxP report; null when no qualifying visit. */
+  meanMinutes: number | null;
+  /** Median minutes (MariaDB MEDIAN, 2 decimals); null when no qualifying visit. */
+  medianMinutes: number | null;
+  /** Minimum minutes (2 decimals); null when no qualifying visit. */
+  minMinutes: number | null;
+  /** Maximum minutes (2 decimals); null when no qualifying visit. */
+  maxMinutes: number | null;
+}
+
+/** Clinic waiting time with the definition of the HOSxP report (whole OPD there, NCD only here). */
+export interface NcdHosxpSteps {
+  /** Clinic visits of the fiscal year registered 06:00–16:00, today excluded. */
+  visits: number;
+  /** Distinct people of `visits`. */
+  persons: number;
+  /** Visits with every timestamp, in order, each step > 1 minute (the statistics' base). */
+  qualifyingVisits: number;
+  /** Distinct people of `qualifyingVisits`. */
+  qualifyingPersons: number;
+  /** Steps 1–5, then TOTAL (steps 2–5, the report's "รวม") and NEW_TO_RX (steps 1–5). */
+  steps: NcdHosxpStepRow[];
+}
+
 export interface NcdDayRow {
   /** "YYYY-MM-DD". */
   date: string;
@@ -268,6 +310,8 @@ export interface NcdClinicSummary {
   glucoseTests: NcdGlucoseTests;
   /** Without lab, then with lab. */
   waiting: NcdWaitRow[];
+  /** Waiting time by the HOSxP report's 5 steps (NCD visits only). */
+  hosxpSteps: NcdHosxpSteps;
   workload: NcdWorkload;
 
   updatedAt: string;
