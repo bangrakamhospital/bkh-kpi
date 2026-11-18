@@ -13,7 +13,7 @@
 
 Cache: `io()` ก่อน, `"use cache"` ต่อปีงบฯ, `cacheLife("hours")` ปีที่ยังไม่สิ้นสุด / `"days"` ปีที่ปิดแล้ว 7 คิวรีรันขนานกัน (FY2569: visits 3.6, cohort 5.6, items 4.1, days 3.0, wait 2.2, ipd 0.02, imc 0.1 วินาที) ถ้าคิวรีใดล้มเหลวหน้าแสดงข้อความผิดพลาด ไม่ cache
 
-สิทธิ 2 กลุ่ม "เต็มจำนวน" / "เหมาจ่าย (hospmain = รพ.)" ใช้กติกาเดียวกับ NCD: import `NCD_SCHEME_RULES` / `NCD_SCHEME_INDEX` จาก `sql/ncd-clinic-hosxp.ts` แบบอ่านอย่างเดียว (ชื่อสิทธิ/กลุ่มคัดลอกมาใน `pt-clinic.ts` เพราะ NCD ไม่ export)
+สิทธิ 2 กลุ่ม "เต็มจำนวน" / "เหมาจ่าย (hospmain = รพ.)" ใช้กติกาเดียวกับ NCD: กติกา ชื่อสิทธิ และกลุ่ม อยู่ที่ `src/lib/kpi/sql/clinic-scheme-hosxp.ts` ใช้ร่วมทุกหน้า /clinic
 
 ## นิยาม visit กายภาพ (ไม่ใช้ `ovst.main_dep` อย่างเดียว)
 

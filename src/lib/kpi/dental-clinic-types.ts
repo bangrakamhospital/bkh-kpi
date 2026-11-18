@@ -6,7 +6,7 @@
 
 import type { NcdPayGroupCode, NcdSchemeCode } from "@/lib/kpi/ncd-clinic-types";
 
-/** Same two payment groups and scheme rows as the NCD clinic (NCD_SCHEME_RULES). */
+/** Same two payment groups and scheme rows as the NCD clinic (CLINIC_SCHEME_RULES, sql/clinic-scheme-hosxp.ts). */
 export type DentalPayGroupCode = NcdPayGroupCode;
 export type DentalSchemeCode = NcdSchemeCode;
 

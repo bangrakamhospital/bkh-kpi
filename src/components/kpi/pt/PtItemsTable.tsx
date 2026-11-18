@@ -1,11 +1,14 @@
 import type { PtItemRow } from "@/lib/kpi/pt-clinic-types";
 import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
+  chipClass,
+  footClass,
+  mutedClass,
   tableClass,
   tdClass,
   tdRightClass,
-  theadClass,
   thClass,
+  theadClass,
   thRightClass,
   trClass,
 } from "../overview/table-styles";
@@ -13,12 +16,6 @@ import { formatBaht, formatNumber, formatPercent } from "../format";
 
 /** Rows shown on the page (all rows go to the Excel file). */
 const TOP = 15;
-
-const footClass =
-  "border-t-2 border-zinc-300 bg-zinc-50 font-semibold dark:border-zinc-700 dark:bg-zinc-900";
-const chipClass =
-  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold";
-const mutedClass = "text-zinc-600 dark:text-zinc-400";
 
 const GROUP: Record<PtItemRow["group"], { label: string; tone: string }> = {
   PT: {

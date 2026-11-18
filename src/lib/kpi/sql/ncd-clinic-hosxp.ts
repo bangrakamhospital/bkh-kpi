@@ -2,9 +2,8 @@ import "server-only";
 
 import type { QueryParams } from "@/lib/db/his";
 import { HOSPITAL_HOSPCODE } from "@/lib/kpi/district-areas";
-import type { NcdPayGroupCode, NcdSchemeCode } from "@/lib/kpi/ncd-clinic-types";
-import { PTTYPE_GROUPS } from "@/lib/kpi/overview";
 
+import { SCHEME_CODE_EXPR, SCHEME_INDEX_EXPR, schemePersonColumns } from "./clinic-scheme-hosxp";
 import { sqlCodeList } from "./screening-common";
 
 /**
@@ -103,74 +102,6 @@ export const NCD_HBA1C_BILLABLE_PER_YEAR = 2;
 export const WAIT_BUCKET_MINUTES = 10;
 export const WAIT_MAX_MINUTES = 720;
 
-// --- scheme groups -----------------------------------------------------------
-
-const hip = (code: string): readonly string[] =>
-  PTTYPE_GROUPS.find((g) => g.code === code)?.hipdata ?? [];
-
-/**
- * Scheme of a visit = first matching rule on (pttype.hipdata_code of
- * ovst.pttype, vn_stat.hospmain = own hospcode). Capitation ("รายรับ
- * เรียกเก็บไม่เต็มจำนวน") = the hospital is the patient's registered main
- * unit of a capitated fund: UC (เหมาจ่ายรายหัว), SSS/SSI (สถานพยาบาลหลัก)
- * and NRH (ประกันสุขภาพต่างด้าว). Everything else is billed per service
- * ("เกิดรายได้เต็มจำนวน"). Rule order matters; OTHER = no rule matched
- * (NRD, INS, NRH registered elsewhere, blank).
- */
-export const NCD_SCHEME_RULES: readonly {
-  code: NcdSchemeCode;
-  payGroup: NcdPayGroupCode;
-  hipdata: readonly string[];
-  /** "own" = vn_stat.hospmain is this hospital, "other" = it is not, "any". */
-  hospmain: "own" | "other" | "any";
-}[] = [
-  { code: "UC_OWN", payGroup: "CAPITATION", hipdata: hip("UC"), hospmain: "own" },
-  { code: "SSS_OWN", payGroup: "CAPITATION", hipdata: hip("SSS"), hospmain: "own" },
-  { code: "NRH_OWN", payGroup: "CAPITATION", hipdata: ["NRH"], hospmain: "own" },
-  { code: "OFC", payGroup: "FULL", hipdata: hip("OFC"), hospmain: "any" },
-  { code: "LGO", payGroup: "FULL", hipdata: hip("LGO"), hospmain: "any" },
-  { code: "GOV", payGroup: "FULL", hipdata: hip("GOV"), hospmain: "any" },
-  { code: "SSS_OTHER", payGroup: "FULL", hipdata: hip("SSS"), hospmain: "other" },
-  { code: "UC_OTHER", payGroup: "FULL", hipdata: hip("UC"), hospmain: "other" },
-  { code: "CSH", payGroup: "FULL", hipdata: hip("CSH"), hospmain: "any" },
-];
-
-/** Scheme codes by index (rule order, OTHER last), for the person bitmasks. */
-export const NCD_SCHEME_INDEX: readonly NcdSchemeCode[] = [
-  ...NCD_SCHEME_RULES.map((r) => r.code),
-  "OTHER",
-];
-
-const OWN_MAIN = "COALESCE(vs.hospmain, '') = :hospcode";
-
-/** CASE over the scheme rules, on `pt` (pttype) and `vs` (vn_stat). */
-function schemeCase(value: (index: number) => string): string {
-  const whens = NCD_SCHEME_RULES.map((r, i) => {
-    const main =
-      r.hospmain === "own"
-        ? ` AND ${OWN_MAIN}`
-        : r.hospmain === "other"
-          ? ` AND NOT (${OWN_MAIN})`
-          : "";
-    return `    WHEN pt.hipdata_code IN (${sqlCodeList(r.hipdata)})${main} THEN ${value(i)}`;
-  });
-  return `CASE
-${whens.join("\n")}
-    ELSE ${value(NCD_SCHEME_RULES.length)} END`;
-}
-
-/** -> scheme code ('UC_OWN', …, 'OTHER'). */
-const SCHEME_CODE_EXPR = schemeCase((i) => `'${NCD_SCHEME_INDEX[i]}'`);
-/** -> scheme index in NCD_SCHEME_INDEX. */
-const SCHEME_INDEX_EXPR = schemeCase((i) => String(i));
-
-const CAPITATION_MASK = NCD_SCHEME_INDEX.reduce(
-  (m, code, i) =>
-    NCD_SCHEME_RULES.find((r) => r.code === code)?.payGroup === "CAPITATION" ? m | (1 << i) : m,
-  0,
-);
-const FULL_MASK = ((1 << NCD_SCHEME_INDEX.length) - 1) & ~CAPITATION_MASK;
-
 // --- shared fragments --------------------------------------------------------
 
 const IN_FY = (col: string) =>
@@ -247,10 +178,6 @@ const MONTH_COLUMNS = Array.from(
   (_, i) => `  SUM((c.month_mask & ${1 << i}) <> 0) AS m${i},`,
 ).join("\n");
 
-const SCHEME_COLUMNS = NCD_SCHEME_INDEX.map(
-  (_, i) => `  SUM((c.scheme_mask & ${1 << i}) <> 0) AS s${i},`,
-).join("\n");
-
 const DX_GROUPS = Object.keys(NCD_ICD) as IcdGroup[];
 
 /**
@@ -259,7 +186,8 @@ const DX_GROUPS = Object.keys(NCD_ICD) as IcdGroup[];
  *
  * People (each person counted once per breakdown; breakdowns overlap):
  *  - m0..m11   people with a visit in fiscal month i (0 = Oct)
- *  - s0..s9    people with a visit under scheme NCD_SCHEME_INDEX[i]
+ *  - s0..s9    people with a visit under scheme CLINIC_SCHEME_INDEX[i]
+ *              (scheme rules: ./clinic-scheme-hosxp.ts)
  *  - pay_full / pay_capitation  same, per pay group
  *  - dm / ht / dlp / asthma     people with the ICD-10 group (NCD_ICD) on
  *    any clinic visit (ovstdiag, any diagtype); dx_other = none of them;
@@ -370,9 +298,7 @@ scr AS (
 SELECT
   COUNT(*)                                                    AS persons,
 ${MONTH_COLUMNS}
-${SCHEME_COLUMNS}
-  SUM((c.scheme_mask & ${FULL_MASK}) <> 0)                    AS pay_full,
-  SUM((c.scheme_mask & ${CAPITATION_MASK}) <> 0)              AS pay_capitation,
+${schemePersonColumns()}
 ${DX_GROUPS.map(
   (g) => `  SUM(c.${g.toLowerCase()}) AS ${g.toLowerCase()}, SUM(c.${g.toLowerCase()}_visits) AS ${g.toLowerCase()}_visits,`,
 ).join("\n")}

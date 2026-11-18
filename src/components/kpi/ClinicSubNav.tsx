@@ -2,22 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CLINICS, clinicHref } from "@/lib/kpi/clinic-registry";
 
-/** Clinics of the "ประมาณการรายได้แยกคลินิก" group; add new clinics here (e.g. กายภาพบำบัด). */
-const LINKS = [
-  { href: "/clinic/ncd", label: "คลินิกโรคเรื้อรัง" },
-  { href: "/clinic/pt", label: "คลินิกกายภาพ" },
-  { href: "/clinic/dental", label: "คลินิกทันตกรรม" },
-] as const;
-
-/** Sub-navigation shared by the /clinic/* pages. */
+/** Sub-navigation shared by the /clinic/* pages (clinics: @/lib/kpi/clinic-registry). */
 export function ClinicSubNav() {
   const pathname = usePathname();
 
   return (
     <nav aria-label="คลินิก">
       <ul className="flex flex-wrap gap-2">
-        {LINKS.map(({ href, label }) => {
+        {CLINICS.map(({ slug, label }) => {
+          const href = clinicHref(slug);
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <li key={href}>

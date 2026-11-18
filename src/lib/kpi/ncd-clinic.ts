@@ -26,14 +26,20 @@ import type {
 } from "@/lib/kpi/ncd-clinic-types";
 import { type Num, num } from "@/lib/kpi/ppfs-common";
 import {
+  CLINIC_SCHEME_INDEX,
+  CLINIC_SCHEME_RULES,
+  PAY_GROUPS,
+  SCHEME_NAMES,
+  isSchemeCode,
+  payGroupOf,
+} from "@/lib/kpi/sql/clinic-scheme-hosxp";
+import {
   NCD_COHORT_SQL,
   NCD_DAYS_SQL,
   NCD_DEPCODES,
   NCD_HBA1C_BILLABLE_PER_YEAR,
   NCD_HOSXP_STEPS,
   NCD_HOSXP_STEPS_SQL,
-  NCD_SCHEME_INDEX,
-  NCD_SCHEME_RULES,
   NCD_VISITS_SQL,
   NCD_WAIT_SQL,
   type NcdWaitMeasure,
@@ -56,32 +62,6 @@ const TARGET_PER_DAY = 120;
 const HBA1C_PRICE_BAHT = 230;
 
 const CLINIC_NAME = "คลินิกโรคไม่ติดต่อเรื้อรัง (NCD) โรงพยาบาลบางระกำ";
-
-const SCHEME_NAMES: Readonly<Record<NcdSchemeCode, string>> = {
-  UC_OWN: "UC / บัตรทอง ลงทะเบียน รพ.บางระกำ (เหมาจ่ายรายหัว)",
-  SSS_OWN: "ประกันสังคม รพ.บางระกำเป็นสถานพยาบาลหลัก",
-  NRH_OWN: "ต่างด้าวประกันสุขภาพ ขึ้นทะเบียน รพ.บางระกำ",
-  OFC: "ข้าราชการ / เบิกกรมบัญชีกลาง",
-  LGO: "อปท.",
-  GOV: "หน่วยงานรัฐอื่น (กทม. พัทยา รฟท. ฯลฯ)",
-  SSS_OTHER: "ประกันสังคมต่างพื้นที่",
-  UC_OTHER: "UC / บัตรทอง ต่างพื้นที่",
-  CSH: "ชำระเงินเอง",
-  OTHER: "อื่นๆ (ต่างด้าวไม่มีประกัน, พ.ร.บ., ไม่ระบุ)",
-};
-
-const PAY_GROUPS: readonly { code: NcdPayGroupCode; name: string; rule: string }[] = [
-  {
-    code: "FULL",
-    name: "สิทธิเกิดรายได้เต็มจำนวน",
-    rule: "เรียกเก็บตามรายการบริการ: ข้าราชการ, อปท., หน่วยงานรัฐอื่น, ประกันสังคม/UC ต่างพื้นที่, ชำระเงินเอง, อื่นๆ (ต่างด้าวไม่มีประกัน, พ.ร.บ.)",
-  },
-  {
-    code: "CAPITATION",
-    name: "รายรับเรียกเก็บไม่เต็มจำนวน",
-    rule: "รพ.บางระกำเป็นหน่วยบริการหลัก (hospmain 11252) ของกองทุนเหมาจ่าย: UC, ประกันสังคม, ต่างด้าวประกันสุขภาพ",
-  },
-];
 
 const DISEASES: readonly { code: NcdDiseaseRow["code"]; name: string; icd10: string; col: string }[] = [
   { code: "DM", name: "เบาหวาน (DM)", icd10: "E10–E14", col: "dm" },
@@ -196,13 +176,6 @@ function money(a: MoneyAcc): NcdMoney {
   };
 }
 
-const payGroupOf = (code: NcdSchemeCode): NcdPayGroupCode =>
-  NCD_SCHEME_RULES.find((r) => r.code === code)?.payGroup ?? "FULL";
-
-function isSchemeCode(code: string): code is NcdSchemeCode {
-  return (NCD_SCHEME_INDEX as readonly string[]).includes(code);
-}
-
 /**
  * Median / p90 / mean from 10-minute buckets. Quantiles are linear inside
  * the bucket that holds them; the mean uses bucket mid-points.
@@ -302,7 +275,7 @@ async function loadNcdClinicSummary(
   const cn = (col: string) => num(c[col]);
 
   // --- visits and money by scheme / month
-  const byScheme = new Map<NcdSchemeCode, MoneyAcc>(NCD_SCHEME_INDEX.map((s) => [s, emptyMoney()]));
+  const byScheme = new Map<NcdSchemeCode, MoneyAcc>(CLINIC_SCHEME_INDEX.map((s) => [s, emptyMoney()]));
   const byMonth = new Map<string, Record<NcdPayGroupCode, MoneyAcc>>(
     range.months.map((m) => [m, { FULL: emptyMoney(), CAPITATION: emptyMoney() }]),
   );
@@ -322,7 +295,7 @@ async function loadNcdClinicSummary(
   }
 
   const schemeRow = (code: NcdSchemeCode): NcdSchemeRow => {
-    const rule = NCD_SCHEME_RULES.find((r) => r.code === code);
+    const rule = CLINIC_SCHEME_RULES.find((r) => r.code === code);
     const a = byScheme.get(code)!;
     return {
       code,
@@ -330,7 +303,7 @@ async function loadNcdClinicSummary(
       payGroup: payGroupOf(code),
       hipdata: rule?.hipdata ?? [],
       hospmain: rule?.hospmain ?? "any",
-      persons: cn(`s${NCD_SCHEME_INDEX.indexOf(code)}`),
+      persons: cn(`s${CLINIC_SCHEME_INDEX.indexOf(code)}`),
       visits: a.visits,
       bahtPerVisit: per(a.baht, a.visits),
       ...money(a),
@@ -338,9 +311,9 @@ async function loadNcdClinicSummary(
   };
 
   const payGroups: NcdPayGroupRow[] = PAY_GROUPS.map((g) => {
-    const schemes = NCD_SCHEME_INDEX.filter((s) => payGroupOf(s) === g.code).map(schemeRow);
+    const schemes = CLINIC_SCHEME_INDEX.filter((s) => payGroupOf(s) === g.code).map(schemeRow);
     const a = emptyMoney();
-    for (const s of NCD_SCHEME_INDEX) if (payGroupOf(s) === g.code) addAcc(a, byScheme.get(s)!);
+    for (const s of CLINIC_SCHEME_INDEX) if (payGroupOf(s) === g.code) addAcc(a, byScheme.get(s)!);
     return {
       ...g,
       persons: cn(g.code === "FULL" ? "pay_full" : "pay_capitation"),
