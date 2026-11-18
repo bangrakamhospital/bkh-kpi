@@ -45,10 +45,10 @@ export function NcdWaitingCard({ waiting }: { waiting: NcdWaitRow[] }) {
           <thead className={theadClass}>
             <tr>
               <th scope="col" className={thClass}>ช่วงเวลา</th>
-              <th scope="col" className={thRightClass}>มัธยฐาน</th>
-              <th scope="col" className={thRightClass}>เฉลี่ย</th>
-              <th scope="col" className={thRightClass}>P90</th>
-              <th scope="col" className={thRightClass}>visit ที่วัดได้</th>
+              <th scope="col" className={thRightClass}>มัธยฐาน (นาที)</th>
+              <th scope="col" className={thRightClass}>เฉลี่ย (นาที)</th>
+              <th scope="col" className={thRightClass}>P90 (นาที)</th>
+              <th scope="col" className={thRightClass}>visit ที่วัดได้ (ครั้ง)</th>
             </tr>
           </thead>
           {rows.map((w) => (
