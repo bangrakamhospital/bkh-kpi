@@ -19,6 +19,11 @@ import {
   hdcDspmParams,
   type HdcDspmContext,
 } from "@/lib/kpi/sql/hdc-dspm";
+import {
+  HDC_CAVITY_FREE_VILLAGE_SQL,
+  hdcCavityFreeParams,
+  type HdcCavityFreeContext,
+} from "@/lib/kpi/sql/hdc-cavity-free";
 import type { DistrictCode } from "@/lib/kpi/types";
 import { decryptHdc } from "@/lib/kpi/hdc-crypto";
 
@@ -322,6 +327,81 @@ export async function mockHdcDspmSource(
           delayedAfter: 0,
           waiting: 0,
           lost: 0,
+        };
+      }),
+    ),
+  );
+  const { units } = await mockHdcDistrictSource("DM", {
+    periodStart: ctx.periodStart,
+    countFrom: ctx.periodStart,
+    dataAsOf: ctx.dataAsOf,
+  });
+  return { rows, units };
+}
+
+/* ------------------------------ Cavity Free ------------------------------- */
+
+/** Raw Cavity Free counts of one village × age (see hdc-cavity-free.ts). */
+export interface HdcCavityFreeRowRaw {
+  vid: string;
+  ageYears: number;
+  target: number;
+  examined: number;
+  cavityFree: number;
+}
+
+export interface HdcCavityFreeRaw {
+  rows: HdcCavityFreeRowRaw[];
+  units: HdcUnitFreshnessRaw[];
+}
+
+interface CavityFreeRow extends RowDataPacket {
+  vid: string | null;
+  age_years: number | string;
+  target: number | string | null;
+  examined: number | string | null;
+  cavity_free: number | string | null;
+}
+
+export async function hisHdcCavityFreeSource(
+  ctx: HdcCavityFreeContext & { dataAsOf: string },
+): Promise<HdcCavityFreeRaw> {
+  const [rows, units] = await Promise.all([
+    hdcQuery<CavityFreeRow>(
+      HDC_CAVITY_FREE_VILLAGE_SQL,
+      hdcCavityFreeParams(ctx),
+    ),
+    loadFreshness(ctx.dataAsOf),
+  ]);
+  return {
+    rows: rows
+      .filter((r): r is CavityFreeRow & { vid: string } => !!r.vid)
+      .map((r) => ({
+        vid: r.vid,
+        ageYears: n(r.age_years),
+        target: n(r.target),
+        examined: n(r.examined),
+        cavityFree: n(r.cavity_free),
+      })),
+    units,
+  };
+}
+
+/** Deterministic fake Cavity Free counts (KPI_DATA_SOURCE=mock). */
+export async function mockHdcCavityFreeSource(
+  ctx: HdcCavityFreeContext & { dataAsOf: string },
+): Promise<HdcCavityFreeRaw> {
+  const rows: HdcCavityFreeRowRaw[] = DISTRICT_TAMBONS.flatMap((t, ti) =>
+    [1, 2, 3].flatMap((moo) =>
+      [0, 1, 2, 3, 4, 5].map((ageYears): HdcCavityFreeRowRaw => {
+        const target = 4 + ((ti + moo + ageYears) % 4);
+        const examined = Math.max(0, target - 1 - (ageYears === 0 ? 2 : 0));
+        return {
+          vid: `${t.code}${String(moo).padStart(2, "0")}`,
+          ageYears,
+          target,
+          examined,
+          cavityFree: Math.max(0, examined - ((ti + ageYears) % 2)),
         };
       }),
     ),

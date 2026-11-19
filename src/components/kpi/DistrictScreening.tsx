@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { CalendarDays, Clock, Info } from "lucide-react";
 import {
+  getDistrictCavityFree,
   getDistrictCkd5,
   getDistrictDspm,
   getDistrictScreening,
@@ -13,11 +14,13 @@ import {
 } from "@/lib/kpi/district-areas";
 import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
 import {
+  CAVITY_FREE_INDICATOR,
   CKD5_INDICATOR,
   DSPM_INDICATOR,
   SCREENING_INDICATORS,
 } from "@/lib/kpi/screening-indicators";
 import type {
+  DistrictCavityFreeResult,
   DistrictCkd5Result,
   DistrictDspmResult,
   DistrictKpiCode,
@@ -30,6 +33,7 @@ import {
 } from "@/lib/kpi/categories";
 import { CategoryChipBar } from "./CategoryChipBar";
 import { FiscalYearSelect } from "./FiscalYearSelect";
+import { DistrictCavityFreeTable } from "./DistrictCavityFreeTable";
 import { DistrictCkd5Table } from "./DistrictCkd5Table";
 import { DistrictDspmTable } from "./DistrictDspmTable";
 import { DistrictScreeningTable } from "./DistrictScreeningTable";
@@ -94,6 +98,7 @@ const visibleGroups = DISTRICT_CATEGORY_GROUPS.filter(
 function indicatorName(code: DistrictKpiCode): string {
   if (code === "CKD5") return CKD5_INDICATOR.name;
   if (code === "DSPM") return DSPM_INDICATOR.name;
+  if (code === "CAVITY_FREE") return CAVITY_FREE_INDICATOR.name;
   return SCREENING_INDICATORS[code].name;
 }
 
@@ -197,14 +202,20 @@ export async function DistrictScreening({
     );
   }
 
-  let result: DistrictScreeningResult | DistrictCkd5Result | DistrictDspmResult;
+  let result:
+    | DistrictScreeningResult
+    | DistrictCkd5Result
+    | DistrictDspmResult
+    | DistrictCavityFreeResult;
   try {
     result =
       code === "CKD5"
         ? await getDistrictCkd5(parsedFy.year)
         : code === "DSPM"
           ? await getDistrictDspm(parsedFy.year)
-          : await getDistrictScreening(code, parsedFy.year);
+          : code === "CAVITY_FREE"
+            ? await getDistrictCavityFree(parsedFy.year)
+            : await getDistrictScreening(code, parsedFy.year);
   } catch {
     return (
       <div className="space-y-4">
@@ -219,7 +230,9 @@ export async function DistrictScreening({
       ? result.tambons.every((t) => !t.error && t.numerator === 0)
       : result.kind === "dspm"
         ? result.district.screened === 0
-        : result.district.currentCases === 0;
+        : result.kind === "cavityFree"
+          ? result.district.examined === 0
+          : result.district.currentCases === 0;
 
   return (
     <div className="space-y-4">
@@ -247,6 +260,8 @@ export async function DistrictScreening({
         <DistrictScreeningTable result={result} />
       ) : result.kind === "dspm" ? (
         <DistrictDspmTable result={result} />
+      ) : result.kind === "cavityFree" ? (
+        <DistrictCavityFreeTable result={result} />
       ) : (
         <DistrictCkd5Table result={result} />
       )}

@@ -8,6 +8,7 @@ import {
   HeartPulse,
   Ribbon,
   ShieldCheck,
+  Smile,
   Stethoscope,
   TestTube,
 } from "lucide-react";
@@ -25,7 +26,8 @@ export type AccentKey =
   | "creatinine"
   | "ckd5"
   | "stemi"
-  | "dspm";
+  | "dspm"
+  | "cavityFree";
 
 interface AccentTheme {
   Icon: LucideIcon;
@@ -225,5 +227,24 @@ export const ACCENTS: Record<AccentKey, AccentTheme> = {
     pill: "bg-lime-700 text-white hover:bg-lime-800 focus-visible:outline-lime-600 dark:bg-lime-400 dark:text-lime-950 dark:hover:bg-lime-300",
     focus: "focus:border-lime-600 focus:outline-2 focus:outline-lime-600",
     text: "text-lime-800 dark:text-lime-300",
+  },
+  cavityFree: {
+    Icon: Smile,
+    iconBg:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+    bar: "bg-emerald-600 dark:bg-emerald-400",
+    band: "from-emerald-700 to-emerald-900",
+    soft: "bg-emerald-50 dark:bg-emerald-950/40",
+    thead:
+      "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+    footer:
+      "bg-emerald-200 text-emerald-950 dark:bg-emerald-900 dark:text-emerald-50",
+    rowHover: "hover:bg-emerald-50 dark:hover:bg-emerald-950/50",
+    badge:
+      "bg-emerald-700 text-white dark:bg-emerald-400 dark:text-emerald-950",
+    pill: "bg-emerald-700 text-white hover:bg-emerald-800 focus-visible:outline-emerald-600 dark:bg-emerald-400 dark:text-emerald-950 dark:hover:bg-emerald-300",
+    focus:
+      "focus:border-emerald-600 focus:outline-2 focus:outline-emerald-600",
+    text: "text-emerald-800 dark:text-emerald-300",
   },
 };

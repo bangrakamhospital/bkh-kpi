@@ -1,10 +1,13 @@
-import type { DistrictKpiCode } from "@/lib/kpi/types";
+import type { DistrictKpiCode, DistrictOnlyCode } from "@/lib/kpi/types";
 import {
   DISTRICT_ONLY_CATEGORY,
   KPI_CATEGORIES,
   type KpiCategory,
 } from "@/lib/kpi/categories";
-import { DSPM_INDICATOR } from "@/lib/kpi/screening-indicators";
+import {
+  CAVITY_FREE_INDICATOR,
+  DSPM_INDICATOR,
+} from "@/lib/kpi/screening-indicators";
 import { INDICATOR_ROWS } from "./indicator-rows";
 import type { AccentKey } from "./indicator-theme";
 
@@ -22,11 +25,18 @@ export const DISTRICT_ACCENT: Record<DistrictKpiCode, AccentKey> = {
   CKD5: "ckd5",
   STEMI: "stemi",
   DSPM: "dspm",
+  CAVITY_FREE: "cavityFree",
 };
 
 /** District-only indicators (HDC reports without a hospital-page row). */
-const DISTRICT_ONLY_LABEL: Record<keyof typeof DISTRICT_ONLY_CATEGORY, string> =
-  { DSPM: DSPM_INDICATOR.shortName };
+const DISTRICT_ONLY_LABEL: Record<DistrictOnlyCode, string> = {
+  DSPM: DSPM_INDICATOR.shortName,
+  CAVITY_FREE: CAVITY_FREE_INDICATOR.shortName,
+};
+
+function isDistrictOnly(code: DistrictKpiCode): code is DistrictOnlyCode {
+  return code in DISTRICT_ONLY_CATEGORY;
+}
 
 /**
  * Button label = hospital-page number + title (INDICATOR_ROWS), e.g.
@@ -34,7 +44,7 @@ const DISTRICT_ONLY_LABEL: Record<keyof typeof DISTRICT_ONLY_CATEGORY, string> =
  * District-only indicators have no number.
  */
 export function districtLabel(code: DistrictKpiCode): string {
-  if (code === "DSPM") return DISTRICT_ONLY_LABEL[code];
+  if (isDistrictOnly(code)) return DISTRICT_ONLY_LABEL[code];
   const row = INDICATOR_ROWS.find((r) => r.code === code);
   return row ? `${row.no}. ${row.title}` : code;
 }
@@ -53,8 +63,9 @@ export const DISTRICT_CATEGORY_GROUPS: readonly {
     ...INDICATOR_ROWS.flatMap((r) =>
       r.code && r.categoryId === category.id ? [r.code] : [],
     ),
-    ...(Object.keys(DISTRICT_ONLY_CATEGORY) as (keyof typeof DISTRICT_ONLY_CATEGORY)[])
-      .filter((c) => DISTRICT_ONLY_CATEGORY[c] === category.id),
+    ...(Object.keys(DISTRICT_ONLY_CATEGORY) as DistrictOnlyCode[]).filter(
+      (c) => DISTRICT_ONLY_CATEGORY[c] === category.id,
+    ),
   ],
 }));
 

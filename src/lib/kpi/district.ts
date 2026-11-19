@@ -16,6 +16,7 @@ import {
 } from "@/lib/kpi/screening";
 import {
   apportionTargetShare,
+  CAVITY_FREE_INDICATOR,
   CKD5_INDICATOR,
   DSPM_INDICATOR,
   dspmTargetPercent,
@@ -26,6 +27,8 @@ import {
 } from "@/lib/kpi/screening-indicators";
 import type {
   AreaCounts,
+  CavityFreeCounts,
+  DistrictCavityFreeResult,
   DistrictCkd5Result,
   DistrictDspmResult,
   DistrictDspmTambonRow,
@@ -45,13 +48,16 @@ import {
 } from "@/lib/kpi/sql/hdc-common";
 import {
   hisHdcCkd5Source,
+  hisHdcCavityFreeSource,
   hisHdcDistrictSource,
   hisHdcDspmSource,
   hisHdcStemiSource,
+  mockHdcCavityFreeSource,
   mockHdcCkd5Source,
   mockHdcDistrictSource,
   mockHdcDspmSource,
   mockHdcStemiSource,
+  type HdcCavityFreeRaw,
   type HdcCkd5Raw,
   type HdcDistrictRaw,
   type HdcDspmRaw,
@@ -423,6 +429,113 @@ export async function getDistrictStemi(
   };
 }
 
+/* ------------------- district-only HDC reports (shared) ------------------- */
+
+/**
+ * Sub-district rows (all 11) with their villages from raw village-level
+ * rows (several rows per village, e.g. per age group). `sum` adds raw
+ * counts and derives the percentages once per area.
+ */
+function areaBreakdown<R extends { vid: string }, C>(
+  rows: readonly R[],
+  units: readonly HdcUnitFreshnessRaw[],
+  sum: (rows: readonly R[]) => C,
+) {
+  return DISTRICT_TAMBONS.map((t) => {
+    const own = rows.filter((r) => r.vid.startsWith(t.code));
+    const villages = [...new Set(own.map((r) => r.vid))]
+      .map((vid) => ({
+        key: vid,
+        moo: String(Number(vid.slice(6, 8))),
+        ...sum(own.filter((r) => r.vid === vid)),
+      }))
+      .sort(
+        (a, b) =>
+          mooNumber(a.moo) - mooNumber(b.moo) || a.key.localeCompare(b.key),
+      );
+    return {
+      tambonCode: t.code,
+      tambonName: t.name,
+      ...sum(own),
+      ...unitStatus(t, units),
+      villages,
+    };
+  });
+}
+
+/* ------------------------------ Cavity Free ------------------------------- */
+
+const CAVITY_FREE_NOTE =
+  "คำนวณจากแฟ้ม PERSON + DENTAL + PROVIDER ตามนิยามรายงาน HDC (s_dental_0_12_cavity_free) / C = เด็กไทยในอำเภอ (ทะเบียน 1, 3) อายุ 0–5 ปี ณ 1 ม.ค. ของปีงบ / B = ตรวจช่องปากครั้งแรกของปีงบโดยทันตบุคลากร (providertype 02, 06) ที่หน่วยใดก็ได้ในอำเภอ และผ่านเงื่อนไขคุณภาพแฟ้ม DENTAL (HDC จังหวัดนับทุกหน่วยในจังหวัด จึงอาจสูงกว่า) / A = B ที่ DCARIES = 0 และ DEXTRACT = 0 / เกณฑ์คิดจาก A/B";
+
+async function loadCavityFreeRaw(fiscalYear: number): Promise<HdcCavityFreeRaw> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(SCREENING_CACHE_TAG, DISTRICT_CACHE_TAG);
+  const period = resolveScreeningPeriod(fiscalYear, new Date());
+  const ctx = {
+    periodStart: period.range.start,
+    periodEnd: period.range.end,
+    dataAsOf: period.dataAsOf,
+  };
+  return resolveDataSourceKind() === "mock"
+    ? mockHdcCavityFreeSource(ctx)
+    : hisHdcCavityFreeSource(ctx);
+}
+
+function cavityFreeCounts(
+  rows: readonly { target: number; examined: number; cavityFree: number }[],
+): CavityFreeCounts {
+  const target = rows.reduce((s, r) => s + r.target, 0);
+  const examined = rows.reduce((s, r) => s + r.examined, 0);
+  const cavityFree = rows.reduce((s, r) => s + r.cavityFree, 0);
+  return {
+    target,
+    examined,
+    cavityFree,
+    examPercent: toPercent(examined, target),
+    percent: toPercent(cavityFree, examined),
+  };
+}
+
+/** HDC Cavity Free 0–5 per sub-district / village + per age (district). */
+export async function getDistrictCavityFree(
+  fiscalYear: number,
+): Promise<DistrictCavityFreeResult> {
+  await io();
+  const now = new Date();
+  const period = resolveScreeningPeriod(fiscalYear, now);
+  const raw = await loadCavityFreeRaw(period.fy);
+  const ages = [...new Set(raw.rows.map((r) => r.ageYears))].sort(
+    (a, b) => a - b,
+  );
+  return {
+    kind: "cavityFree",
+    code: "CAVITY_FREE",
+    name: CAVITY_FREE_INDICATOR.name,
+    shortName: CAVITY_FREE_INDICATOR.shortName,
+    population: `เด็กไทยอายุ 0–5 ปี (ณ 1 ม.ค. ${period.fy}) ที่อาศัยในอำเภอ (ทะเบียน 1, 3)`,
+    note: `${HDC_NOTE} / ${CAVITY_FREE_NOTE}`,
+    targetPercent: CAVITY_FREE_INDICATOR.targetPercent,
+    targetOperator: CAVITY_FREE_INDICATOR.targetOperator,
+    fiscalYear: period.fy,
+    periodStart: period.range.start,
+    periodEnd: period.range.end,
+    dataAsOf: period.dataAsOf,
+    updatedAt: now.toISOString(),
+    district: {
+      code: DISTRICT_CODE,
+      name: DISTRICT_NAME,
+      ...cavityFreeCounts(raw.rows),
+    },
+    ageGroups: ages.map((ageYears) => ({
+      ageYears,
+      ...cavityFreeCounts(raw.rows.filter((r) => r.ageYears === ageYears)),
+    })),
+    tambons: areaBreakdown(raw.rows, raw.units, cavityFreeCounts),
+  };
+}
+
 /* --------------------------------- DSPM ---------------------------------- */
 
 const DSPM_NOTE =
@@ -490,24 +603,11 @@ export async function getDistrictDspm(
   const period = resolveScreeningPeriod(fiscalYear, now);
   const raw = await loadDspmRaw(period.fy);
 
-  const tambons = DISTRICT_TAMBONS.map((t): DistrictDspmTambonRow => {
-    const rows = raw.rows.filter((r) => r.vid.startsWith(t.code));
-    const vids = [...new Set(rows.map((r) => r.vid))];
-    const villages = vids
-      .map((vid) => ({
-        key: vid,
-        moo: String(Number(vid.slice(6, 8))),
-        ...dspmCounts(rows.filter((r) => r.vid === vid)),
-      }))
-      .sort((a, b) => mooNumber(a.moo) - mooNumber(b.moo) || a.key.localeCompare(b.key));
-    return {
-      tambonCode: t.code,
-      tambonName: t.name,
-      ...dspmCounts(rows),
-      ...unitStatus(t, raw.units),
-      villages,
-    };
-  });
+  const tambons: DistrictDspmTambonRow[] = areaBreakdown(
+    raw.rows,
+    raw.units,
+    dspmCounts,
+  );
 
   return {
     kind: "dspm",
@@ -550,5 +650,6 @@ export async function getDistrictKpi(
   if (code === "CKD5") return getDistrictCkd5(fiscalYear);
   if (code === "STEMI") return getDistrictStemi(fiscalYear);
   if (code === "DSPM") return getDistrictDspm(fiscalYear);
+  if (code === "CAVITY_FREE") return getDistrictCavityFree(fiscalYear);
   return getDistrictScreening(code, fiscalYear);
 }

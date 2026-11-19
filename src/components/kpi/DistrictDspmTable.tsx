@@ -9,6 +9,7 @@ import type {
 } from "@/lib/kpi/types";
 import { meetsTarget, targetOperatorSign } from "@/lib/kpi/screening-indicators";
 import { ACCENTS } from "./indicator-theme";
+import { DistrictUnitFreshness } from "./DistrictUnitFreshness";
 import { ProgressBar } from "./ProgressBar";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 
@@ -185,25 +186,7 @@ function TambonDetail({
         )}
       </div>
 
-      <div>
-        <h3 className="mb-1.5 text-sm font-semibold">
-          ความสดของข้อมูลรายหน่วยบริการ
-        </h3>
-        <ul className="space-y-1.5 text-xs">
-          {row.units.map((u) => (
-            <li
-              key={u.hospcode}
-              className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800"
-            >
-              <span className="block font-medium">{u.name}</span>
-              <span className="block text-zinc-600 dark:text-zinc-400">
-                ส่งข้อมูลบริการล่าสุด:{" "}
-                {u.lastServiceDate ? formatThaiDate(u.lastServiceDate) : "—"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <DistrictUnitFreshness units={row.units} />
     </div>
   );
 }

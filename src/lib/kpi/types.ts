@@ -347,10 +347,17 @@ export interface DistrictScreeningResult {
 }
 
 /**
- * Every indicator of the district page (ratio + CKD5 + STEMI + DSPM).
- * DSPM is district-only (HDC report, no hospital-page row).
+ * Every indicator of the district page (ratio + CKD5 + STEMI + the
+ * district-only HDC reports DSPM / CAVITY_FREE, no hospital-page row).
  */
-export type DistrictKpiCode = DistrictCode | "CKD5" | "STEMI" | "DSPM";
+export type DistrictKpiCode =
+  | DistrictCode
+  | "CKD5"
+  | "STEMI"
+  | DistrictOnlyCode;
+
+/** District-only HDC indicators (see DISTRICT_ONLY_CATEGORY). */
+export type DistrictOnlyCode = "DSPM" | "CAVITY_FREE";
 
 /** Fields shared by every district result. */
 interface DistrictResultBase {
@@ -504,12 +511,58 @@ export interface DistrictDspmResult extends DistrictResultBase {
   tambons: DistrictDspmTambonRow[];
 }
 
+/** Counts of the HDC Cavity Free report (children, by CID). */
+export interface CavityFreeCounts {
+  /** C: Thai residents aged 0–5 on 1 January of the fiscal year. */
+  target: number;
+  /** B: first dental exam of the FY by dental staff, valid record. */
+  examined: number;
+  /** A: B with no caries and no extraction (DCARIES = 0, DEXTRACT = 0). */
+  cavityFree: number;
+  /** E = B / C × 100. */
+  examPercent: number;
+  /** D = A / B × 100 — the indicator. */
+  percent: number;
+}
+
+export interface DistrictCavityFreeVillage extends CavityFreeCounts {
+  key: string;
+  moo: string;
+}
+
+export interface DistrictCavityFreeTambonRow extends CavityFreeCounts {
+  tambonCode: string;
+  tambonName: string;
+  dataAsOf: string | null;
+  units: DistrictUnitStatus[];
+  villages: DistrictCavityFreeVillage[];
+}
+
+export interface DistrictCavityFreeAgeRow extends CavityFreeCounts {
+  /** Full years on 1 January (0–5). */
+  ageYears: number;
+}
+
+/**
+ * HDC "ร้อยละของเด็กอายุ 0-5 ปี ฟันดีไม่มีผุ (Cavity Free) (คน)" per
+ * sub-district / village (aggregates only). targetPercent applies to A/B.
+ */
+export interface DistrictCavityFreeResult extends DistrictResultBase {
+  kind: "cavityFree";
+  code: "CAVITY_FREE";
+  district: CavityFreeCounts & { code: string; name: string };
+  /** District totals per age in full years (0–5). */
+  ageGroups: DistrictCavityFreeAgeRow[];
+  tambons: DistrictCavityFreeTambonRow[];
+}
+
 /** GET /api/kpi/district/screening response, discriminated by `kind`. */
 export type DistrictKpiResult =
   | DistrictScreeningResult
   | DistrictCkd5Result
   | DistrictStemiResult
-  | DistrictDspmResult;
+  | DistrictDspmResult
+  | DistrictCavityFreeResult;
 
 /* ---------------- district person list (HDC, login required) ---------------- */
 

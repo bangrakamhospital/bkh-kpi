@@ -108,6 +108,26 @@ export const DSPM_INDICATOR = {
   suspectTargetPercent: number;
 };
 
+/**
+ * District-only (HDC) — ร้อยละของเด็กอายุ 0-5 ปี ฟันดีไม่มีผุ (Cavity Free)
+ * (คน). HDC report abt2t2k4z4xeqzytwbave (ข้อมูลตอบสนอง Service Plan >
+ * สาขาสุขภาพช่องปาก), template สำนักทันตสาธารณสุข v.11022025: target 80%
+ * (A/B). SQL: `@/lib/kpi/sql/hdc-cavity-free.ts`.
+ */
+export const CAVITY_FREE_INDICATOR = {
+  code: "CAVITY_FREE",
+  name: "ร้อยละของเด็กอายุ 0-5 ปี ฟันดีไม่มีผุ (Cavity Free) (คน)",
+  shortName: "เด็ก 0-5 ปี ฟันดีไม่มีผุ (Cavity Free)",
+  targetPercent: 80,
+  targetOperator: ">=",
+} as const satisfies {
+  code: "CAVITY_FREE";
+  name: string;
+  shortName: string;
+  targetPercent: number;
+  targetOperator: TargetOperator;
+};
+
 /** สมวัย target of the fiscal year (latest defined year at or before it). */
 export function dspmTargetPercent(fiscalYear: number): number {
   const byYear: Record<number, number> = DSPM_INDICATOR.targetPercentByFiscalYear;

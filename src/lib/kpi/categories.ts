@@ -3,7 +3,7 @@
  * /district = HDC). Client-safe (constants only).
  */
 
-import type { ScreeningCode } from "./types";
+import type { DistrictOnlyCode, ScreeningCode } from "./types";
 
 export const CATEGORY_IDS = [
   "population",
@@ -72,8 +72,9 @@ export const INDICATOR_CATEGORY: Record<ScreeningCode, CategoryId> = {
 };
 
 /** Category of district-only indicators (HDC, no hospital-page row). */
-export const DISTRICT_ONLY_CATEGORY: Record<"DSPM", CategoryId> = {
+export const DISTRICT_ONLY_CATEGORY: Record<DistrictOnlyCode, CategoryId> = {
   DSPM: "early-childhood",
+  CAVITY_FREE: "dental",
 };
 
 export function categoryAnchorId(id: CategoryId): string {
