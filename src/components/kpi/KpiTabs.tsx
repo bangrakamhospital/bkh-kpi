@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, HandCoins, HeartPulse, MapPinned, Target, Truck, Users } from "lucide-react";
+import { Building2, FileCheck2, HandCoins, HeartPulse, MapPinned, Target, Truck, Users } from "lucide-react";
 
 const TABS = [
   { href: "/", label: "ผู้รับบริการ", Icon: Users },
@@ -12,6 +12,7 @@ const TABS = [
   { href: "/clinic", label: "ประมาณการรายได้แยกคลินิก", Icon: HeartPulse },
   { href: "/district", label: "ตัวชี้วัดทั้งอำเภอ / PP รายได้อำเภอ", Icon: MapPinned },
   { href: "/strategy", label: "ยุทธศาสตร์ & HA", Icon: Target },
+  { href: "/f43", label: "ตรวจ 43 แฟ้ม", Icon: FileCheck2 },
 ] as const;
 
 export function KpiTabs() {

@@ -26,7 +26,7 @@ function formatShortThai(iso: string): string {
   return dateFormat.format(new Date(Date.UTC(y, m - 1, d)));
 }
 
-function DateField({
+export function DateField({
   id,
   label,
   value,
