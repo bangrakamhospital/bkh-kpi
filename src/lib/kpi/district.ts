@@ -17,6 +17,8 @@ import {
 import {
   apportionTargetShare,
   CKD5_INDICATOR,
+  DSPM_INDICATOR,
+  dspmTargetPercent,
   reductionPercentOf,
   SCREENING_INDICATORS,
   screeningCountWindow,
@@ -25,7 +27,10 @@ import {
 import type {
   AreaCounts,
   DistrictCkd5Result,
+  DistrictDspmResult,
+  DistrictDspmTambonRow,
   DistrictKpiCode,
+  DspmCounts,
   DistrictKpiResult,
   DistrictStemiResult,
   DistrictUnitStatus,
@@ -41,16 +46,21 @@ import {
 import {
   hisHdcCkd5Source,
   hisHdcDistrictSource,
+  hisHdcDspmSource,
   hisHdcStemiSource,
   mockHdcCkd5Source,
   mockHdcDistrictSource,
+  mockHdcDspmSource,
   mockHdcStemiSource,
   type HdcCkd5Raw,
   type HdcDistrictRaw,
+  type HdcDspmRaw,
   type HdcStemiRaw,
   type HdcUnitFreshnessRaw,
 } from "./sources/district-hdc";
 import { previousYearComparable } from "./sql/hdc-ckd5";
+import { DSPM_AGE_MONTHS } from "./sql/hdc-dspm";
+import { todayIsoDate } from "./fiscal-year";
 
 /**
  * District KPI (อ.บางระกำ): อำเภอ -> ตำบล -> หมู่ for DISTRICT_CODES
@@ -413,6 +423,122 @@ export async function getDistrictStemi(
   };
 }
 
+/* --------------------------------- DSPM ---------------------------------- */
+
+const DSPM_NOTE =
+  "คำนวณจากแฟ้ม PERSON + SPECIALPP ตามนิยามรายงาน HDC (s_childdev_specialpp) / เป้าหมาย = เด็กไทยในอำเภอ (ทะเบียน 1, 3) ที่อายุครบ 9, 18, 30, 42, 60 เดือน ในปีงบ (ทั้งปีงบ เหมือน HDC) / คัดกรองภายใน 30 วันหลังอายุครบ ที่หน่วยบริการใดก็ได้ในอำเภอ (HDC จังหวัดนับทุกหน่วยในจังหวัด จึงอาจสูงกว่า) / สมวัย = สมวัยครั้งแรก + สงสัยล่าช้าแล้วติดตามกระตุ้นได้สมวัยภายใน 30 วัน / บางหน่วยส่ง SPECIALPP รหัสว่าง จะไม่ถูกนับ";
+
+async function loadDspmRaw(fiscalYear: number): Promise<HdcDspmRaw> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(SCREENING_CACHE_TAG, DISTRICT_CACHE_TAG);
+  const now = new Date();
+  const period = resolveScreeningPeriod(fiscalYear, now);
+  const ctx = {
+    periodStart: period.range.start,
+    periodEnd: period.range.end,
+    today: todayIsoDate(now),
+    dataAsOf: period.dataAsOf,
+  };
+  return resolveDataSourceKind() === "mock"
+    ? mockHdcDspmSource(ctx)
+    : hisHdcDspmSource(ctx);
+}
+
+type DspmRaw = Omit<
+  DspmCounts,
+  "screenPercent" | "suspectPercent" | "followPercent" | "normalPercent"
+>;
+
+const DSPM_ZERO: DspmRaw = {
+  target: 0,
+  screened: 0,
+  normalFirst: 0,
+  suspectWait: 0,
+  suspectRefer: 0,
+  followed: 0,
+  normalAfter: 0,
+  delayedAfter: 0,
+  waiting: 0,
+  lost: 0,
+};
+
+const DSPM_KEYS = Object.keys(DSPM_ZERO) as (keyof DspmRaw)[];
+
+/** Sum the raw counts, then derive the 4 percentages once. */
+function dspmCounts(rows: readonly DspmRaw[]): DspmCounts {
+  const sum = { ...DSPM_ZERO };
+  for (const r of rows) for (const k of DSPM_KEYS) sum[k] += r[k];
+  return {
+    ...sum,
+    screenPercent: toPercent(sum.screened, sum.target),
+    suspectPercent: toPercent(sum.suspectWait + sum.suspectRefer, sum.screened),
+    followPercent: toPercent(sum.followed, sum.suspectWait),
+    normalPercent: toPercent(sum.normalFirst + sum.normalAfter, sum.target),
+  };
+}
+
+/**
+ * HDC DSPM report per sub-district / village + district totals per age
+ * group. Aggregates only (no person list).
+ */
+export async function getDistrictDspm(
+  fiscalYear: number,
+): Promise<DistrictDspmResult> {
+  await io();
+  const now = new Date();
+  const period = resolveScreeningPeriod(fiscalYear, now);
+  const raw = await loadDspmRaw(period.fy);
+
+  const tambons = DISTRICT_TAMBONS.map((t): DistrictDspmTambonRow => {
+    const rows = raw.rows.filter((r) => r.vid.startsWith(t.code));
+    const vids = [...new Set(rows.map((r) => r.vid))];
+    const villages = vids
+      .map((vid) => ({
+        key: vid,
+        moo: String(Number(vid.slice(6, 8))),
+        ...dspmCounts(rows.filter((r) => r.vid === vid)),
+      }))
+      .sort((a, b) => mooNumber(a.moo) - mooNumber(b.moo) || a.key.localeCompare(b.key));
+    return {
+      tambonCode: t.code,
+      tambonName: t.name,
+      ...dspmCounts(rows),
+      ...unitStatus(t, raw.units),
+      villages,
+    };
+  });
+
+  return {
+    kind: "dspm",
+    code: "DSPM",
+    name: DSPM_INDICATOR.name,
+    shortName: DSPM_INDICATOR.shortName,
+    population:
+      "เด็กไทยอายุ 9, 18, 30, 42, 60 เดือน ที่อาศัยในอำเภอ (ทะเบียน 1, 3)",
+    note: `${HDC_NOTE} / ${DSPM_NOTE}`,
+    targetPercent: dspmTargetPercent(period.fy),
+    targetOperator: DSPM_INDICATOR.targetOperator,
+    screenTargetPercent: DSPM_INDICATOR.screenTargetPercent,
+    suspectTargetPercent: DSPM_INDICATOR.suspectTargetPercent,
+    fiscalYear: period.fy,
+    periodStart: period.range.start,
+    periodEnd: period.range.end,
+    dataAsOf: period.dataAsOf,
+    updatedAt: now.toISOString(),
+    district: {
+      code: DISTRICT_CODE,
+      name: DISTRICT_NAME,
+      ...dspmCounts(raw.rows),
+    },
+    ageGroups: DSPM_AGE_MONTHS.map((ageMonths) => ({
+      ageMonths,
+      ...dspmCounts(raw.rows.filter((r) => r.ageMonths === ageMonths)),
+    })),
+    tambons,
+  };
+}
+
 /**
  * Dispatcher for the district API / page. STEMI requires a session check
  * by the caller BEFORE calling this.
@@ -423,5 +549,6 @@ export async function getDistrictKpi(
 ): Promise<DistrictKpiResult> {
   if (code === "CKD5") return getDistrictCkd5(fiscalYear);
   if (code === "STEMI") return getDistrictStemi(fiscalYear);
+  if (code === "DSPM") return getDistrictDspm(fiscalYear);
   return getDistrictScreening(code, fiscalYear);
 }

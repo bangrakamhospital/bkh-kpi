@@ -13,6 +13,12 @@ import {
 } from "@/lib/kpi/sql/hdc-screening";
 import { HDC_CKD5_VILLAGE_SQL, hdcCkd5Params } from "@/lib/kpi/sql/hdc-ckd5";
 import { HDC_STEMI_TOTALS_SQL, hdcStemiParams } from "@/lib/kpi/sql/hdc-stemi";
+import {
+  DSPM_AGE_MONTHS,
+  HDC_DSPM_VILLAGE_SQL,
+  hdcDspmParams,
+  type HdcDspmContext,
+} from "@/lib/kpi/sql/hdc-dspm";
 import type { DistrictCode } from "@/lib/kpi/types";
 import { decryptHdc } from "@/lib/kpi/hdc-crypto";
 
@@ -222,6 +228,110 @@ export async function hisHdcStemiSource(
     episodes: Number(rows[0]?.episodes ?? 0),
     deaths: Number(rows[0]?.deaths ?? 0),
   };
+}
+
+/* --------------------------------- DSPM ---------------------------------- */
+
+/** Raw DSPM counts of one village × age group (see hdc-dspm.ts). */
+export interface HdcDspmRowRaw {
+  vid: string;
+  ageMonths: number;
+  target: number;
+  screened: number;
+  normalFirst: number;
+  suspectWait: number;
+  suspectRefer: number;
+  followed: number;
+  normalAfter: number;
+  delayedAfter: number;
+  waiting: number;
+  lost: number;
+}
+
+export interface HdcDspmRaw {
+  rows: HdcDspmRowRaw[];
+  units: HdcUnitFreshnessRaw[];
+}
+
+interface DspmRow extends RowDataPacket {
+  vid: string | null;
+  age_months: number | string;
+  target: number | string | null;
+  screened: number | string | null;
+  normal_first: number | string | null;
+  suspect_wait: number | string | null;
+  suspect_refer: number | string | null;
+  followed: number | string | null;
+  normal_after: number | string | null;
+  delayed_after: number | string | null;
+  waiting: number | string | null;
+  lost: number | string | null;
+}
+
+const n = (v: number | string | null | undefined) => Number(v ?? 0);
+
+export async function hisHdcDspmSource(
+  ctx: HdcDspmContext & { dataAsOf: string },
+): Promise<HdcDspmRaw> {
+  const [rows, units] = await Promise.all([
+    hdcQuery<DspmRow>(HDC_DSPM_VILLAGE_SQL, hdcDspmParams(ctx)),
+    loadFreshness(ctx.dataAsOf),
+  ]);
+  return {
+    rows: rows
+      .filter((r): r is DspmRow & { vid: string } => !!r.vid)
+      .map((r) => ({
+        vid: r.vid,
+        ageMonths: n(r.age_months),
+        target: n(r.target),
+        screened: n(r.screened),
+        normalFirst: n(r.normal_first),
+        suspectWait: n(r.suspect_wait),
+        suspectRefer: n(r.suspect_refer),
+        followed: n(r.followed),
+        normalAfter: n(r.normal_after),
+        delayedAfter: n(r.delayed_after),
+        waiting: n(r.waiting),
+        lost: n(r.lost),
+      })),
+    units,
+  };
+}
+
+/** Deterministic fake DSPM counts (KPI_DATA_SOURCE=mock). */
+export async function mockHdcDspmSource(
+  ctx: HdcDspmContext & { dataAsOf: string },
+): Promise<HdcDspmRaw> {
+  const rows: HdcDspmRowRaw[] = DISTRICT_TAMBONS.flatMap((t, ti) =>
+    [1, 2, 3, 4].flatMap((moo) =>
+      DSPM_AGE_MONTHS.map((ageMonths, ai): HdcDspmRowRaw => {
+        const target = 3 + ((ti + moo + ai) % 5);
+        const screened = Math.max(0, target - ((ti + ai) % 2));
+        const suspectWait = (moo + ai) % 3 === 0 ? 1 : 0;
+        const followed = suspectWait;
+        return {
+          vid: `${t.code}${String(moo).padStart(2, "0")}`,
+          ageMonths,
+          target,
+          screened,
+          normalFirst: screened - suspectWait,
+          suspectWait,
+          suspectRefer: 0,
+          followed,
+          normalAfter: followed,
+          delayedAfter: 0,
+          waiting: 0,
+          lost: 0,
+        };
+      }),
+    ),
+  );
+  const { units } = await mockHdcDistrictSource("DM", {
+    periodStart: ctx.periodStart,
+    countFrom: ctx.periodStart,
+    dataAsOf: ctx.dataAsOf,
+  });
+  return { rows, units };
 }
 
 export async function mockHdcCkd5Source(

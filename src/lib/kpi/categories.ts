@@ -71,6 +71,11 @@ export const INDICATOR_CATEGORY: Record<ScreeningCode, CategoryId> = {
   STEMI: "cvd",
 };
 
+/** Category of district-only indicators (HDC, no hospital-page row). */
+export const DISTRICT_ONLY_CATEGORY: Record<"DSPM", CategoryId> = {
+  DSPM: "early-childhood",
+};
+
 export function categoryAnchorId(id: CategoryId): string {
   return `cat-${id}`;
 }

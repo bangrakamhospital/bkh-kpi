@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { CalendarDays, Clock, Info } from "lucide-react";
-import { getDistrictCkd5, getDistrictScreening } from "@/lib/kpi/district";
+import {
+  getDistrictCkd5,
+  getDistrictDspm,
+  getDistrictScreening,
+} from "@/lib/kpi/district";
 import {
   DISTRICT_KPI_CODES,
   HDC_MIN_FISCAL_YEAR,
@@ -10,10 +14,12 @@ import {
 import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
 import {
   CKD5_INDICATOR,
+  DSPM_INDICATOR,
   SCREENING_INDICATORS,
 } from "@/lib/kpi/screening-indicators";
 import type {
   DistrictCkd5Result,
+  DistrictDspmResult,
   DistrictKpiCode,
   DistrictScreeningResult,
 } from "@/lib/kpi/types";
@@ -25,6 +31,7 @@ import {
 import { CategoryChipBar } from "./CategoryChipBar";
 import { FiscalYearSelect } from "./FiscalYearSelect";
 import { DistrictCkd5Table } from "./DistrictCkd5Table";
+import { DistrictDspmTable } from "./DistrictDspmTable";
 import { DistrictScreeningTable } from "./DistrictScreeningTable";
 import { DistrictStemiPanel } from "./DistrictStemiPanel";
 import { ACCENTS } from "./indicator-theme";
@@ -85,7 +92,9 @@ const visibleGroups = DISTRICT_CATEGORY_GROUPS.filter(
 );
 
 function indicatorName(code: DistrictKpiCode): string {
-  return code === "CKD5" ? CKD5_INDICATOR.name : SCREENING_INDICATORS[code].name;
+  if (code === "CKD5") return CKD5_INDICATOR.name;
+  if (code === "DSPM") return DSPM_INDICATOR.name;
+  return SCREENING_INDICATORS[code].name;
 }
 
 export async function DistrictScreening({
@@ -188,12 +197,14 @@ export async function DistrictScreening({
     );
   }
 
-  let result: DistrictScreeningResult | DistrictCkd5Result;
+  let result: DistrictScreeningResult | DistrictCkd5Result | DistrictDspmResult;
   try {
     result =
       code === "CKD5"
         ? await getDistrictCkd5(parsedFy.year)
-        : await getDistrictScreening(code, parsedFy.year);
+        : code === "DSPM"
+          ? await getDistrictDspm(parsedFy.year)
+          : await getDistrictScreening(code, parsedFy.year);
   } catch {
     return (
       <div className="space-y-4">
@@ -206,7 +217,9 @@ export async function DistrictScreening({
   const noData =
     result.kind === "ratio"
       ? result.tambons.every((t) => !t.error && t.numerator === 0)
-      : result.district.currentCases === 0;
+      : result.kind === "dspm"
+        ? result.district.screened === 0
+        : result.district.currentCases === 0;
 
   return (
     <div className="space-y-4">
@@ -232,6 +245,8 @@ export async function DistrictScreening({
 
       {result.kind === "ratio" ? (
         <DistrictScreeningTable result={result} />
+      ) : result.kind === "dspm" ? (
+        <DistrictDspmTable result={result} />
       ) : (
         <DistrictCkd5Table result={result} />
       )}

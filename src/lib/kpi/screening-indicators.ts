@@ -82,6 +82,42 @@ export const CKD5_INDICATOR = {
   unknownVillageName: string;
 };
 
+/**
+ * District-only (HDC) — ร้อยละของเด็กอายุ 0-5 ปี มีพัฒนาการสมวัย (DSPM).
+ * HDC standard report 2238b7879f442749bd1804032119e824 (รายงานมาตรฐาน >
+ * ส่งเสริมป้องกัน > อนามัยแม่และเด็ก), template กรมอนามัย v.07112023:
+ * สมวัย target 87 / 88 / 89% for FY 2568 / 2569 / 2570 (แผนฯ ฉบับที่ 13);
+ * report charts: screening >= 90%, suspected delay found >= 20%.
+ * SQL: `@/lib/kpi/sql/hdc-dspm.ts`.
+ */
+export const DSPM_INDICATOR = {
+  code: "DSPM",
+  name: "ร้อยละของเด็กอายุ 0-5 ปี มีพัฒนาการสมวัย (DSPM)",
+  shortName: "เด็ก 0-5 ปี พัฒนาการสมวัย (DSPM)",
+  targetPercentByFiscalYear: { 2568: 87, 2569: 88, 2570: 89 },
+  targetOperator: ">=",
+  screenTargetPercent: 90,
+  suspectTargetPercent: 20,
+} as const satisfies {
+  code: "DSPM";
+  name: string;
+  shortName: string;
+  targetPercentByFiscalYear: Record<number, number>;
+  targetOperator: TargetOperator;
+  screenTargetPercent: number;
+  suspectTargetPercent: number;
+};
+
+/** สมวัย target of the fiscal year (latest defined year at or before it). */
+export function dspmTargetPercent(fiscalYear: number): number {
+  const byYear: Record<number, number> = DSPM_INDICATOR.targetPercentByFiscalYear;
+  const years = Object.keys(byYear)
+    .map(Number)
+    .sort((a, b) => a - b);
+  const year = years.filter((y) => y <= fiscalYear).pop() ?? years[0];
+  return byYear[year];
+}
+
 /** Reduction percent ((B - A) / B x 100, 2 decimals); null when B is 0. */
 export function reductionPercentOf(
   currentCases: number,

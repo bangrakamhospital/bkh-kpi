@@ -1,4 +1,5 @@
 import {
+  Baby,
   Beaker,
   ClipboardCheck,
   Droplet,
@@ -23,7 +24,8 @@ export type AccentKey =
   | "ldl"
   | "creatinine"
   | "ckd5"
-  | "stemi";
+  | "stemi"
+  | "dspm";
 
 interface AccentTheme {
   Icon: LucideIcon;
@@ -209,5 +211,19 @@ export const ACCENTS: Record<AccentKey, AccentTheme> = {
     pill: "bg-red-700 text-white hover:bg-red-800 focus-visible:outline-red-600 dark:bg-red-400 dark:text-red-950 dark:hover:bg-red-300",
     focus: "focus:border-red-600 focus:outline-2 focus:outline-red-600",
     text: "text-red-800 dark:text-red-300",
+  },
+  dspm: {
+    Icon: Baby,
+    iconBg: "bg-lime-100 text-lime-800 dark:bg-lime-950 dark:text-lime-300",
+    bar: "bg-lime-600 dark:bg-lime-400",
+    band: "from-lime-700 to-lime-900",
+    soft: "bg-lime-50 dark:bg-lime-950/40",
+    thead: "bg-lime-100 text-lime-900 dark:bg-lime-950 dark:text-lime-200",
+    footer: "bg-lime-200 text-lime-950 dark:bg-lime-900 dark:text-lime-50",
+    rowHover: "hover:bg-lime-50 dark:hover:bg-lime-950/50",
+    badge: "bg-lime-700 text-white dark:bg-lime-400 dark:text-lime-950",
+    pill: "bg-lime-700 text-white hover:bg-lime-800 focus-visible:outline-lime-600 dark:bg-lime-400 dark:text-lime-950 dark:hover:bg-lime-300",
+    focus: "focus:border-lime-600 focus:outline-2 focus:outline-lime-600",
+    text: "text-lime-800 dark:text-lime-300",
   },
 };
