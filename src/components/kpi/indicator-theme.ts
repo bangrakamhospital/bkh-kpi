@@ -1,4 +1,5 @@
 import {
+  Baby,
   Beaker,
   ClipboardCheck,
   Droplet,
@@ -7,6 +8,7 @@ import {
   HeartPulse,
   Ribbon,
   ShieldCheck,
+  Smile,
   Stethoscope,
   TestTube,
 } from "lucide-react";
@@ -23,7 +25,9 @@ export type AccentKey =
   | "ldl"
   | "creatinine"
   | "ckd5"
-  | "stemi";
+  | "stemi"
+  | "dspm"
+  | "cavityFree";
 
 interface AccentTheme {
   Icon: LucideIcon;
@@ -209,5 +213,38 @@ export const ACCENTS: Record<AccentKey, AccentTheme> = {
     pill: "bg-red-700 text-white hover:bg-red-800 focus-visible:outline-red-600 dark:bg-red-400 dark:text-red-950 dark:hover:bg-red-300",
     focus: "focus:border-red-600 focus:outline-2 focus:outline-red-600",
     text: "text-red-800 dark:text-red-300",
+  },
+  dspm: {
+    Icon: Baby,
+    iconBg: "bg-lime-100 text-lime-800 dark:bg-lime-950 dark:text-lime-300",
+    bar: "bg-lime-600 dark:bg-lime-400",
+    band: "from-lime-700 to-lime-900",
+    soft: "bg-lime-50 dark:bg-lime-950/40",
+    thead: "bg-lime-100 text-lime-900 dark:bg-lime-950 dark:text-lime-200",
+    footer: "bg-lime-200 text-lime-950 dark:bg-lime-900 dark:text-lime-50",
+    rowHover: "hover:bg-lime-50 dark:hover:bg-lime-950/50",
+    badge: "bg-lime-700 text-white dark:bg-lime-400 dark:text-lime-950",
+    pill: "bg-lime-700 text-white hover:bg-lime-800 focus-visible:outline-lime-600 dark:bg-lime-400 dark:text-lime-950 dark:hover:bg-lime-300",
+    focus: "focus:border-lime-600 focus:outline-2 focus:outline-lime-600",
+    text: "text-lime-800 dark:text-lime-300",
+  },
+  cavityFree: {
+    Icon: Smile,
+    iconBg:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+    bar: "bg-emerald-600 dark:bg-emerald-400",
+    band: "from-emerald-700 to-emerald-900",
+    soft: "bg-emerald-50 dark:bg-emerald-950/40",
+    thead:
+      "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+    footer:
+      "bg-emerald-200 text-emerald-950 dark:bg-emerald-900 dark:text-emerald-50",
+    rowHover: "hover:bg-emerald-50 dark:hover:bg-emerald-950/50",
+    badge:
+      "bg-emerald-700 text-white dark:bg-emerald-400 dark:text-emerald-950",
+    pill: "bg-emerald-700 text-white hover:bg-emerald-800 focus-visible:outline-emerald-600 dark:bg-emerald-400 dark:text-emerald-950 dark:hover:bg-emerald-300",
+    focus:
+      "focus:border-emerald-600 focus:outline-2 focus:outline-emerald-600",
+    text: "text-emerald-800 dark:text-emerald-300",
   },
 };
