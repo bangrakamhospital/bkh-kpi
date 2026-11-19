@@ -46,3 +46,6 @@ DEPLOY_GUIDE*.md
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# reference files only (contain patient data) — never commit
+/info/
