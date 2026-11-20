@@ -270,9 +270,15 @@ export type DistrictCode =
  * RLU_HBA1C_REPEAT = HDC 11.1 (KPI Template 30.2): % of DM patients tested
  * for HbA1c who had a repeat test within 90 days — LOWER is better.
  * RLU_LDL_REPEAT = HDC 11.2 (KPI Template 30.4): the same for LDL.
+ * RLU_CHOL_REPEAT / RLU_TG_REPEAT = HDC 11.6 / 11.7 (KPI Template 30.7 /
+ * 30.9): HT patients, Total Cholesterol / Triglycerides.
  * Meta: DISTRICT_ONLY_RATIO_INDICATORS (`@/lib/kpi/screening-indicators`).
  */
-export type DistrictOnlyRatioCode = "RLU_HBA1C_REPEAT" | "RLU_LDL_REPEAT";
+export type DistrictOnlyRatioCode =
+  | "RLU_HBA1C_REPEAT"
+  | "RLU_LDL_REPEAT"
+  | "RLU_CHOL_REPEAT"
+  | "RLU_TG_REPEAT";
 
 /** Raw counts + derived B / percent of one area (same maths as the headline). */
 export interface AreaCounts {

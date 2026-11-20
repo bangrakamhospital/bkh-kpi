@@ -314,17 +314,37 @@ export const HDC_RLU_LABTEST: Record<HdcRluCode, readonly string[]> = {
  *   [:countFrom, :dataAsOf] at ANY unit; "result" = labresult starts with a
  *   number (optionally '<' / '>'), same rule as HOSxP.
  */
-const DM_PATIENT_CTE = `
-dm_patient AS (
+function chronicPatientCte(
+  name: string,
+  icdFrom: string,
+  icdToExclusive: string,
+): string {
+  if (!/^[a-z_]+$/.test(name)) throw new Error("invalid CTE name");
+  if (!/^[A-Z][0-9]{2}$/.test(icdFrom) || !/^[A-Z][0-9]{2}$/.test(icdToExclusive)) {
+    throw new Error("invalid ICD-10 bound");
+  }
+  return `
+${name} AS (
   SELECT c.cid
   FROM chronic c
-  WHERE c.chronic >= 'E10' AND c.chronic < 'E15'
+  WHERE c.chronic >= '${icdFrom}' AND c.chronic < '${icdToExclusive}'
     AND c.date_diag <= :dataAsOf
   GROUP BY c.cid
   HAVING SUM(c.typedisch = '02') = 0
      AND SUM(COALESCE(c.typedisch, '') IN ('', '03', '04', '05', '11')
              OR (c.hospcode = :hospitalCode AND c.typedisch = '01')) > 0
 )`;
+}
+
+/** `dm_patient(cid)`: CHRONIC E10–E14, still under treatment (rule above). */
+const DM_PATIENT_CTE = chronicPatientCte("dm_patient", "E10", "E15");
+
+/**
+ * `ht_patient(cid)`: CHRONIC I10–I15, same status rule as dm_patient
+ * (11252 exports 13.0k of 13.3k HT records as '01' หาย, other units
+ * mostly '03').
+ */
+const HT_PATIENT_CTE = chronicPatientCte("ht_patient", "I10", "I16");
 
 /** LABFU "has a result": labresult starts with a number (optionally '<' / '>'). */
 const LAB_RESULT_WHERE = "l.labresult REGEXP '^[<>]?[ ]*[0-9]'";
@@ -352,14 +372,49 @@ screened AS (
     }));
 }
 
-/* ---- RLU 11.1 / 11.2 (KPI Template 30.2 / 30.4) repeat within 90 days ---- */
+/* -- RLU 11.1 / 11.2 / 11.6 / 11.7 (KPI Template 30.2 / 30.4 / 30.7 / 30.9) -- */
 
-export type HdcRluRepeatCode = "RLU_HBA1C_REPEAT" | "RLU_LDL_REPEAT";
+export type HdcRluRepeatCode =
+  | "RLU_HBA1C_REPEAT"
+  | "RLU_LDL_REPEAT"
+  | "RLU_CHOL_REPEAT"
+  | "RLU_TG_REPEAT";
 
-/** LABFU codes of each repeat indicator (same codes as 11.3–11.5). */
-const HDC_RLU_REPEAT_LABTEST: Record<HdcRluRepeatCode, readonly string[]> = {
-  RLU_HBA1C_REPEAT: HDC_RLU_LABTEST.RLU_HBA1C,
-  RLU_LDL_REPEAT: HDC_RLU_LABTEST.RLU_LDL,
+interface RluRepeatSource {
+  /** LABFU.labtest codes. */
+  labtest: readonly string[];
+  /** Patient CTE SQL; it defines the CTE named by `patient`. */
+  patientCte: string;
+  patient: "dm_patient" | "ht_patient";
+}
+
+/**
+ * Lab + patient group of each repeat indicator. DM: same LABFU codes as
+ * 11.3–11.5. HT (c_labfu_labtest, db-cli --conn 2): 0541602
+ * 'Cholesterol, total, serum/plasma' (~28k), 0546602 'Triglycerides,
+ * serum/plasma' (~27k).
+ */
+const HDC_RLU_REPEAT: Record<HdcRluRepeatCode, RluRepeatSource> = {
+  RLU_HBA1C_REPEAT: {
+    labtest: HDC_RLU_LABTEST.RLU_HBA1C,
+    patientCte: DM_PATIENT_CTE,
+    patient: "dm_patient",
+  },
+  RLU_LDL_REPEAT: {
+    labtest: HDC_RLU_LABTEST.RLU_LDL,
+    patientCte: DM_PATIENT_CTE,
+    patient: "dm_patient",
+  },
+  RLU_CHOL_REPEAT: {
+    labtest: ["0541602"],
+    patientCte: HT_PATIENT_CTE,
+    patient: "ht_patient",
+  },
+  RLU_TG_REPEAT: {
+    labtest: ["0546602"],
+    patientCte: HT_PATIENT_CTE,
+    patient: "ht_patient",
+  },
 };
 
 /** A repeat = a test less than this many days after the previous test. */
@@ -374,14 +429,26 @@ export const RLU_REPEAT_DAYS = 90;
 export const RLU_COPY_DAYS = 7;
 
 /**
- * RLU 11.1 / 11.2 (KPI Template 30.2 C/D, 30.4 G/H, persons):
- * B (D) = DM patients among `residents` (same dm_patient rule as 11.3)
- *   with >= 1 test result in [:countFrom, :dataAsOf] at ANY unit.
+ * Same result value from a DIFFERENT unit within this many days = a copy
+ * too (a รพ.สต. back-keying the hospital result under a later date). FY
+ * 2569 LDL: cross-unit pairs 8–89 days apart with the same value 27 of 53,
+ * same-unit 1 of 135 (07529 re-keyed ~45 old 11252 results on 22–26 Dec
+ * 2025). User decision 2026-11-20.
+ */
+export const RLU_CROSS_UNIT_COPY_DAYS = 90;
+
+/**
+ * RLU 11.1 / 11.2 / 11.6 / 11.7 (KPI Template 30.2 C/D, 30.4 G/H,
+ * 30.7 M/N, 30.9 Q/R, persons):
+ * B = DM (11.1 / 11.2, dm_patient as 11.3) or HT (11.6 / 11.7,
+ *   ht_patient) patients among `residents` with >= 1 test result in
+ *   [:countFrom, :dataAsOf] at ANY unit.
  * A (C) = members of B with two consecutive test days less than
  *   :repeatDays apart, both inside the window.
  * Test days (`lab_day`): LABFU results of the test, then
- *   1. a record with the same (rounded) value as an earlier record of the
- *      person within :copyDays is a copy and dropped (lab_copy);
+ *   1. a record with the same (rounded) value as the person's previous
+ *      same-value record within :copyDays (any unit), or within
+ *      :crossUnitCopyDays at another unit, is a copy and dropped (lab_copy);
  *   2. remaining records are collapsed to one per person per day (several
  *      units on the same day = one test).
  * screened.first_key = date + unit of the FIRST repeat test (the later
@@ -389,24 +456,28 @@ export const RLU_COPY_DAYS = 7;
  * Pre-FY tests are not looked at (HDC has none before FY 2569).
  */
 function rluRepeatSql(code: HdcRluRepeatCode): HdcScreeningSqlSet {
-  const withClause = `${RESIDENTS_CTE},${DM_PATIENT_CTE},
+  const src = HDC_RLU_REPEAT[code];
+  const withClause = `${RESIDENTS_CTE},${src.patientCte},
 lab_rec AS (
   SELECT l.cid, l.date_serv, l.hospcode, ROUND(l.labresult + 0, 1) AS val
   FROM labfu l
-  WHERE l.labtest IN (${sqlCodeList(HDC_RLU_REPEAT_LABTEST[code])})
+  WHERE l.labtest IN (${sqlCodeList(src.labtest)})
     AND l.date_serv >= :countFrom
     AND l.date_serv <= :dataAsOf
     AND ${LAB_RESULT_WHERE}
     -- exclude records not linked to a visit (empty SEQ): FY 2569 11252
     -- has ~1,100 such HbA1c and ~1,060 LDL rows (Feb–Mar, incl. Sundays)
-    -- absent from HOSxP
+    -- absent from HOSxP; applied to every unit and test
     AND l.seq IS NOT NULL AND l.seq <> ''
 ),
 lab_copy AS (
   SELECT r.cid, r.date_serv, r.hospcode,
          LAG(r.date_serv) OVER (
            PARTITION BY r.cid, r.val ORDER BY r.date_serv, r.hospcode
-         ) AS same_value_prev
+         ) AS same_value_prev,
+         LAG(r.hospcode) OVER (
+           PARTITION BY r.cid, r.val ORDER BY r.date_serv, r.hospcode
+         ) AS same_value_prev_unit
   FROM lab_rec r
 ),
 lab_day AS (
@@ -414,7 +485,9 @@ lab_day AS (
   FROM lab_copy c
   WHERE c.same_value_prev IS NULL
      OR c.same_value_prev = c.date_serv
-     OR DATEDIFF(c.date_serv, c.same_value_prev) > :copyDays
+     OR (DATEDIFF(c.date_serv, c.same_value_prev) > :copyDays
+         AND (c.same_value_prev_unit = c.hospcode
+              OR DATEDIFF(c.date_serv, c.same_value_prev) > :crossUnitCopyDays))
   GROUP BY c.cid, c.date_serv
 ),
 lab_gap AS (
@@ -428,7 +501,7 @@ tested AS (
 target AS (
   SELECT r.cid, r.vid, r.hospcode, r.pid, r.birth, r.sex
   FROM residents r
-  JOIN dm_patient dp ON dp.cid = r.cid
+  JOIN ${src.patient} pt ON pt.cid = r.cid
   JOIN tested ts ON ts.cid = r.cid
 ),
 screened AS (
@@ -443,6 +516,7 @@ screened AS (
       dataAsOf: hdcDateParam(ctx.dataAsOf),
       hospitalCode: HOSPITAL_HOSPCODE,
       copyDays: RLU_COPY_DAYS,
+      crossUnitCopyDays: RLU_CROSS_UNIT_COPY_DAYS,
       repeatDays: RLU_REPEAT_DAYS,
     }));
 }
@@ -459,6 +533,8 @@ export const HDC_SCREENING_SQL: Record<DistrictCode, HdcScreeningSqlSet> = {
   RLU_CR: rluSql("RLU_CR"),
   RLU_HBA1C_REPEAT: rluRepeatSql("RLU_HBA1C_REPEAT"),
   RLU_LDL_REPEAT: rluRepeatSql("RLU_LDL_REPEAT"),
+  RLU_CHOL_REPEAT: rluRepeatSql("RLU_CHOL_REPEAT"),
+  RLU_TG_REPEAT: rluRepeatSql("RLU_TG_REPEAT"),
 };
 
 /**

@@ -72,7 +72,7 @@ import { todayIsoDate } from "./fiscal-year";
 
 /**
  * District KPI (อ.บางระกำ): อำเภอ -> ตำบล -> หมู่ for DISTRICT_CODES
- * (DM / HT screening, RLU 11.1–11.5, ...).
+ * (DM / HT screening, RLU 11.1–11.7, ...).
  *
  * Source: the district HDC database ONLY, for all 11 sub-districts
  * (650401 included, via the hospital's 43-file export). The hospital page
@@ -113,8 +113,21 @@ function isRluRepeat(code: DistrictCode): boolean {
   return code.endsWith("_REPEAT");
 }
 
-const RLU_DM_NOTE =
-  'ผู้ป่วยเบาหวานจากแฟ้ม CHRONIC ที่ยังรักษาอยู่ (รพ.บางระกำ ส่งสถานะส่วนใหญ่เป็น "หาย" จึงนับสถานะนี้ของ รพ. เป็นยังรักษาอยู่) นับผลตรวจจากแฟ้ม LABFU ของทุกหน่วยบริการ';
+/** Patient group note of RLU indicators (DM E10–E14 / HT I10–I15). */
+function rluPatientNote(group: string): string {
+  return `${group}จากแฟ้ม CHRONIC ที่ยังรักษาอยู่ (รพ.บางระกำ ส่งสถานะส่วนใหญ่เป็น "หาย" จึงนับสถานะนี้ของ รพ. เป็นยังรักษาอยู่) นับผลตรวจจากแฟ้ม LABFU ของทุกหน่วยบริการ`;
+}
+
+const RLU_DM_NOTE = rluPatientNote("ผู้ป่วยเบาหวาน");
+
+/** HT-patient RLU indicators (11.6 / 11.7). */
+const RLU_HT_CODES: ReadonlySet<DistrictCode> = new Set([
+  "RLU_CHOL_REPEAT",
+  "RLU_TG_REPEAT",
+]);
+
+const RLU_REPEAT_NOTE =
+  "A = ผู้ป่วยที่มีผลตรวจ 2 ครั้งติดกันห่างกันน้อยกว่า 90 วันในปีงบ (นับวันตรวจไม่ซ้ำ ตรวจวันเดียวกันหลายหน่วยนับ 1 ครั้ง ผลค่าเท่ากันภายใน 7 วัน หรือค่าเท่ากันจากต่างหน่วยบริการภายใน 90 วัน ถือเป็นสำเนาของผลเดิม ไม่นับผล lab ที่ไม่ผูกกับการรับบริการ (SEQ ว่าง)) ยิ่งต่ำยิ่งดี";
 
 /** District wording (the hospital page keeps its own meta). */
 function districtDescription(code: DistrictCode): {
@@ -125,7 +138,7 @@ function districtDescription(code: DistrictCode): {
   if (isRluRepeat(code)) {
     return {
       population: `${meta.population} ในปีงบ ที่อาศัยในอำเภอ (ทะเบียน 1, 3)`,
-      note: `${HDC_NOTE} / ${RLU_DM_NOTE} / A = ผู้ป่วยที่มีผลตรวจ 2 ครั้งติดกันห่างกันน้อยกว่า 90 วันในปีงบ (นับวันตรวจไม่ซ้ำ ตรวจวันเดียวกันหลายหน่วยนับ 1 ครั้ง ผลเท่ากันภายใน 7 วันถือเป็นสิ่งส่งตรวจเดียวกัน ไม่นับผล lab ที่ไม่ผูกกับการรับบริการ (SEQ ว่าง)) ยิ่งต่ำยิ่งดี`,
+      note: `${HDC_NOTE} / ${RLU_HT_CODES.has(code) ? rluPatientNote("ผู้ป่วยความดันโลหิตสูง") : RLU_DM_NOTE} / ${RLU_REPEAT_NOTE}`,
     };
   }
   if (isRlu(code)) {

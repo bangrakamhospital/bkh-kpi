@@ -29,6 +29,8 @@ export const DISTRICT_ACCENT: Record<DistrictKpiCode, AccentKey> = {
   CAVITY_FREE: "cavityFree",
   RLU_HBA1C_REPEAT: "hba1c",
   RLU_LDL_REPEAT: "ldl",
+  RLU_CHOL_REPEAT: "ht",
+  RLU_TG_REPEAT: "confirmHt",
 };
 
 /** District-only indicators (HDC reports without a hospital-page row). */
@@ -37,6 +39,8 @@ const DISTRICT_ONLY_LABEL: Record<DistrictOnlyCode, string> = {
   CAVITY_FREE: CAVITY_FREE_INDICATOR.shortName,
   RLU_HBA1C_REPEAT: DISTRICT_ONLY_RATIO_INDICATORS.RLU_HBA1C_REPEAT.shortName,
   RLU_LDL_REPEAT: DISTRICT_ONLY_RATIO_INDICATORS.RLU_LDL_REPEAT.shortName,
+  RLU_CHOL_REPEAT: DISTRICT_ONLY_RATIO_INDICATORS.RLU_CHOL_REPEAT.shortName,
+  RLU_TG_REPEAT: DISTRICT_ONLY_RATIO_INDICATORS.RLU_TG_REPEAT.shortName,
 };
 
 function isDistrictOnly(code: DistrictKpiCode): code is DistrictOnlyCode {
