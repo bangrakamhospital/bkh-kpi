@@ -6,6 +6,7 @@ import {
 } from "@/lib/kpi/categories";
 import {
   CAVITY_FREE_INDICATOR,
+  DISTRICT_ONLY_RATIO_INDICATORS,
   DSPM_INDICATOR,
 } from "@/lib/kpi/screening-indicators";
 import { INDICATOR_ROWS } from "./indicator-rows";
@@ -26,12 +27,14 @@ export const DISTRICT_ACCENT: Record<DistrictKpiCode, AccentKey> = {
   STEMI: "stemi",
   DSPM: "dspm",
   CAVITY_FREE: "cavityFree",
+  RLU_HBA1C_REPEAT: "hba1c",
 };
 
 /** District-only indicators (HDC reports without a hospital-page row). */
 const DISTRICT_ONLY_LABEL: Record<DistrictOnlyCode, string> = {
   DSPM: DSPM_INDICATOR.shortName,
   CAVITY_FREE: CAVITY_FREE_INDICATOR.shortName,
+  RLU_HBA1C_REPEAT: DISTRICT_ONLY_RATIO_INDICATORS.RLU_HBA1C_REPEAT.shortName,
 };
 
 function isDistrictOnly(code: DistrictKpiCode): code is DistrictOnlyCode {
@@ -74,8 +77,14 @@ export function isLabIndicator(code: DistrictKpiCode): boolean {
   return code.startsWith("RLU_");
 }
 
+/** RLU repeat-within-90-days indicators (A = "ตรวจซ้ำ", lower is better). */
+export function isRepeatLabIndicator(code: DistrictKpiCode): boolean {
+  return isLabIndicator(code) && code.endsWith("_REPEAT");
+}
+
 /** Wording of A for ratio indicators. */
 export function numeratorLabel(code: DistrictKpiCode): string {
+  if (isRepeatLabIndicator(code)) return "จำนวนที่ได้รับการตรวจซ้ำภายใน 90 วัน";
   if (isLabIndicator(code)) return "จำนวนที่ได้รับการตรวจ";
   if (code === "DMC" || code === "HTC") return "จำนวนที่ได้รับการยืนยันวินิจฉัย";
   return "จำนวนที่ได้รับการคัดกรอง";

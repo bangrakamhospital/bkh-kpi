@@ -18,11 +18,13 @@ import {
   apportionTargetShare,
   CAVITY_FREE_INDICATOR,
   CKD5_INDICATOR,
+  districtCountWindow,
+  districtIndicatorMeta,
+  districtTargetPercent,
   DSPM_INDICATOR,
   dspmTargetPercent,
   reductionPercentOf,
   SCREENING_INDICATORS,
-  screeningCountWindow,
   screeningTargetPercent,
 } from "@/lib/kpi/screening-indicators";
 import type {
@@ -70,7 +72,7 @@ import { todayIsoDate } from "./fiscal-year";
 
 /**
  * District KPI (อ.บางระกำ): อำเภอ -> ตำบล -> หมู่ for DISTRICT_CODES
- * (DM / HT screening, RLU 11.3–11.5).
+ * (DM / HT screening, RLU 11.1 and 11.3–11.5, ...).
  *
  * Source: the district HDC database ONLY, for all 11 sub-districts
  * (650401 included, via the hospital's 43-file export). The hospital page
@@ -106,16 +108,30 @@ function isRlu(code: DistrictCode): boolean {
   return code.startsWith("RLU_");
 }
 
+/** RLU "over-utilization" indicators (repeat test within 90 days). */
+function isRluRepeat(code: DistrictCode): boolean {
+  return code.endsWith("_REPEAT");
+}
+
+const RLU_DM_NOTE =
+  'ผู้ป่วยเบาหวานจากแฟ้ม CHRONIC ที่ยังรักษาอยู่ (รพ.บางระกำ ส่งสถานะส่วนใหญ่เป็น "หาย" จึงนับสถานะนี้ของ รพ. เป็นยังรักษาอยู่) นับผลตรวจจากแฟ้ม LABFU ของทุกหน่วยบริการ';
+
 /** District wording (the hospital page keeps its own meta). */
 function districtDescription(code: DistrictCode): {
   population: string;
   note: string;
 } {
-  const meta = SCREENING_INDICATORS[code];
+  const meta = districtIndicatorMeta(code);
+  if (isRluRepeat(code)) {
+    return {
+      population: `${meta.population} ในปีงบ ที่อาศัยในอำเภอ (ทะเบียน 1, 3)`,
+      note: `${HDC_NOTE} / ${RLU_DM_NOTE} / A = ผู้ป่วยที่มีผลตรวจ 2 ครั้งติดกันห่างกันน้อยกว่า 90 วันในปีงบ (นับวันตรวจไม่ซ้ำ ตรวจวันเดียวกันหลายหน่วยนับ 1 ครั้ง ผลเท่ากันภายใน 7 วันถือเป็นสิ่งส่งตรวจเดียวกัน ไม่นับผล lab ที่ไม่ผูกกับการรับบริการ (SEQ ว่าง)) ยิ่งต่ำยิ่งดี`,
+    };
+  }
   if (isRlu(code)) {
     return {
       population: "ผู้ป่วยเบาหวานที่อาศัยในอำเภอ (ทะเบียน 1, 3)",
-      note: `${HDC_NOTE} / ผู้ป่วยเบาหวานจากแฟ้ม CHRONIC ที่ยังรักษาอยู่ (รพ.บางระกำ ส่งสถานะส่วนใหญ่เป็น "หาย" จึงนับสถานะนี้ของ รพ. เป็นยังรักษาอยู่) นับผลตรวจจากแฟ้ม LABFU ของทุกหน่วยบริการ`,
+      note: `${HDC_NOTE} / ${RLU_DM_NOTE}`,
     };
   }
   const extra = DISTRICT_NOTES[code];
@@ -130,7 +146,7 @@ function districtDescription(code: DistrictCode): {
  * first HDC data day (CX phase start is earlier -> cumulative since FY 2569).
  */
 export function hdcCountFrom(code: DistrictCode, fy: number): string {
-  return maxIsoDate(screeningCountWindow(code, fy).countFrom, HDC_DATA_START_ISO);
+  return maxIsoDate(districtCountWindow(code, fy).countFrom, HDC_DATA_START_ISO);
 }
 
 function counts(
@@ -260,7 +276,7 @@ export async function getDistrictScreening(
   await io();
   const now = new Date();
   const period = resolveScreeningPeriod(fiscalYear, now);
-  const meta = SCREENING_INDICATORS[code];
+  const meta = districtIndicatorMeta(code);
   const raw = await loadHdcRaw(code, period.fy);
 
   const villages = villageRows(raw, meta.denominatorFactor);
@@ -272,7 +288,7 @@ export async function getDistrictScreening(
     name: meta.name,
     shortName: meta.shortName,
     ...districtDescription(code),
-    targetPercent: screeningTargetPercent(code, period.fy),
+    targetPercent: districtTargetPercent(code, period.fy),
     targetOperator: meta.targetOperator ?? ">=",
     fiscalYear: period.fy,
     periodStart: period.range.start,

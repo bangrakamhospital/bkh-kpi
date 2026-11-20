@@ -2,7 +2,10 @@ import "server-only";
 
 import type { QueryParams } from "@/lib/db/read-only-pool";
 import { HOSPITAL_HOSPCODE } from "@/lib/kpi/district-areas";
-import { SCREENING_INDICATORS } from "@/lib/kpi/screening-indicators";
+import {
+  districtIndicatorMeta,
+  SCREENING_INDICATORS,
+} from "@/lib/kpi/screening-indicators";
 import type { DistrictCode } from "@/lib/kpi/types";
 import {
   CONFIRM_THRESHOLDS,
@@ -50,7 +53,7 @@ export {
 
 /** Age parameters ('YYYYMMDD') from SCREENING_INDICATORS (age on 1 Oct). */
 function ageParams(code: DistrictCode, periodStart: string): QueryParams {
-  const meta = SCREENING_INDICATORS[code];
+  const meta = districtIndicatorMeta(code);
   const params: QueryParams = {
     birthOnOrBefore: hdcDateParam(minusYears(periodStart, meta.minAge)),
   };
@@ -311,8 +314,7 @@ export const HDC_RLU_LABTEST: Record<HdcRluCode, readonly string[]> = {
  *   [:countFrom, :dataAsOf] at ANY unit; "result" = labresult starts with a
  *   number (optionally '<' / '>'), same rule as HOSxP.
  */
-function rluSql(code: HdcRluCode): HdcScreeningSqlSet {
-  const withClause = `${RESIDENTS_CTE},
+const DM_PATIENT_CTE = `
 dm_patient AS (
   SELECT c.cid
   FROM chronic c
@@ -322,7 +324,13 @@ dm_patient AS (
   HAVING SUM(c.typedisch = '02') = 0
      AND SUM(COALESCE(c.typedisch, '') IN ('', '03', '04', '05', '11')
              OR (c.hospcode = :hospitalCode AND c.typedisch = '01')) > 0
-),
+)`;
+
+/** LABFU "has a result": labresult starts with a number (optionally '<' / '>'). */
+const LAB_RESULT_WHERE = "l.labresult REGEXP '^[<>]?[ ]*[0-9]'";
+
+function rluSql(code: HdcRluCode): HdcScreeningSqlSet {
+  const withClause = `${RESIDENTS_CTE},${DM_PATIENT_CTE},
 target AS (
   SELECT r.cid, r.vid, r.hospcode, r.pid, r.birth, r.sex
   FROM residents r
@@ -334,13 +342,106 @@ screened AS (
   WHERE l.labtest IN (${sqlCodeList(HDC_RLU_LABTEST[code])})
     AND l.date_serv >= :countFrom
     AND l.date_serv <= :dataAsOf
-    AND l.labresult REGEXP '^[<>]?[ ]*[0-9]'
+    AND ${LAB_RESULT_WHERE}
   GROUP BY l.cid
 )`;
   return hdcSqlSet(withClause, false, (ctx) => ({
       countFrom: hdcDateParam(ctx.countFrom),
       dataAsOf: hdcDateParam(ctx.dataAsOf),
       hospitalCode: HOSPITAL_HOSPCODE,
+    }));
+}
+
+/* -------------- RLU 11.1 (KPI Template 30.2) repeat within 90 days -------- */
+
+export type HdcRluRepeatCode = "RLU_HBA1C_REPEAT";
+
+/** LABFU codes of each repeat indicator (same codes as 11.3–11.5). */
+const HDC_RLU_REPEAT_LABTEST: Record<HdcRluRepeatCode, readonly string[]> = {
+  RLU_HBA1C_REPEAT: HDC_RLU_LABTEST.RLU_HBA1C,
+};
+
+/** A repeat = a test less than this many days after the previous test. */
+export const RLU_REPEAT_DAYS = 90;
+
+/**
+ * Same result value within this many days = the same specimen recorded
+ * again (another unit re-keying the hospital result, or a re-send), not
+ * a new test. FY 2569: cross-unit records 1–7 days apart carry the same
+ * value in 149 of 155 pairs, same-unit ones in 5 of 129.
+ */
+export const RLU_COPY_DAYS = 7;
+
+/**
+ * RLU 11.1 (KPI Template 30.2 C/D, persons):
+ * B (D) = DM patients among `residents` (same dm_patient rule as 11.3)
+ *   with >= 1 test result in [:countFrom, :dataAsOf] at ANY unit.
+ * A (C) = members of B with two consecutive test days less than
+ *   :repeatDays apart, both inside the window.
+ * Test days (`lab_day`): LABFU results of the test, then
+ *   1. a record with the same (rounded) value as an earlier record of the
+ *      person within :copyDays is a copy and dropped (lab_copy);
+ *   2. remaining records are collapsed to one per person per day (several
+ *      units on the same day = one test).
+ * screened.first_key = date + unit of the FIRST repeat test (the later
+ * test of the first pair), so the person list shows when it happened.
+ * Pre-FY tests are not looked at (HDC has none before FY 2569).
+ */
+function rluRepeatSql(code: HdcRluRepeatCode): HdcScreeningSqlSet {
+  const withClause = `${RESIDENTS_CTE},${DM_PATIENT_CTE},
+lab_rec AS (
+  SELECT l.cid, l.date_serv, l.hospcode, ROUND(l.labresult + 0, 1) AS val
+  FROM labfu l
+  WHERE l.labtest IN (${sqlCodeList(HDC_RLU_REPEAT_LABTEST[code])})
+    AND l.date_serv >= :countFrom
+    AND l.date_serv <= :dataAsOf
+    AND ${LAB_RESULT_WHERE}
+    -- exclude records not linked to a visit (empty SEQ): FY 2569 11252
+    -- has ~1,100 such HbA1c rows (Feb–Mar, incl. Sundays) absent from HOSxP
+    AND l.seq IS NOT NULL AND l.seq <> ''
+),
+lab_copy AS (
+  SELECT r.cid, r.date_serv, r.hospcode,
+         LAG(r.date_serv) OVER (
+           PARTITION BY r.cid, r.val ORDER BY r.date_serv, r.hospcode
+         ) AS same_value_prev
+  FROM lab_rec r
+),
+lab_day AS (
+  SELECT c.cid, c.date_serv, MIN(c.hospcode) AS hospcode
+  FROM lab_copy c
+  WHERE c.same_value_prev IS NULL
+     OR c.same_value_prev = c.date_serv
+     OR DATEDIFF(c.date_serv, c.same_value_prev) > :copyDays
+  GROUP BY c.cid, c.date_serv
+),
+lab_gap AS (
+  SELECT d.cid, d.date_serv, d.hospcode,
+         LAG(d.date_serv) OVER (PARTITION BY d.cid ORDER BY d.date_serv) AS prev_date
+  FROM lab_day d
+),
+tested AS (
+  SELECT DISTINCT d.cid FROM lab_day d
+),
+target AS (
+  SELECT r.cid, r.vid, r.hospcode, r.pid, r.birth, r.sex
+  FROM residents r
+  JOIN dm_patient dp ON dp.cid = r.cid
+  JOIN tested ts ON ts.cid = r.cid
+),
+screened AS (
+  SELECT g.cid, MIN(CONCAT(g.date_serv, g.hospcode)) AS first_key
+  FROM lab_gap g
+  WHERE g.prev_date IS NOT NULL
+    AND DATEDIFF(g.date_serv, g.prev_date) < :repeatDays
+  GROUP BY g.cid
+)`;
+  return hdcSqlSet(withClause, false, (ctx) => ({
+      countFrom: hdcDateParam(ctx.countFrom),
+      dataAsOf: hdcDateParam(ctx.dataAsOf),
+      hospitalCode: HOSPITAL_HOSPCODE,
+      copyDays: RLU_COPY_DAYS,
+      repeatDays: RLU_REPEAT_DAYS,
     }));
 }
 
@@ -354,6 +455,7 @@ export const HDC_SCREENING_SQL: Record<DistrictCode, HdcScreeningSqlSet> = {
   RLU_HBA1C: rluSql("RLU_HBA1C"),
   RLU_LDL: rluSql("RLU_LDL"),
   RLU_CR: rluSql("RLU_CR"),
+  RLU_HBA1C_REPEAT: rluRepeatSql("RLU_HBA1C_REPEAT"),
 };
 
 /**

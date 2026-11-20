@@ -25,11 +25,16 @@ import type {
   DistrictPersonsResponse,
 } from "@/lib/kpi/types";
 import {
-  SCREENING_INDICATORS,
+  districtIndicatorMeta,
+  isLowerBetter,
   type ScreeningStatusLabels,
 } from "@/lib/kpi/screening-indicators";
 import { ACCENTS } from "./indicator-theme";
-import { DISTRICT_ACCENT, isLabIndicator } from "./district-codes";
+import {
+  DISTRICT_ACCENT,
+  isLabIndicator,
+  isRepeatLabIndicator,
+} from "./district-codes";
 import { formatNumber, formatThaiDate } from "./format";
 
 export type DistrictPersonsScope =
@@ -59,14 +64,28 @@ function statusLabelsOf(code: DistrictCode): ScreeningStatusLabels {
   if (code === "CX") {
     return { screened: "คัดกรองแล้ว", notScreened: "ยังไม่คัดกรอง" };
   }
-  return SCREENING_INDICATORS[code].statusLabels;
+  return districtIndicatorMeta(code).statusLabels;
 }
 
 function dateHeaderOf(code: DistrictCode): string {
+  const header = districtIndicatorMeta(code).statusLabels.dateHeader;
+  if (isRepeatLabIndicator(code) && header) return header;
   if (isLabIndicator(code)) return "วันที่ตรวจ";
   if (code === "DMC" || code === "HTC") return "วันที่ยืนยัน";
   return "วันที่คัดกรอง";
 }
+
+/** Filter tones: "good" status green, "bad" status red (swapped when lower is better). */
+const GOOD_FILTER = {
+  Icon: UserCheck,
+  icon: "text-green-700 dark:text-green-300",
+  active: "bg-green-700 text-white dark:bg-green-400 dark:text-green-950",
+};
+const BAD_FILTER = {
+  Icon: UserX,
+  icon: "text-red-700 dark:text-red-300",
+  active: "bg-red-700 text-white dark:bg-red-400 dark:text-red-950",
+};
 
 function queryOf(code: DistrictCode, fy: number, scope: DistrictPersonsScope) {
   const base = `code=${code}&fy=${fy}`;
@@ -221,7 +240,10 @@ function PersonsBody({
   const theme = ACCENTS[DISTRICT_ACCENT[code]];
   const labels = statusLabelsOf(code);
   const query = queryOf(code, fiscalYear, scope);
-  const indicatorName = SCREENING_INDICATORS[code].name;
+  const meta = districtIndicatorMeta(code);
+  const indicatorName = meta.name;
+  /** Lower-is-better (RLU repeat): being in A is the undesired status. */
+  const lowerBetter = isLowerBetter(meta.targetOperator ?? ">=");
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState<Filter>("all");
@@ -331,16 +353,12 @@ function PersonsBody({
     {
       value: "pending",
       label: labels.notScreened,
-      Icon: UserX,
-      icon: "text-red-700 dark:text-red-300",
-      active: "bg-red-700 text-white dark:bg-red-400 dark:text-red-950",
+      ...(lowerBetter ? GOOD_FILTER : BAD_FILTER),
     },
     {
       value: "done",
       label: labels.screened,
-      Icon: UserCheck,
-      icon: "text-green-700 dark:text-green-300",
-      active: "bg-green-700 text-white dark:bg-green-400 dark:text-green-950",
+      ...(lowerBetter ? BAD_FILTER : GOOD_FILTER),
     },
   ];
 
@@ -423,18 +441,19 @@ function PersonsBody({
         <tbody>
           {rows.map((p, i) => {
             const sex = SEX_STYLE[p.sex];
+            const good = p.screened !== lowerBetter;
             return (
               <tr
                 key={p.key}
                 className={`border-t border-zinc-200 dark:border-zinc-800 ${
-                  p.screened
+                  good
                     ? `odd:bg-surface even:bg-zinc-50 dark:even:bg-zinc-900/60 ${theme.rowHover}`
                     : "bg-red-50/70 hover:bg-red-100/70 dark:bg-red-950/30 dark:hover:bg-red-950/50"
                 }`}
               >
                 <td
                   className={`${td} border-l-4 tabular-nums ${
-                    p.screened ? "border-transparent" : "border-red-500"
+                    good ? "border-transparent" : "border-red-500"
                   }`}
                 >
                   {formatNumber(i + 1)}
@@ -459,12 +478,12 @@ function PersonsBody({
                 <td className={td}>
                   <span
                     className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      p.screened
+                      good
                         ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
                         : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
                     }`}
                   >
-                    {p.screened ? (
+                    {good ? (
                       <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
                     ) : (
                       <XCircle aria-hidden="true" className="h-3.5 w-3.5" />

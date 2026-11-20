@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 
 import type { DistrictPersonsData } from "@/lib/kpi/district-persons";
 import {
-  SCREENING_INDICATORS,
+  districtIndicatorMeta,
   targetOperatorSign,
 } from "@/lib/kpi/screening-indicators";
 import { toThaiDate } from "@/lib/kpi/screening-excel";
@@ -58,7 +58,7 @@ export async function buildDistrictPersonsWorkbook(
   );
   const showEligible = villages.some((v) => v.eligible !== v.denominator);
   const withSuspect = data.persons.some((p) => p.suspectDate !== undefined);
-  const labels = SCREENING_INDICATORS[data.code].statusLabels;
+  const labels = districtIndicatorMeta(data.code).statusLabels;
 
   /* ---- Sheet 1: summary ---- */
   const summary = wb.addWorksheet("สรุปรายหมู่");

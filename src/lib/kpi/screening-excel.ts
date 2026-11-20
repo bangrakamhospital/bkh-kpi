@@ -8,6 +8,7 @@ import {
   CKD5_INDICATOR,
   isLowerBetter,
   isReductionCode,
+  metaTargetPercent,
   SCREENING_INDICATORS,
   type ScreeningIndicatorMeta,
   screeningTargetPercent,
@@ -152,7 +153,7 @@ async function buildMortalityWorkbook(
   const labels = meta.statusLabels;
   const bLabel = labels.targetHeader ?? "กลุ่มเป้าหมาย";
   const aLabel = labels.summary?.done ?? "เสียชีวิต";
-  const target = screeningTargetPercent(meta.code, data.fiscalYear);
+  const target = metaTargetPercent(meta, data.fiscalYear);
   const sign = targetOperatorSign(meta.targetOperator ?? "<");
 
   const summary = wb.addWorksheet("สรุปรายหมู่");

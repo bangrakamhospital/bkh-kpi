@@ -248,7 +248,8 @@ export interface ScreeningPerson {
 /**
  * Ratio indicators of the district page (HDC only, per sub-district):
  * DM / HT = KPI 1–2, CX / BR = KPI 3–4, DMC / HTC = HDC 2.1 / 2.2,
- * RLU_* = HDC 11.3–11.5. CKD5 / STEMI have their own result shapes
+ * RLU_* = HDC 11.3–11.5, plus the district-only ratio indicators
+ * (DistrictOnlyRatioCode). CKD5 / STEMI have their own result shapes
  * (DistrictCkd5Result / DistrictStemiResult), see DistrictKpiCode.
  */
 export type DistrictCode =
@@ -260,7 +261,17 @@ export type DistrictCode =
   | "HTC"
   | "RLU_HBA1C"
   | "RLU_LDL"
-  | "RLU_CR";
+  | "RLU_CR"
+  | DistrictOnlyRatioCode;
+
+/**
+ * District-only A/B indicators that reuse the ratio pipeline (tambon /
+ * village table, person list, Excel) without a hospital-page row:
+ * RLU_HBA1C_REPEAT = HDC 11.1 (KPI Template 30.2): % of DM patients tested
+ * for HbA1c who had a repeat test within 90 days — LOWER is better.
+ * Meta: DISTRICT_ONLY_RATIO_INDICATORS (`@/lib/kpi/screening-indicators`).
+ */
+export type DistrictOnlyRatioCode = "RLU_HBA1C_REPEAT";
 
 /** Raw counts + derived B / percent of one area (same maths as the headline). */
 export interface AreaCounts {
@@ -356,8 +367,8 @@ export type DistrictKpiCode =
   | "STEMI"
   | DistrictOnlyCode;
 
-/** District-only HDC indicators (see DISTRICT_ONLY_CATEGORY). */
-export type DistrictOnlyCode = "DSPM" | "CAVITY_FREE";
+/** District-only HDC indicators, no hospital-page row (see DISTRICT_ONLY_CATEGORY). */
+export type DistrictOnlyCode = "DSPM" | "CAVITY_FREE" | DistrictOnlyRatioCode;
 
 /** Fields shared by every district result. */
 interface DistrictResultBase {
