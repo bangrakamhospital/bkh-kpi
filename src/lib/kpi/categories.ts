@@ -75,6 +75,7 @@ export const INDICATOR_CATEGORY: Record<ScreeningCode, CategoryId> = {
 export const DISTRICT_ONLY_CATEGORY: Record<DistrictOnlyCode, CategoryId> = {
   DSPM: "early-childhood",
   CAVITY_FREE: "dental",
+  RLU_HBA1C_REPEAT: "dm",
 };
 
 export function categoryAnchorId(id: CategoryId): string {

@@ -123,7 +123,10 @@ export const HDC_UNIT_HOSPCODES: readonly string[] = [
  */
 export const HDC_MIN_FISCAL_YEAR = 2569;
 
-/** Ratio indicators of the district page, in hospital-page order. */
+/**
+ * Ratio indicators of the district page, in hospital-page order, then the
+ * district-only ratio indicators (DistrictOnlyRatioCode).
+ */
 export const DISTRICT_CODES: readonly DistrictCode[] = [
   "DM",
   "HT",
@@ -134,6 +137,7 @@ export const DISTRICT_CODES: readonly DistrictCode[] = [
   "RLU_HBA1C",
   "RLU_LDL",
   "RLU_CR",
+  "RLU_HBA1C_REPEAT",
 ];
 
 export function isDistrictCode(value: unknown): value is DistrictCode {

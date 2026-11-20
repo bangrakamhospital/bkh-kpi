@@ -16,6 +16,7 @@ import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
 import {
   CAVITY_FREE_INDICATOR,
   CKD5_INDICATOR,
+  districtIndicatorMeta,
   DSPM_INDICATOR,
   SCREENING_INDICATORS,
 } from "@/lib/kpi/screening-indicators";
@@ -99,7 +100,8 @@ function indicatorName(code: DistrictKpiCode): string {
   if (code === "CKD5") return CKD5_INDICATOR.name;
   if (code === "DSPM") return DSPM_INDICATOR.name;
   if (code === "CAVITY_FREE") return CAVITY_FREE_INDICATOR.name;
-  return SCREENING_INDICATORS[code].name;
+  if (code === "STEMI") return SCREENING_INDICATORS.STEMI.name;
+  return districtIndicatorMeta(code).name;
 }
 
 export async function DistrictScreening({

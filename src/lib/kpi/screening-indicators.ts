@@ -9,6 +9,8 @@
 
 import { BE_OFFSET } from "@/lib/kpi/fiscal-year";
 import type {
+  DistrictCode,
+  DistrictOnlyRatioCode,
   RatioCode,
   ReductionCode,
   ScreeningCode,
@@ -175,8 +177,8 @@ export type ScreeningPeriodRule =
   | { kind: "phase"; lengthYears: number; anchorFiscalYear: number };
 
 export interface ScreeningIndicatorMeta {
-  code: RatioCode;
-  /** KPI number on the dashboard (1–9, one sequential list). */
+  code: RatioCode | DistrictOnlyRatioCode;
+  /** KPI number on the dashboard (1–9, one sequential list); 0 = district-only (no number). */
   no: number;
   /** Full Thai name. */
   name: string;
@@ -236,7 +238,22 @@ export function screeningTargetPercent(
   code: RatioCode,
   fiscalYear: number,
 ): number {
-  const meta = SCREENING_INDICATORS[code];
+  return metaTargetPercent(SCREENING_INDICATORS[code], fiscalYear);
+}
+
+/** Target (percent) of a district indicator (hospital meta or district-only). */
+export function districtTargetPercent(
+  code: DistrictCode,
+  fiscalYear: number,
+): number {
+  return metaTargetPercent(districtIndicatorMeta(code), fiscalYear);
+}
+
+/** Target (percent) of an indicator meta in the fiscal year (BE). */
+export function metaTargetPercent(
+  meta: ScreeningIndicatorMeta,
+  fiscalYear: number,
+): number {
   const byYear = meta.targetPercentByFiscalYear;
   if (!byYear) return meta.targetPercent;
   const years = Object.keys(byYear)
@@ -320,6 +337,48 @@ function rluMeta(
     },
     note: "ระดับโรงพยาบาล รวมผู้ป่วยนอกเขต / นับเฉพาะ lab ที่มีผลใน HOSxP ของ รพ.",
     unknownVillageName: "นอกเขตรับผิดชอบ / ไม่ระบุหมู่บ้าน",
+  };
+}
+
+/**
+ * HDC 11.1 / 11.2 (KPI Template 30.2 / 30.4, RLU "over-utilization"):
+ * % of DM patients tested for `test` in the fiscal year who had a repeat
+ * test within 90 days. LOWER is better: ≤ 5% FY2569, ≤ 4% FY2570+
+ * ("ไม่เกินร้อยละ 5 / 4"). District-only (HDC). Definition:
+ * docs/kpi/hdc-phase1-definitions.md section 11.1. 11.6 / 11.7 (HT
+ * patients, Cholesterol / Triglycerides) can reuse this with another
+ * population text.
+ */
+function rluRepeatMeta(
+  code: DistrictOnlyRatioCode,
+  test: string,
+  shortName: string,
+): ScreeningIndicatorMeta {
+  return {
+    code,
+    no: 0,
+    name: `ร้อยละของผู้ป่วยโรคเบาหวาน ได้รับการตรวจ ${test} ซ้ำภายใน 90 วัน`,
+    shortName,
+    targetPercent: 5,
+    targetOperator: "<=",
+    targetPercentByFiscalYear: { 2569: 5, 2570: 4 },
+    targetSourceFiscalYear: null,
+    targetSource: "KPI Template 2569",
+    population: `ผู้ป่วยเบาหวานที่ได้รับการตรวจ ${test}`,
+    sex: "all",
+    thaiOnly: false,
+    minAge: 0,
+    maxAge: null,
+    ageRange: "ไม่จำกัดอายุ",
+    denominatorFactor: 1,
+    period: { kind: "fiscalYear" },
+    statusLabels: {
+      screened: "ตรวจซ้ำภายใน 90 วัน",
+      notScreened: "ไม่ตรวจซ้ำ",
+      summary: { done: "ตรวจซ้ำภายใน 90 วัน", pending: "ไม่ตรวจซ้ำ" },
+      dateHeader: "วันที่ตรวจซ้ำ",
+      targetHeader: `ผู้ป่วยที่ได้รับการตรวจ ${test}`,
+    },
   };
 }
 
@@ -495,6 +554,37 @@ export const SCREENING_INDICATORS: Record<RatioCode, ScreeningIndicatorMeta> =
     },
   };
 
+/**
+ * District-only ratio indicators (HDC, no hospital-page row). They use the
+ * same meta shape so the district ratio pipeline (table, person list,
+ * Excel) works unchanged. Add 11.2 LDL etc. here + DistrictOnlyRatioCode.
+ */
+export const DISTRICT_ONLY_RATIO_INDICATORS: Record<
+  DistrictOnlyRatioCode,
+  ScreeningIndicatorMeta
+> = {
+  RLU_HBA1C_REPEAT: rluRepeatMeta(
+    "RLU_HBA1C_REPEAT",
+    "HbA1c",
+    "ตรวจ HbA1c ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน",
+  ),
+};
+
+function isDistrictOnlyRatioCode(
+  code: DistrictCode,
+): code is DistrictOnlyRatioCode {
+  return code in DISTRICT_ONLY_RATIO_INDICATORS;
+}
+
+/** Meta of a district ratio indicator (hospital meta or district-only). */
+export function districtIndicatorMeta(
+  code: DistrictCode,
+): ScreeningIndicatorMeta {
+  return isDistrictOnlyRatioCode(code)
+    ? DISTRICT_ONLY_RATIO_INDICATORS[code]
+    : SCREENING_INDICATORS[code];
+}
+
 /* ------------------------------ periods ---------------------------------- */
 
 /** First fiscal year (BE) of the phase containing `fiscalYear`. */
@@ -529,7 +619,22 @@ export function screeningCountWindow(
   code: RatioCode,
   fiscalYear: number,
 ): ScreeningCountWindow {
-  const rule = SCREENING_INDICATORS[code].period;
+  return metaCountWindow(SCREENING_INDICATORS[code], fiscalYear);
+}
+
+/** Counting window of a district indicator (hospital meta or district-only). */
+export function districtCountWindow(
+  code: DistrictCode,
+  fiscalYear: number,
+): ScreeningCountWindow {
+  return metaCountWindow(districtIndicatorMeta(code), fiscalYear);
+}
+
+function metaCountWindow(
+  meta: ScreeningIndicatorMeta,
+  fiscalYear: number,
+): ScreeningCountWindow {
+  const rule = meta.period;
   if (rule.kind === "fiscalYear") {
     return {
       firstFiscalYear: fiscalYear,

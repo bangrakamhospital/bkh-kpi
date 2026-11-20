@@ -14,6 +14,7 @@ import {
   resolveDataSourceKind,
   resolveScreeningPeriod,
 } from "@/lib/kpi/screening";
+import { isLowerBetter } from "@/lib/kpi/screening-indicators";
 import {
   HDC_PERSONS_PER_TAMBON_LIMIT,
   HDC_PERSONS_PER_VILLAGE_LIMIT,
@@ -108,12 +109,16 @@ function ageOn(birth: string | null, isoDate: string): number {
   return Math.max(0, ry - by - (rmd < bmd ? 1 : 0));
 }
 
-function compare(a: HdcPersonRaw, b: HdcPersonRaw): number {
-  return (
+/**
+ * Village, then the status that needs follow-up first (not yet in A; for
+ * lower-is-better indicators the people IN A), then Thai name order.
+ */
+function comparator(lowerBetter: boolean) {
+  const rank = (p: HdcPersonRaw) => ((p.screenDate ? 1 : 0) ^ (lowerBetter ? 1 : 0));
+  return (a: HdcPersonRaw, b: HdcPersonRaw): number =>
     a.vid.localeCompare(b.vid) ||
-    (a.screenDate ? 1 : 0) - (b.screenDate ? 1 : 0) ||
-    thaiCollator.compare(a.sortName, b.sortName)
-  );
+    rank(a) - rank(b) ||
+    thaiCollator.compare(a.sortName, b.sortName);
 }
 
 export interface DistrictPersonsData extends DistrictPersonsResponse {
@@ -124,8 +129,8 @@ export interface DistrictPersonsData extends DistrictPersonsResponse {
 }
 
 /**
- * B of one village / sub-district with A status, sorted (village, not yet
- * done first, Thai name order). Call at request time only.
+ * B of one village / sub-district with A status, sorted (village, status
+ * needing follow-up first, Thai name order). Call at request time only.
  * @throws RangeError (fiscal year), DistrictAreaNotFoundError,
  *         HisConfigError / HisQueryError.
  */
@@ -163,7 +168,9 @@ export async function getDistrictPersons(
   }
   const rows = await source(code, ctx, scope);
   const truncated = rows.length > limit;
-  const kept = (truncated ? rows.slice(0, limit) : rows).sort(compare);
+  const kept = (truncated ? rows.slice(0, limit) : rows).sort(
+    comparator(isLowerBetter(aggregates.targetOperator)),
+  );
 
   const persons = kept.map(
     (r, i): DistrictPerson => ({

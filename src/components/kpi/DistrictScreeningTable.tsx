@@ -6,7 +6,10 @@ import type {
   DistrictScreeningResult,
   DistrictTambonRow,
 } from "@/lib/kpi/types";
-import { targetOperatorSign } from "@/lib/kpi/screening-indicators";
+import {
+  isLowerBetter,
+  targetOperatorSign,
+} from "@/lib/kpi/screening-indicators";
 import { ACCENTS } from "./indicator-theme";
 import { DISTRICT_ACCENT, isLabIndicator } from "./district-codes";
 import { DistrictPersonsButton } from "./DistrictPersonsDialog";
@@ -196,7 +199,8 @@ export function DistrictScreeningTable({
             </th>
             <th scope="col" className={thClass}>
               ร้อยละ (เกณฑ์ {targetOperatorSign(result.targetOperator)}{" "}
-              {formatNumber(result.targetPercent)}%)
+              {formatNumber(result.targetPercent)}%
+              {isLowerBetter(result.targetOperator) && " ยิ่งต่ำยิ่งดี"})
             </th>
             <th scope="col" className={thClass}>
               ข้อมูลถึง
