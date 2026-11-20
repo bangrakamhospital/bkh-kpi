@@ -76,6 +76,7 @@ export const DISTRICT_ONLY_CATEGORY: Record<DistrictOnlyCode, CategoryId> = {
   DSPM: "early-childhood",
   CAVITY_FREE: "dental",
   RLU_HBA1C_REPEAT: "dm",
+  RLU_LDL_REPEAT: "dm",
 };
 
 export function categoryAnchorId(id: CategoryId): string {

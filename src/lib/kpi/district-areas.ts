@@ -138,6 +138,7 @@ export const DISTRICT_CODES: readonly DistrictCode[] = [
   "RLU_LDL",
   "RLU_CR",
   "RLU_HBA1C_REPEAT",
+  "RLU_LDL_REPEAT",
 ];
 
 export function isDistrictCode(value: unknown): value is DistrictCode {

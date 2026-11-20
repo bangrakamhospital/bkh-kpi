@@ -352,13 +352,14 @@ screened AS (
     }));
 }
 
-/* -------------- RLU 11.1 (KPI Template 30.2) repeat within 90 days -------- */
+/* ---- RLU 11.1 / 11.2 (KPI Template 30.2 / 30.4) repeat within 90 days ---- */
 
-export type HdcRluRepeatCode = "RLU_HBA1C_REPEAT";
+export type HdcRluRepeatCode = "RLU_HBA1C_REPEAT" | "RLU_LDL_REPEAT";
 
 /** LABFU codes of each repeat indicator (same codes as 11.3–11.5). */
 const HDC_RLU_REPEAT_LABTEST: Record<HdcRluRepeatCode, readonly string[]> = {
   RLU_HBA1C_REPEAT: HDC_RLU_LABTEST.RLU_HBA1C,
+  RLU_LDL_REPEAT: HDC_RLU_LABTEST.RLU_LDL,
 };
 
 /** A repeat = a test less than this many days after the previous test. */
@@ -373,7 +374,7 @@ export const RLU_REPEAT_DAYS = 90;
 export const RLU_COPY_DAYS = 7;
 
 /**
- * RLU 11.1 (KPI Template 30.2 C/D, persons):
+ * RLU 11.1 / 11.2 (KPI Template 30.2 C/D, 30.4 G/H, persons):
  * B (D) = DM patients among `residents` (same dm_patient rule as 11.3)
  *   with >= 1 test result in [:countFrom, :dataAsOf] at ANY unit.
  * A (C) = members of B with two consecutive test days less than
@@ -397,7 +398,8 @@ lab_rec AS (
     AND l.date_serv <= :dataAsOf
     AND ${LAB_RESULT_WHERE}
     -- exclude records not linked to a visit (empty SEQ): FY 2569 11252
-    -- has ~1,100 such HbA1c rows (Feb–Mar, incl. Sundays) absent from HOSxP
+    -- has ~1,100 such HbA1c and ~1,060 LDL rows (Feb–Mar, incl. Sundays)
+    -- absent from HOSxP
     AND l.seq IS NOT NULL AND l.seq <> ''
 ),
 lab_copy AS (
@@ -456,6 +458,7 @@ export const HDC_SCREENING_SQL: Record<DistrictCode, HdcScreeningSqlSet> = {
   RLU_LDL: rluSql("RLU_LDL"),
   RLU_CR: rluSql("RLU_CR"),
   RLU_HBA1C_REPEAT: rluRepeatSql("RLU_HBA1C_REPEAT"),
+  RLU_LDL_REPEAT: rluRepeatSql("RLU_LDL_REPEAT"),
 };
 
 /**

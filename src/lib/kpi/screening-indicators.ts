@@ -557,7 +557,7 @@ export const SCREENING_INDICATORS: Record<RatioCode, ScreeningIndicatorMeta> =
 /**
  * District-only ratio indicators (HDC, no hospital-page row). They use the
  * same meta shape so the district ratio pipeline (table, person list,
- * Excel) works unchanged. Add 11.2 LDL etc. here + DistrictOnlyRatioCode.
+ * Excel) works unchanged. Add more here + DistrictOnlyRatioCode.
  */
 export const DISTRICT_ONLY_RATIO_INDICATORS: Record<
   DistrictOnlyRatioCode,
@@ -567,6 +567,11 @@ export const DISTRICT_ONLY_RATIO_INDICATORS: Record<
     "RLU_HBA1C_REPEAT",
     "HbA1c",
     "ตรวจ HbA1c ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน",
+  ),
+  RLU_LDL_REPEAT: rluRepeatMeta(
+    "RLU_LDL_REPEAT",
+    "LDL",
+    "ตรวจ LDL ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน",
   ),
 };
 

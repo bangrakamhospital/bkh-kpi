@@ -72,7 +72,7 @@ import { todayIsoDate } from "./fiscal-year";
 
 /**
  * District KPI (อ.บางระกำ): อำเภอ -> ตำบล -> หมู่ for DISTRICT_CODES
- * (DM / HT screening, RLU 11.1 and 11.3–11.5, ...).
+ * (DM / HT screening, RLU 11.1–11.5, ...).
  *
  * Source: the district HDC database ONLY, for all 11 sub-districts
  * (650401 included, via the hospital's 43-file export). The hospital page

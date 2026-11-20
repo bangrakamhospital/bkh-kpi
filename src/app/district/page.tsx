@@ -26,7 +26,7 @@ export default function DistrictPage(props: PageProps<"/district">) {
               ตัวชี้วัดระดับอำเภอบางระกำ รายตำบล / รายหมู่
             </h1>
             <p className="text-xs text-brand-100">
-              คัดกรองเบาหวาน / ความดันโลหิตสูง การตรวจ HbA1c / LDL / Creatinine และ HbA1c ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน พัฒนาการเด็กปฐมวัย (DSPM) และเด็ก 0-5 ปีฟันดีไม่มีผุ ทั้ง 11 ตำบล
+              คัดกรองเบาหวาน / ความดันโลหิตสูง การตรวจ HbA1c / LDL / Creatinine และ HbA1c / LDL ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน พัฒนาการเด็กปฐมวัย (DSPM) และเด็ก 0-5 ปีฟันดีไม่มีผุ ทั้ง 11 ตำบล
             </p>
           </div>
           <HeaderAuth />
