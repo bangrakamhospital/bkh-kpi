@@ -1,6 +1,7 @@
 import type { PtBandRow, PtDxRow } from "@/lib/kpi/pt-clinic-types";
 import { formatNumber, formatPercent } from "../format";
 import { GroupCard } from "../clinic/GroupCard";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import { mutedClass } from "../overview/table-styles";
 
 const TONE: Record<PtDxRow["code"], string> = {
@@ -17,20 +18,50 @@ export function PtPatientPanel({
   persons,
   newPersons,
   elderlyPersons,
+  fiscalYear,
 }: {
   diagnoses: PtDxRow[];
   bands: PtBandRow[];
   persons: number;
   newPersons: number;
   elderlyPersons: number;
+  fiscalYear: number;
 }) {
   const of = (n: number) => (persons > 0 ? `${formatPercent((n / persons) * 100)}% ของผู้รับบริการ` : "–");
+  const excel: ExcelExport = {
+    fileName: `pt-patients-fy${fiscalYear}`,
+    title: `คลินิกกายภาพ ผู้รับบริการและกลุ่มโรค ปีงบประมาณ ${fiscalYear}`,
+    subtitle: "แหล่งข้อมูล HOSxP",
+    sheetName: "ผู้รับบริการ",
+    columns: [
+      { header: "หมวด" },
+      { header: "รายการ" },
+      { header: "ICD-10" },
+      { header: "คน", format: "int" },
+      { header: "visit", format: "int" },
+    ],
+    rows: [
+      ["ประเภทผู้รับบริการ", "รายใหม่", "", newPersons, null],
+      ["ประเภทผู้รับบริการ", "รายเก่า / ต่อเนื่อง", "", persons - newPersons, null],
+      ["ประเภทผู้รับบริการ", "ผู้สูงอายุ (60 ปีขึ้นไป)", "", elderlyPersons, null],
+      ...diagnoses.map((d) => ["กลุ่มโรค", d.name, d.icd10, d.persons, d.visits]),
+      ...bands.map((b) => ["จำนวนครั้งที่มารับกายภาพต่อคนในปีงบฯ", b.label, "", b.persons, null]),
+    ],
+    footer: [["ผู้รับบริการทั้งหมด", "", "", persons, null]],
+    notes: [
+      "กลุ่มโรคนับจากรหัส ICD-10 ทุกตำแหน่งของ visit กายภาพ คนหนึ่งอยู่ได้หลายกลุ่ม",
+      "รายใหม่ = ไม่มี visit กายภาพใน 365 วันก่อน 1 ต.ค. ผู้สูงอายุนับอายุ ณ วันรับบริการ (vn_stat.age_y)",
+    ],
+  };
   return (
     <section
       aria-label="ผู้รับบริการและกลุ่มโรค"
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">ผู้รับบริการและกลุ่มโรค</h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-base font-semibold">ผู้รับบริการและกลุ่มโรค</h2>
+        <ExcelDownloadButton data={excel} />
+      </div>
       <p className={`mt-1 text-xs ${mutedClass}`}>
         กลุ่มโรคนับจากรหัส ICD-10 ทุกตำแหน่งของ visit กายภาพ คนหนึ่งอยู่ได้หลายกลุ่ม &quot;อื่นๆ&quot; ส่วนใหญ่คือ visit คลินิก NCD ที่นักกายภาพตรวจเท้า/สอนผู้ป่วย (รหัสโรคเป็น DM/HT)
       </p>

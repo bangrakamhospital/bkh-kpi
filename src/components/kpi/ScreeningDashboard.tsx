@@ -92,6 +92,7 @@ export async function ScreeningDashboard({
         indicators={result.indicators}
         reduction={result.reduction}
         fiscalYear={result.fiscalYear}
+        dataAsOf={result.dataAsOf}
       />
     </div>
   );

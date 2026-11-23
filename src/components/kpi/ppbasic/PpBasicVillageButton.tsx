@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { MapPin, X } from "lucide-react";
 import type { PpBasicVillageRow } from "@/lib/kpi/ppbasic-types";
 import { formatNumber, formatPercent } from "../format";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
   tableClass,
   tdClass,
@@ -56,6 +57,30 @@ export function PpBasicVillageButton({
     if (!dialogRef.current?.open) dialogRef.current?.showModal();
   }
 
+  const excel: ExcelExport = {
+    fileName: `pp-basic-${code}-villages-fy${fiscalYear}`,
+    title: `${name} รายหมู่บ้าน ปีงบประมาณ ${fiscalYear}`,
+    subtitle: `ปีงบประมาณ ${fiscalYear} · หน่วย: ${unit} · แหล่งข้อมูล HOSxP`,
+    sheetName: "รายหมู่บ้าน",
+    columns: [
+      { header: "หมู่" },
+      { header: "ชื่อหมู่บ้าน" },
+      { header: `เป้าหมาย (${unit})`, format: "int" },
+      { header: `ทำแล้ว (${unit})`, format: "int" },
+      { header: "ร้อยละ", format: "pct" },
+    ],
+    rows: villages.map((v) => [
+      v.moo,
+      villageName(v),
+      v.target,
+      v.done,
+      v.target > 0 ? (v.done / v.target) * 100 : null,
+    ]),
+    footer: [
+      ["รวม", "", total.target, total.done, total.target > 0 ? (total.done / total.target) * 100 : null],
+    ],
+  };
+
   const pct = (target: number, done: number) =>
     target > 0 ? `${formatPercent((done / target) * 100)}%` : NONE;
 
@@ -90,14 +115,17 @@ export function PpBasicVillageButton({
                   รายหมู่บ้าน ปีงบประมาณ {fiscalYear} · ยอดรวมเท่านั้น
                 </p>
               </div>
+              <div className="flex shrink-0 items-center gap-2">
+              {villages.length > 0 && <ExcelDownloadButton data={excel} />}
               <button
                 type="button"
                 onClick={() => dialogRef.current?.close()}
                 aria-label="ปิด"
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:hover:bg-zinc-800"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:hover:bg-zinc-800"
               >
                 <X aria-hidden="true" className="h-4 w-4" />
               </button>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {villages.length === 0 ? (

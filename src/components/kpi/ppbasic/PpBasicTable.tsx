@@ -1,4 +1,5 @@
-import type { PpBasicItem, PpBasicRateBasis } from "@/lib/kpi/ppbasic-types";
+import type { PpBasicItem, PpBasicRateBasis, PpBasicSummary } from "@/lib/kpi/ppbasic-types";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import { ProgressBar } from "../ProgressBar";
 import { formatBaht, formatNumber, formatPercent } from "../format";
 import {
@@ -47,9 +48,13 @@ function BahtCell({
 export function PpBasicTable({
   items,
   fiscalYear,
+  moneyTotals,
+  subtitle,
 }: {
   items: PpBasicItem[];
   fiscalYear: number;
+  moneyTotals?: PpBasicSummary["moneyTotals"];
+  subtitle?: string;
 }) {
   const withMoney = items.filter((it) => !it.error && it.money);
   const nhsoRates = withMoney
@@ -66,12 +71,75 @@ export function PpBasicTable({
   ].filter((p): p is string => p !== null);
   const noteText = noteParts.join(" | ");
 
+  const excel: ExcelExport = {
+    fileName: `pp-basic-fy${fiscalYear}`,
+    title: `รายการบริการพื้นฐาน P&P ปีงบประมาณ ${fiscalYear}`,
+    subtitle: subtitle ?? `ปีงบประมาณ ${fiscalYear} · แหล่งข้อมูล HOSxP`,
+    sheetName: "บริการพื้นฐาน P&P",
+    columns: [
+      { header: "ลำดับ", format: "int" },
+      { header: "รายการ" },
+      { header: "กลุ่มเป้าหมาย" },
+      { header: "หน่วย" },
+      { header: "เป้าหมาย", format: "int" },
+      { header: "ทำแล้ว", format: "int" },
+      { header: "ร้อยละ", format: "pct" },
+      { header: "ประเภทอัตรา" },
+      { header: "อัตรา (บาท)" },
+      { header: "หน่วยอัตรา" },
+      { header: "เป้าหมาย (หน่วยเงิน)", format: "int" },
+      { header: "ทำแล้ว (หน่วยเงิน)", format: "int" },
+      { header: "หน่วยที่ใช้คิดเงิน" },
+      { header: "นอกเขต (หน่วยเงิน)", format: "int" },
+      { header: "เป้าหมาย (บาท)", format: "int" },
+      { header: "ได้แล้ว (บาท)", format: "int" },
+      { header: "ยังไม่ได้ (บาท)", format: "int" },
+      { header: "หมายเหตุ" },
+    ],
+    rows: items.map((it) => {
+      const m = !it.error ? it.money : null;
+      const remark = [it.caveat, m?.rateNote, it.error ?? null]
+        .filter((x): x is string => Boolean(x))
+        .join(" / ");
+      return [
+        it.order,
+        it.name,
+        it.group,
+        it.unit,
+        it.error ? null : it.target,
+        it.error ? null : it.done,
+        it.error ? null : it.percent,
+        m ? BASIS_INFO[m.basis].label : null,
+        m ? m.rate : null,
+        m ? m.rateUnit : null,
+        m ? m.targetUnits : null,
+        m ? m.doneUnits : null,
+        m ? m.units : null,
+        m?.outOfAreaUnits ?? null,
+        m ? m.targetBaht : null,
+        m ? m.earnedBaht : null,
+        m ? m.gapBaht : null,
+        remark || null,
+      ];
+    }),
+    footer: moneyTotals
+      ? [
+          ["", "รวมเงิน สปสช.", "", "", null, null, null, "", null, "", null, null, "", null, moneyTotals.nhso.targetBaht, moneyTotals.nhso.earnedBaht, moneyTotals.nhso.gapBaht, ""],
+          ["", "รวมมูลค่าอ้างอิง (ไม่ใช่เงิน สปสช.)", "", "", null, null, null, "", null, "", null, null, "", null, moneyTotals.reference.targetBaht, moneyTotals.reference.earnedBaht, moneyTotals.reference.gapBaht, ""],
+        ]
+      : undefined,
+    notes: noteText ? [noteText] : undefined,
+  };
+
   return (
     <section
       aria-label="รายการบริการพื้นฐาน P&P"
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">รายการบริการพื้นฐาน P&amp;P</h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-base font-semibold">รายการบริการพื้นฐาน P&amp;P</h2>
+        <ExcelDownloadButton data={excel} />
+      </div>
       {noteText && (
         <p className="mt-1 break-words text-xs text-zinc-600 dark:text-zinc-400">
           {noteText}

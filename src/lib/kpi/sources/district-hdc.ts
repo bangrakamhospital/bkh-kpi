@@ -117,6 +117,9 @@ const MOCK_RATE: Record<DistrictCode, number> = {
   RLU_LDL: 0.76,
   RLU_CR: 0.8,
   RLU_HBA1C_REPEAT: 0.18,
+  RLU_LDL_REPEAT: 0.06,
+  RLU_CHOL_REPEAT: 0.05,
+  RLU_TG_REPEAT: 0.05,
 };
 
 const MOCK_SIZE: Record<DistrictCode, number> = {
@@ -130,6 +133,9 @@ const MOCK_SIZE: Record<DistrictCode, number> = {
   RLU_LDL: 0.2,
   RLU_CR: 0.2,
   RLU_HBA1C_REPEAT: 0.15,
+  RLU_LDL_REPEAT: 0.15,
+  RLU_CHOL_REPEAT: 0.2,
+  RLU_TG_REPEAT: 0.2,
 };
 
 /** Deterministic fake data for KPI_DATA_SOURCE=mock (UI work without DB). */

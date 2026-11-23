@@ -2,6 +2,8 @@ import type { LucideIcon } from "lucide-react";
 import { BedDouble, Home, Siren, Stethoscope, UserPlus, Users } from "lucide-react";
 import type { OverviewCards, OverviewRange } from "@/lib/kpi/overview-types";
 import { formatNumber } from "../format";
+import { ExcelDownloadButton, type ExcelExport } from "./ExcelDownloadButton";
+import { periodFileSuffix, periodSubtitle } from "./export-utils";
 
 interface CardProps {
   title: string;
@@ -47,59 +49,87 @@ export function StatCards({
   const prev = (n: number) => `${prevLabel} ${formatNumber(n)}`;
   const occupancy = cards.bedTotal > 0 ? (cards.inpatientNow / cards.bedTotal) * 100 : 0;
 
+  const excel: ExcelExport = {
+    fileName: `สรุปจำนวนผู้รับบริการ_${periodFileSuffix(range)}`,
+    title: "สรุปจำนวนผู้รับบริการ",
+    subtitle: `${periodSubtitle(range)} · แหล่งข้อมูล HOSxP`,
+    sheetName: "สรุป",
+    columns: [
+      { header: "รายการ" },
+      { header: "ค่า", format: "int" },
+      { header: `${prevLabel}`, format: "int" },
+      { header: "หน่วย" },
+    ],
+    rows: [
+      ["ผู้รับบริการ", cards.patients.value, cards.patients.prev, "คน"],
+      ["visit ผู้ป่วยนอก", cards.opdVisits.value, cards.opdVisits.prev, "ครั้ง"],
+      ["อุบัติเหตุ-ฉุกเฉิน (ฉุกเฉิน)", cards.er.value, cards.er.prev, "ครั้ง"],
+      ["รับใหม่ผู้ป่วยใน", cards.admitNew.value, cards.admitNew.prev, "คน"],
+      ["ผู้ป่วยในขณะนี้", cards.inpatientNow, null, "คน"],
+      ["เตียงทั้งหมด", cards.bedTotal, null, "เตียง"],
+      ["Home ward ขณะนี้", cards.homeWardNow, null, "คน"],
+    ],
+    footer: [["ครองเตียง (ร้อยละ)", Math.round(occupancy * 10) / 10, null, "ร้อยละ"]],
+    notes: [
+      "ผู้ป่วยในขณะนี้และ Home ward เป็นจำนวน ณ เวลาที่ออกรายงาน Home ward ไม่นับในอัตราครองเตียง",
+    ],
+  };
+
   return (
-    <section
-      aria-label="สรุปจำนวนผู้รับบริการ"
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-    >
-      <Card
-        title="ผู้รับบริการ"
-        value={formatNumber(cards.patients.value)}
-        unit="คน"
-        sub={prev(cards.patients.prev)}
-        Icon={Users}
-        tone="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-      />
-      <Card
-        title="visit ผู้ป่วยนอก"
-        value={formatNumber(cards.opdVisits.value)}
-        unit="ครั้ง"
-        sub={prev(cards.opdVisits.prev)}
-        Icon={Stethoscope}
-        tone="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
-      />
-      <Card
-        title="อุบัติเหตุ-ฉุกเฉิน"
-        value={formatNumber(cards.er.value)}
-        unit="ครั้ง"
-        sub={`ฉุกเฉิน · ${prev(cards.er.prev)}`}
-        Icon={Siren}
-        tone="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-      />
-      <Card
-        title="รับใหม่ผู้ป่วยใน"
-        value={formatNumber(cards.admitNew.value)}
-        unit="คน"
-        sub={prev(cards.admitNew.prev)}
-        Icon={UserPlus}
-        tone="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-      />
-      <Card
-        title="ผู้ป่วยในขณะนี้"
-        value={`${formatNumber(cards.inpatientNow)} / ${formatNumber(cards.bedTotal)}`}
-        unit="เตียง"
-        sub={`ครองเตียง ${pctFormat.format(occupancy)}%`}
-        Icon={BedDouble}
-        tone="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-      />
-      <Card
-        title="Home ward"
-        value={formatNumber(cards.homeWardNow)}
-        unit="คน"
-        sub="ไม่นับในอัตราครองเตียง"
-        Icon={Home}
-        tone="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
-      />
+    <section aria-label="สรุปจำนวนผู้รับบริการ" className="space-y-2">
+      <div className="flex justify-end">
+        <ExcelDownloadButton data={excel} />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <Card
+          title="ผู้รับบริการ"
+          value={formatNumber(cards.patients.value)}
+          unit="คน"
+          sub={prev(cards.patients.prev)}
+          Icon={Users}
+          tone="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+        />
+        <Card
+          title="visit ผู้ป่วยนอก"
+          value={formatNumber(cards.opdVisits.value)}
+          unit="ครั้ง"
+          sub={prev(cards.opdVisits.prev)}
+          Icon={Stethoscope}
+          tone="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+        />
+        <Card
+          title="อุบัติเหตุ-ฉุกเฉิน"
+          value={formatNumber(cards.er.value)}
+          unit="ครั้ง"
+          sub={`ฉุกเฉิน · ${prev(cards.er.prev)}`}
+          Icon={Siren}
+          tone="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+        />
+        <Card
+          title="รับใหม่ผู้ป่วยใน"
+          value={formatNumber(cards.admitNew.value)}
+          unit="คน"
+          sub={prev(cards.admitNew.prev)}
+          Icon={UserPlus}
+          tone="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+        />
+        <Card
+          title="ผู้ป่วยในขณะนี้"
+          value={`${formatNumber(cards.inpatientNow)} / ${formatNumber(cards.bedTotal)}`}
+          unit="เตียง"
+          sub={`ครองเตียง ${pctFormat.format(occupancy)}%`}
+          Icon={BedDouble}
+          tone="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+        />
+        <Card
+          title="Home ward"
+          value={formatNumber(cards.homeWardNow)}
+          unit="คน"
+          sub="ไม่นับในอัตราครองเตียง"
+          Icon={Home}
+          tone="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+        />
+      </div>
     </section>
   );
 }

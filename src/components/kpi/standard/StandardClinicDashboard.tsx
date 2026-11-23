@@ -79,7 +79,12 @@ export async function StandardClinicDashboard({
       />
       <StandardChargePanel data={data} />
       <StandardPdxTable data={data} />
-      <StandardWorkloadCard workload={data.workload} />
+      <StandardWorkloadCard
+        workload={data.workload}
+        slug={data.slug}
+        label={data.label}
+        fiscalYear={data.fiscalYear}
+      />
       <StandardMonthTable data={data} />
     </div>
   );

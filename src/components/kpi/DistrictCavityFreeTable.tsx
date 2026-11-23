@@ -11,6 +11,8 @@ import { meetsTarget, targetOperatorSign } from "@/lib/kpi/screening-indicators"
 import { ACCENTS } from "./indicator-theme";
 import { DistrictUnitFreshness } from "./DistrictUnitFreshness";
 import { ProgressBar } from "./ProgressBar";
+import { cavityAgeExcel, cavityTambonExcel } from "./district-excel";
+import { ExcelDownloadButton } from "./overview/ExcelDownloadButton";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 
 const thClass = "px-3 py-2 font-semibold";
@@ -175,7 +177,10 @@ export function DistrictCavityFreeTable({
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
         <table className="w-full min-w-176 text-left text-sm">
           <caption className="px-3 py-2 text-left text-sm font-semibold">
-            ภาพรวมอำเภอ{district.name} แยกอายุ (ปีเต็ม ณ 1 ม.ค.)
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span>ภาพรวมอำเภอ{district.name} แยกอายุ (ปีเต็ม ณ 1 ม.ค.)</span>
+              <ExcelDownloadButton data={cavityAgeExcel(result)} />
+            </span>
           </caption>
           <thead className={`text-xs ${accent.thead}`}>
             <tr>
@@ -217,7 +222,10 @@ export function DistrictCavityFreeTable({
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
         <table className="w-full min-w-192 text-left text-sm">
           <caption className="px-3 py-2 text-left text-sm font-semibold">
-            รายตำบล (กดชื่อตำบลเพื่อดูรายหมู่)
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span>รายตำบล (กดชื่อตำบลเพื่อดูรายหมู่)</span>
+              <ExcelDownloadButton data={cavityTambonExcel(result)} />
+            </span>
           </caption>
           <thead className={`text-xs ${accent.thead}`}>
             <tr>

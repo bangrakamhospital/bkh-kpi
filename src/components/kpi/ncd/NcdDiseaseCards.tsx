@@ -1,6 +1,7 @@
 import type { NcdDiseaseRow } from "@/lib/kpi/ncd-clinic-types";
 import { formatNumber } from "../format";
 import { GroupCard } from "../clinic/GroupCard";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 
 const TONE: Record<NcdDiseaseRow["code"], string> = {
   DM: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-300",
@@ -13,16 +14,41 @@ const TONE: Record<NcdDiseaseRow["code"], string> = {
 export function NcdDiseaseCards({
   diseases,
   dmHtPersons,
+  fiscalYear,
 }: {
   diseases: NcdDiseaseRow[];
   dmHtPersons: number;
+  fiscalYear: number;
 }) {
+  const excel: ExcelExport = {
+    fileName: `ncd-diseases-fy${fiscalYear}`,
+    title: `NCD Clinic กลุ่มโรค ปีงบประมาณ ${fiscalYear}`,
+    subtitle: "แหล่งข้อมูล HOSxP",
+    sheetName: "กลุ่มโรค",
+    columns: [
+      { header: "กลุ่มโรค" },
+      { header: "ICD-10" },
+      { header: "คน", format: "int" },
+      { header: "visit", format: "int" },
+    ],
+    rows: [
+      ...diseases.map((d) => [d.name, d.icd10, d.persons, d.visits]),
+      ["เบาหวาน + ความดันโลหิตสูง (มีทั้ง 2 โรค)", "DM+HT", dmHtPersons, null],
+    ],
+    notes: [
+      'นับจากรหัส ICD-10 ในทุก visit ของคลินิกในปีงบฯ คนหนึ่งอยู่ได้หลายกลุ่ม จึงรวมกันได้มากกว่าจำนวนคนทั้งหมด "อื่นๆ" = ไม่มีรหัส 4 กลุ่มแรกเลย (เช่น CKD, ไทรอยด์)',
+    ],
+  };
+
   return (
     <section
       aria-label="กลุ่มโรค"
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">กลุ่มโรค</h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-base font-semibold">กลุ่มโรค</h2>
+        <ExcelDownloadButton data={excel} />
+      </div>
       <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
         นับจากรหัส ICD-10 ในทุก visit ของคลินิกในปีงบฯ คนหนึ่งอยู่ได้หลายกลุ่ม จึงรวมกันได้มากกว่าจำนวนคนทั้งหมด &quot;อื่นๆ&quot; = ไม่มีรหัส 4 กลุ่มแรกเลย (เช่น CKD, ไทรอยด์)
       </p>

@@ -91,15 +91,24 @@ export async function NcdClinicDashboard({
 
       <NcdStatCards data={data} />
       <NcdPayGroupPanel groups={data.payGroups} fiscalYear={data.fiscalYear} />
-      <NcdDiseaseCards diseases={data.diseases} dmHtPersons={data.dmHtPersons} />
+      <NcdDiseaseCards
+        diseases={data.diseases}
+        dmHtPersons={data.dmHtPersons}
+        fiscalYear={data.fiscalYear}
+      />
       <NcdIndicatorTable indicators={data.indicators} fiscalYear={data.fiscalYear} />
       <NcdLabPanel
         panel={data.dmLabPanel}
         hba1c={data.hba1cUse}
         glucose={data.glucoseTests}
+        fiscalYear={data.fiscalYear}
       />
-      <NcdWaitingCard waiting={data.waiting} hosxpSteps={data.hosxpSteps} />
-      <NcdWorkloadCard workload={data.workload} />
+      <NcdWaitingCard
+        waiting={data.waiting}
+        hosxpSteps={data.hosxpSteps}
+        fiscalYear={data.fiscalYear}
+      />
+      <NcdWorkloadCard workload={data.workload} fiscalYear={data.fiscalYear} />
       <NcdMonthTable
         months={months}
         total={monthTotal}

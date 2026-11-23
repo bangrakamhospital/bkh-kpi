@@ -114,7 +114,14 @@ export async function PpBasicDashboard({
               ? "ปีงบประมาณนี้ปิดแล้ว"
               : `ปีงบประมาณนี้ยังไม่สิ้นสุด นับข้อมูลถึง ${formatThaiDate(data.dataAsOf)} รายการตรวจพัฒนาการและวัคซีนนับเป้าหมายเฉพาะเด็กที่ถึงกำหนดแล้ว`}
           </p>
-          <PpBasicTable items={items} fiscalYear={data.fiscalYear} />
+          <PpBasicTable
+            items={items}
+            fiscalYear={data.fiscalYear}
+            moneyTotals={data.moneyTotals ?? undefined}
+            subtitle={`ปีงบประมาณ ${data.fiscalYear} · แหล่งข้อมูล HOSxP · ${
+              data.closed ? "ปีงบประมาณปิดแล้ว" : `นับข้อมูลถึง ${formatThaiDate(data.dataAsOf)}`
+            }`}
+          />
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { F43Counts, F43Group, F43StaffRow, F43UnitRow } from "@/lib/kpi/f43-types";
 import { ClinicPanel } from "../clinic/ClinicPanel";
+import type { ExcelExport } from "../overview/ExcelDownloadButton";
 import { formatNumber } from "../format";
 import {
   tableClass,
@@ -35,16 +36,42 @@ export function F43UnitTable({
   hrefFor,
   groups,
   title,
+  rangeText,
 }: {
   rows: readonly F43UnitRow[];
   selected: string;
   hrefFor: (unit: string) => string;
   groups: readonly F43Group[];
   title: string;
+  /** e.g. "1 พ.ย. 2569 – 17 พ.ย. 2569" for the Excel subtitle. */
+  rangeText: string;
 }) {
+  const excel: ExcelExport = {
+    fileName: `f43-units-${groups.join("-")}`,
+    title: `${title} (ผลตรวจ 43 แฟ้ม)`,
+    subtitle: `ช่วงวันที่ ${rangeText} · แหล่งข้อมูล HOSxP ตรวจก่อนส่งออก (จำนวนสรุป ไม่มีข้อมูลผู้ป่วย)`,
+    sheetName: "รายหน่วยบริการ",
+    columns: [
+      { header: "หน่วยบริการ" },
+      ...groups.flatMap((g) => [
+        { header: `${g === "hdc" ? "HDC" : "FDH"} ผิดร้ายแรง`, format: "int" as const },
+        { header: `${g === "hdc" ? "HDC" : "FDH"} เตือน`, format: "int" as const },
+      ]),
+      { header: "สถานะ" },
+    ],
+    rows: rows.map((u) => [
+      u.name,
+      ...groups.flatMap((g) => [u[g].errorFailed, u[g].warnFailed]),
+      groups.every((g) => u[g].errorFailed === 0) ? "พร้อมส่ง" : "ยังไม่พร้อม",
+    ]),
+    notes: [
+      "หน่วยบริการ = แผนก/จุดบริการหลักของ visit (ovst.main_dep) ผู้ป่วยในรวมเป็นหน่วย IPD แฟ้มที่ไม่มี visit ไม่แยกหน่วย",
+    ],
+  };
   return (
     <ClinicPanel
       title={title}
+      excel={rows.length > 0 ? excel : undefined}
       note="หน่วยบริการ = แผนก/จุดบริการหลักของ visit (ovst.main_dep) · ผู้ป่วยในรวมเป็นหน่วย IPD · แฟ้มที่ไม่มี visit (DEATH, CHRONIC, NCDSCREEN, NEWBORNCARE, COMMUNITY_ACTIVITY) ไม่แยกหน่วย · กดชื่อหน่วยเพื่อเลือก"
     >
       {rows.length === 0 ? (

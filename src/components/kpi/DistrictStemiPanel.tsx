@@ -6,6 +6,8 @@ import { Lock } from "lucide-react";
 import type { DistrictStemiResult } from "@/lib/kpi/types";
 import { targetOperatorSign } from "@/lib/kpi/screening-indicators";
 import { ACCENTS } from "./indicator-theme";
+import { stemiExcel } from "./district-excel";
+import { ExcelDownloadButton } from "./overview/ExcelDownloadButton";
 import { formatNumber, formatPercent } from "./format";
 
 type State =
@@ -91,6 +93,9 @@ export function DistrictStemiPanel({ fiscalYear }: { fiscalYear: number }) {
   const d = data.district;
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExcelDownloadButton data={stemiExcel(data)} />
+      </div>
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
         <table className="w-full min-w-120 text-left text-sm">
           <caption className="sr-only">

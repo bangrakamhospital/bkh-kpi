@@ -82,6 +82,7 @@ export async function PtClinicDashboard({
         persons={data.persons}
         newPersons={data.newPersons}
         elderlyPersons={data.elderlyPersons}
+        fiscalYear={data.fiscalYear}
       />
       <PtQualityPanel
         indicators={data.indicators}
@@ -89,7 +90,12 @@ export async function PtClinicDashboard({
         followUpDays={data.imcFollowUpDays}
         fiscalYear={data.fiscalYear}
       />
-      <PtWorkloadCard workload={data.workload} wait={data.wait} ipd={data.ipd} />
+      <PtWorkloadCard
+        workload={data.workload}
+        wait={data.wait}
+        ipd={data.ipd}
+        fiscalYear={data.fiscalYear}
+      />
       <PtMonthTable data={data} />
     </div>
   );

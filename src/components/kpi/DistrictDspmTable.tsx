@@ -11,6 +11,8 @@ import { meetsTarget, targetOperatorSign } from "@/lib/kpi/screening-indicators"
 import { ACCENTS } from "./indicator-theme";
 import { DistrictUnitFreshness } from "./DistrictUnitFreshness";
 import { ProgressBar } from "./ProgressBar";
+import { dspmAgeExcel, dspmTambonExcel } from "./district-excel";
+import { ExcelDownloadButton } from "./overview/ExcelDownloadButton";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 
 const thClass = "px-3 py-2 font-semibold";
@@ -213,7 +215,10 @@ export function DistrictDspmTable({ result }: { result: DistrictDspmResult }) {
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
         <table className="w-full min-w-208 text-left text-sm">
           <caption className="px-3 py-2 text-left text-sm font-semibold">
-            ภาพรวมอำเภอ{district.name} แยกกลุ่มอายุ
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span>ภาพรวมอำเภอ{district.name} แยกกลุ่มอายุ</span>
+              <ExcelDownloadButton data={dspmAgeExcel(result)} />
+            </span>
           </caption>
           <thead className={`text-xs ${accent.thead}`}>
             <tr>
@@ -251,7 +256,10 @@ export function DistrictDspmTable({ result }: { result: DistrictDspmResult }) {
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
         <table className="w-full min-w-224 text-left text-sm">
           <caption className="px-3 py-2 text-left text-sm font-semibold">
-            รายตำบล (กดชื่อตำบลเพื่อดูรายหมู่)
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span>รายตำบล (กดชื่อตำบลเพื่อดูรายหมู่)</span>
+              <ExcelDownloadButton data={dspmTambonExcel(result)} />
+            </span>
           </caption>
           <thead className={`text-xs ${accent.thead}`}>
             <tr>

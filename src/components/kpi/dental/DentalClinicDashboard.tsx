@@ -92,7 +92,11 @@ export async function DentalClinicDashboard({
         ages={data.ages}
         fiscalYear={data.fiscalYear}
       />
-      <DentalWorkloadCard workload={data.workload} waiting={data.waiting} />
+      <DentalWorkloadCard
+        workload={data.workload}
+        waiting={data.waiting}
+        fiscalYear={data.fiscalYear}
+      />
       <DentalMonthTable
         months={data.months}
         persons={data.persons}

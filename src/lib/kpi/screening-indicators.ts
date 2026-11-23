@@ -341,30 +341,36 @@ function rluMeta(
 }
 
 /**
- * HDC 11.1 / 11.2 (KPI Template 30.2 / 30.4, RLU "over-utilization"):
- * % of DM patients tested for `test` in the fiscal year who had a repeat
- * test within 90 days. LOWER is better: ≤ 5% FY2569, ≤ 4% FY2570+
+ * HDC 11.1 / 11.2 / 11.6 / 11.7 (KPI Template 30.2 / 30.4 / 30.7 / 30.9,
+ * RLU "over-utilization"): % of DM (11.1 / 11.2) or HT (11.6 / 11.7)
+ * patients tested for `test` in the fiscal year who had a repeat test
+ * within 90 days. LOWER is better: ≤ 5% FY2569, ≤ 4% FY2570+
  * ("ไม่เกินร้อยละ 5 / 4"). District-only (HDC). Definition:
- * docs/kpi/hdc-phase1-definitions.md section 11.1. 11.6 / 11.7 (HT
- * patients, Cholesterol / Triglycerides) can reuse this with another
- * population text.
+ * docs/kpi/hdc-phase1-definitions.md sections 11.1, 11.2, 11.6 / 11.7.
  */
+const RLU_REPEAT_PATIENT = {
+  dm: { disease: "โรคเบาหวาน", group: "ผู้ป่วยเบาหวาน" },
+  ht: { disease: "โรคความดันโลหิตสูง", group: "ผู้ป่วยความดันโลหิตสูง" },
+} as const;
+
 function rluRepeatMeta(
   code: DistrictOnlyRatioCode,
+  patient: keyof typeof RLU_REPEAT_PATIENT,
   test: string,
   shortName: string,
 ): ScreeningIndicatorMeta {
+  const { disease, group } = RLU_REPEAT_PATIENT[patient];
   return {
     code,
     no: 0,
-    name: `ร้อยละของผู้ป่วยโรคเบาหวาน ได้รับการตรวจ ${test} ซ้ำภายใน 90 วัน`,
+    name: `ร้อยละของผู้ป่วย${disease} ได้รับการตรวจ ${test} ซ้ำภายใน 90 วัน`,
     shortName,
     targetPercent: 5,
     targetOperator: "<=",
     targetPercentByFiscalYear: { 2569: 5, 2570: 4 },
     targetSourceFiscalYear: null,
     targetSource: "KPI Template 2569",
-    population: `ผู้ป่วยเบาหวานที่ได้รับการตรวจ ${test}`,
+    population: `${group}ที่ได้รับการตรวจ ${test}`,
     sex: "all",
     thaiOnly: false,
     minAge: 0,
@@ -557,7 +563,7 @@ export const SCREENING_INDICATORS: Record<RatioCode, ScreeningIndicatorMeta> =
 /**
  * District-only ratio indicators (HDC, no hospital-page row). They use the
  * same meta shape so the district ratio pipeline (table, person list,
- * Excel) works unchanged. Add 11.2 LDL etc. here + DistrictOnlyRatioCode.
+ * Excel) works unchanged. Add more here + DistrictOnlyRatioCode.
  */
 export const DISTRICT_ONLY_RATIO_INDICATORS: Record<
   DistrictOnlyRatioCode,
@@ -565,8 +571,27 @@ export const DISTRICT_ONLY_RATIO_INDICATORS: Record<
 > = {
   RLU_HBA1C_REPEAT: rluRepeatMeta(
     "RLU_HBA1C_REPEAT",
+    "dm",
     "HbA1c",
     "ตรวจ HbA1c ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน",
+  ),
+  RLU_LDL_REPEAT: rluRepeatMeta(
+    "RLU_LDL_REPEAT",
+    "dm",
+    "LDL",
+    "ตรวจ LDL ซ้ำภายใน 90 วัน ผู้ป่วยเบาหวาน",
+  ),
+  RLU_CHOL_REPEAT: rluRepeatMeta(
+    "RLU_CHOL_REPEAT",
+    "ht",
+    "Total Cholesterol",
+    "ตรวจ Cholesterol ซ้ำภายใน 90 วัน ผู้ป่วยความดันโลหิตสูง",
+  ),
+  RLU_TG_REPEAT: rluRepeatMeta(
+    "RLU_TG_REPEAT",
+    "ht",
+    "Triglycerides",
+    "ตรวจ Triglycerides ซ้ำภายใน 90 วัน ผู้ป่วยความดันโลหิตสูง",
   ),
 };
 
