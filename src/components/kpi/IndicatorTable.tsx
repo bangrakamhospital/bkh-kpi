@@ -28,7 +28,8 @@ import { InfoPopover, type InfoItem } from "./InfoPopover";
 import { IndicatorSearch, type SearchableRow } from "./IndicatorSearch";
 import { ProgressBar } from "./ProgressBar";
 import { VillageDetailButton } from "./VillageDetailButton";
-import { formatNumber, formatPercent } from "./format";
+import { formatNumber, formatPercent, formatThaiDate } from "./format";
+import { ExcelDownloadButton, type ExcelExport } from "./overview/ExcelDownloadButton";
 
 /** Status labels of the CKD5 village dialog / person list (KPI 10). */
 const CKD5_STATUS_LABELS = {
@@ -80,10 +81,13 @@ export function IndicatorTable({
   indicators,
   reduction,
   fiscalYear,
+  dataAsOf,
 }: {
   indicators: ScreeningIndicator[];
   reduction: ReductionIndicator[];
   fiscalYear: number;
+  /** ISO "YYYY-MM-DD": last day covered by the data. */
+  dataAsOf: string;
 }) {
   // ตัวที่มีข้อมูลและโหลดสำเร็จเท่านั้น (ข้ามตัวที่ error)
   const measured = INDICATOR_ROWS.flatMap((row) => {
@@ -518,8 +522,80 @@ export function IndicatorTable({
     node: renderRow(row),
   }));
 
+  const excel: ExcelExport = {
+    fileName: `hospital-indicators-fy${fiscalYear}`,
+    title: `ตัวชี้วัดในโรงพยาบาล ปีงบประมาณ ${fiscalYear}`,
+    subtitle: `ข้อมูล ณ วันที่ ${formatThaiDate(dataAsOf)} · แหล่งข้อมูล HOSxP`,
+    sheetName: "ตัวชี้วัด",
+    columns: [
+      { header: "ข้อ", format: "int" },
+      { header: "ตัวชี้วัด" },
+      { header: "กลุ่มเป้าหมาย" },
+      { header: "ช่วงเวลา" },
+      { header: "กลุ่มเป้าหมายทั้งหมด (คน)", format: "int" },
+      { header: "ตัวหาร (B)", format: "int" },
+      { header: "ตัวตั้ง (A)", format: "int" },
+      { header: "ช่วงเดียวกันปีก่อน (คน)", format: "int" },
+      { header: "ร้อยละ", format: "pct" },
+      { header: "เกณฑ์" },
+      { header: "ผล" },
+    ],
+    rows: INDICATOR_ROWS.map((row): (string | number | null)[] => {
+      const base = [row.no, row.title, row.subtitle];
+      if (row.code && isReductionCode(row.code)) {
+        const red = reduction.find((r) => r.code === row.code);
+        if (!red || red.error) {
+          return [...base, red?.periodLabel ?? "", null, null, null, null, null, "", red ? "ไม่สามารถดึงข้อมูลได้" : "รอกำหนดนิยาม"];
+        }
+        const pct = red.reductionPercent;
+        return [
+          ...base,
+          red.periodLabel,
+          null,
+          red.previousCases,
+          red.currentCases,
+          red.previousSamePeriod,
+          pct,
+          `ลดลงจากปีก่อน ${targetOperatorSign(red.targetOperator)} ${formatNumber(red.targetPercent)}%`,
+          pct === null
+            ? "ไม่มีปีก่อนเทียบ"
+            : meetsTarget(pct, red.targetPercent, red.targetOperator)
+              ? "ผ่าน"
+              : "ไม่ผ่าน",
+        ];
+      }
+      const ind = row.code ? indicators.find((i) => i.code === row.code) : undefined;
+      if (!ind) return [...base, "", null, null, null, null, null, "", "รอกำหนดนิยาม"];
+      if (ind.error) return [...base, ind.periodLabel, null, null, null, null, null, "", "ไม่สามารถดึงข้อมูลได้"];
+      const noTarget = ind.denominator === 0;
+      return [
+        ...base,
+        ind.periodLabel,
+        ind.eligible,
+        ind.denominator,
+        ind.numerator,
+        null,
+        noTarget ? null : ind.percent,
+        `${targetOperatorSign(ind.targetOperator)} ${formatNumber(ind.targetPercent)}%`,
+        noTarget
+          ? "ยังไม่มีกลุ่มเป้าหมาย"
+          : meetsTarget(ind.percent, ind.targetPercent, ind.targetOperator)
+            ? "ผ่าน"
+            : "ไม่ผ่าน",
+      ];
+    }),
+    notes: [
+      "ตัวตั้ง (A) = จำนวนคนที่ได้รับบริการตามเกณฑ์ ตัวหาร (B) = กลุ่มเป้าหมาย (มะเร็งปากมดลูกใช้ 70% ของกลุ่มเป้าหมาย) ร้อยละ = A / B x 100",
+      "ข้อ 10 (CKD5 รายใหม่ลดลงจากปีก่อน): ตัวหาร = รายใหม่ปีงบก่อนหน้า (ทั้งปี) ตัวตั้ง = รายใหม่ปีงบนี้ ร้อยละ = (B - A) / B x 100 ค่าลบ = เพิ่มขึ้น",
+      "ข้อ 11 (STEMI อัตราตาย) ยิ่งต่ำยิ่งดี",
+    ],
+  };
+
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <ExcelDownloadButton data={excel} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard
           icon={<CheckCircle2 aria-hidden="true" className="h-4 w-4" />}

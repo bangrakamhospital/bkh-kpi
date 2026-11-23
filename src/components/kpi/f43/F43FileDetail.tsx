@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, TriangleAlert, Wrench } from "lucide-react";
 import type { F43CheckResult, F43FileResult } from "@/lib/kpi/f43-types";
 import { ClinicPanel } from "../clinic/ClinicPanel";
+import type { ExcelExport } from "../overview/ExcelDownloadButton";
 import { formatNumber, formatPercent } from "../format";
 import { InfoPopover } from "../InfoPopover";
 import {
@@ -55,13 +56,39 @@ export function CheckInfo({ c, groupLabel }: { c: F43CheckResult; groupLabel: st
 }
 
 /** Checks of one file (most failed first) with pass % and status. */
-export function F43FileDetail({ f }: { f: F43FileResult }) {
+export function F43FileDetail({ f, rangeText, unitName }: { f: F43FileResult; rangeText: string; unitName: string }) {
   const st = FILE_STATUS[f.status];
   const groupLabel = f.group === "fdh" ? "FDH" : "HDC";
   const hasData = f.total !== null && f.total > 0;
+  const title = `${f.group === "fdh" ? "FDH OP · " : ""}${f.label} — ${f.name}`;
+  const excel: ExcelExport = {
+    fileName: `f43-${f.group}-${f.code}`,
+    title: `ผลตรวจแฟ้ม ${title}`,
+    subtitle: `ช่วงวันที่ ${rangeText} · ${unitName} · แหล่งข้อมูล HOSxP ตรวจก่อนส่งออก (จำนวนสรุป ไม่มีข้อมูลผู้ป่วย)`,
+    sheetName: f.label,
+    columns: [
+      { header: "รายการตรวจ" },
+      { header: "ระดับ" },
+      { header: `จำนวนตรวจ (${f.unitLabel ?? "รายการ"})`, format: "int" },
+      { header: "จำนวนผิด", format: "int" },
+      { header: "% ผ่าน", format: "pct" },
+      { header: "สถานะ" },
+    ],
+    rows: f.checks.map((c) => [
+      c.label,
+      c.severity === "error" ? "ร้ายแรง" : "เตือน",
+      f.total,
+      c.failed,
+      f.total ? Math.max(0, ((f.total - c.failed) / f.total) * 100) : null,
+      TONE_LABEL[checkTone(c)],
+    ]),
+    footer: [["รวม", "", f.total, f.errorFailed + f.warnFailed, null, `ผิดร้ายแรง ${f.errorFailed} / เตือน ${f.warnFailed}`]],
+    notes: f.note ? [f.note] : undefined,
+  };
   return (
     <ClinicPanel
-      title={`${f.group === "fdh" ? "FDH OP · " : ""}${f.label} — ${f.name}`}
+      title={title}
+      excel={hasData ? excel : undefined}
       note={f.note}
     >
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">

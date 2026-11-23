@@ -13,6 +13,10 @@ import {
   parseNum,
   parseTargetLine,
 } from "@/lib/kpi/strategy-format";
+import {
+  ExcelDownloadButton,
+  type ExcelExport,
+} from "@/components/kpi/overview/ExcelDownloadButton";
 import { DetailDialog, DetailValueGrid } from "@/components/strategy/DetailDialog";
 import { LineChart } from "@/components/strategy/LineChart";
 import {
@@ -130,6 +134,28 @@ export function HaView({ data }: { data: StrategyDashboardData }) {
     };
   }, [selected]);
 
+  const haExcel: ExcelExport = {
+    fileName: "strategy-ha-indicators-2565-2569",
+    title: "เครื่องชี้วัดคุณภาพมาตรฐาน HA (พ.ศ. 2565–2569)",
+    subtitle: `ปี 2565–2569 · แหล่งข้อมูล ไฟล์ HA Part I–IV · ตามตัวกรองที่เลือก (${filtered.length} จาก ${haItems.length} รายการ)`,
+    sheetName: "HA Part I-IV",
+    columns: [
+      { header: "Part" },
+      { header: "หมวด / ระบบงาน" },
+      { header: "ข้อมูล / ตัวชี้วัด" },
+      { header: "เป้าหมาย" },
+      ...YEAR_LABELS.map((y) => ({ header: y })),
+    ],
+    rows: filtered.map((item) => [
+      item.partName,
+      item.secName,
+      item.name,
+      fmtTarget(item.target, [...item.years]),
+      ...item.years.map((v) => (v === "" ? null : v)),
+    ]),
+    notes: ["ค่าตามที่บันทึกในไฟล์ต้นฉบับ (บางรายการเป็นสัดส่วน 0–1 บางรายการเป็นร้อยละ) หน่วยตามชื่อตัวชี้วัด"],
+  };
+
   const reset = () => {
     setPart("all");
     setSec("all");
@@ -244,10 +270,13 @@ export function HaView({ data }: { data: StrategyDashboardData }) {
         title="ตารางเครื่องชี้วัดคุณภาพมาตรฐาน HA โรงพยาบาลบางระกำ (พ.ศ. 2565–2569)"
         subtitle="คลิกที่แถวเพื่อดูกราฟแนวโน้ม 5 ปีด้านบน ดับเบิลคลิกเพื่อดูค่ารายปี"
         action={
-          <span className="rounded-full border border-zinc-300 px-3 py-1 text-xs tabular-nums dark:border-zinc-700">
-            แสดง {numberFormat.format(filtered.length)} จาก{" "}
-            {numberFormat.format(haItems.length)} รายการ
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {filtered.length > 0 && <ExcelDownloadButton data={haExcel} />}
+            <span className="rounded-full border border-zinc-300 px-3 py-1 text-xs tabular-nums dark:border-zinc-700">
+              แสดง {numberFormat.format(filtered.length)} จาก{" "}
+              {numberFormat.format(haItems.length)} รายการ
+            </span>
+          </div>
         }
       >
         {filtered.length === 0 ? (

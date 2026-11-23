@@ -1,6 +1,8 @@
 import type { DistrictCkd5Result } from "@/lib/kpi/types";
 import { targetOperatorSign } from "@/lib/kpi/screening-indicators";
 import { ACCENTS } from "./indicator-theme";
+import { ckd5Excel } from "./district-excel";
+import { ExcelDownloadButton } from "./overview/ExcelDownloadButton";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 
 const thClass = "px-3 py-2 font-semibold";
@@ -20,7 +22,11 @@ export function DistrictCkd5Table({ result }: { result: DistrictCkd5Result }) {
   const prevFy = result.fiscalYear - 1;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
+    <div className="space-y-2">
+      <div className="flex justify-end">
+        <ExcelDownloadButton data={ckd5Excel(result)} />
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
       <table className="w-full min-w-160 text-left text-sm">
         <caption className="sr-only">
           ผู้ป่วยไตเรื้อรัง stage 5 รายใหม่ รายตำบล อำเภอบางระกำ ปีงบประมาณ{" "}
@@ -107,6 +113,7 @@ export function DistrictCkd5Table({ result }: { result: DistrictCkd5Result }) {
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   );
 }

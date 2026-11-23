@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowRight, Info } from "lucide-react";
 import type { Kpi, StrategyDashboardData } from "@/lib/kpi/strategy-types";
 import { fmtCell, fmtTarget, hasValue2569 } from "@/lib/kpi/strategy-format";
+import { ExcelDownloadButton, type ExcelExport } from "@/components/kpi/overview/ExcelDownloadButton";
 import { StackedColumnChart } from "./BarCharts";
 import { KpiDetailDialog } from "./DetailDialog";
 import { LineChart } from "./LineChart";
@@ -91,6 +92,62 @@ export function ExecutiveView({
   const ha69Count = haItems.filter(hasValue2569).length;
   const failByStrategy = strategies.map((s) => `${s.idx + 1} (${s.fail})`).join(", ");
 
+  const SOURCE = "แหล่งข้อมูล ไฟล์ KPI ยุทธศาสตร์ รพ. (ติดตามรายไตรมาส)";
+  const strategyExcel: ExcelExport = {
+    fileName: "strategy-by-strategy-2569",
+    title: "ผลการดำเนินงานตาม 4 ยุทธศาสตร์ ปี 2569",
+    subtitle: `ปี 2569 · ${SOURCE}`,
+    sheetName: "ตามยุทธศาสตร์",
+    columns: [
+      { header: "ยุทธศาสตร์" },
+      { header: "ตัวชี้วัดทั้งหมด (ข้อ)", format: "int" },
+      { header: "ผ่าน (ข้อ)", format: "int" },
+      { header: "ไม่ผ่าน (ข้อ)", format: "int" },
+      { header: "ร้อยละที่ผ่าน", format: "pct" },
+    ],
+    rows: strategies.map((s) => [s.name, s.total, s.pass, s.fail, s.pct]),
+    footer: [["รวม", all69.total, all69.pass, all69.fail, all69.pct]],
+    notes: ["หมายเหตุ: ตารางสรุปท้ายชีตต้นฉบับระบุ 75.68% (28/37 ข้อ) ส่วนนี้นับรายข้อจริง"],
+  };
+  const trendExcel: ExcelExport = {
+    fileName: "strategy-trend-2565-2569",
+    title: "แนวโน้มการบรรลุตัวชี้วัดระดับองค์กร 5 ปี (พ.ศ. 2565–2569)",
+    subtitle: "อ้างอิงข้อมูล HA หมวด I-2 กลยุทธ์ (เป้าหมาย > 80%) เชื่อมโยงผลงานปี 2568–2569",
+    sheetName: "แนวโน้ม 5 ปี",
+    columns: [
+      { header: "ปี" },
+      ...TREND_SERIES.map((t) => ({ header: t.label, format: "pct" as const })),
+    ],
+    rows: TREND_LABELS.map((label, i) => [label, ...TREND_SERIES.map((t) => t.data[i])]),
+  };
+  const watchlistExcel: ExcelExport = {
+    fileName: "strategy-watchlist-2569",
+    title: `ตัวชี้วัดยุทธศาสตร์ปี 2569 ที่ยังไม่ผ่านเกณฑ์ (${failed69.length} รายการ)`,
+    subtitle: `ปี 2569 · ${SOURCE}`,
+    sheetName: "Watchlist",
+    columns: [
+      { header: "รหัส" },
+      { header: "ตัวชี้วัดองค์กร" },
+      { header: "ยุทธศาสตร์" },
+      { header: "เป้าหมาย" },
+      { header: "Q1" },
+      { header: "Q2" },
+      { header: "Q3" },
+      { header: "Q4 / ล่าสุด" },
+      { header: "สรุปผล" },
+      { header: "ผู้รับผิดชอบ" },
+    ],
+    rows: failed69.map((k) => [
+      k.code,
+      k.name,
+      k.groupShort,
+      fmtTarget(k.target, k.q),
+      ...k.q.map((v) => (v === "" ? null : v)),
+      k.status === 1 ? "ผ่าน" : "ไม่ผ่าน",
+      k.owner,
+    ]),
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -153,6 +210,7 @@ export function ExecutiveView({
         <Card
           title="ผลการดำเนินงานตาม 4 ยุทธศาสตร์โรงพยาบาลบางระกำ (ปี 2569)"
           subtitle="คลิกที่แถบยุทธศาสตร์ด้านล่างเพื่อเจาะลึกตัวชี้วัดรายยุทธศาสตร์"
+          action={<ExcelDownloadButton data={strategyExcel} />}
         >
           <StackedColumnChart
             ariaLabel="กราฟจำนวนตัวชี้วัดที่ผ่านและไม่ผ่านเกณฑ์ แยกตาม 4 ยุทธศาสตร์ ปี 2569"
@@ -201,6 +259,7 @@ export function ExecutiveView({
         <Card
           title="แนวโน้มการบรรลุตัวชี้วัดระดับองค์กร 5 ปี (พ.ศ. 2565–2569)"
           subtitle="อ้างอิงข้อมูล HA หมวด I-2 กลยุทธ์ (เป้าหมาย > 80%) เชื่อมโยงผลงานปี 2568–2569"
+          action={<ExcelDownloadButton data={trendExcel} />}
         >
           <LineChart
             labels={TREND_LABELS}
@@ -227,10 +286,13 @@ export function ExecutiveView({
         title={`รายการเฝ้าระวังเร่งด่วน (Action Watchlist): ตัวชี้วัดยุทธศาสตร์ปี 2569 ที่ยังไม่ผ่านเกณฑ์ (${failed69.length} รายการ)`}
         subtitle="คลิกที่แถวรายการเพื่อดูกราฟแนวโน้มรายไตรมาส (Q1–Q4) และรายละเอียดการติดตาม"
         action={
-          <button type="button" onClick={onShowAllKpi} className={primaryButtonClass}>
-            ดู KPI ยุทธศาสตร์ทั้งหมด ({kpi2569.length} ข้อ)
-            <ArrowRight aria-hidden="true" className="h-4 w-4" />
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {failed69.length > 0 && <ExcelDownloadButton data={watchlistExcel} />}
+            <button type="button" onClick={onShowAllKpi} className={primaryButtonClass}>
+              ดู KPI ยุทธศาสตร์ทั้งหมด ({kpi2569.length} ข้อ)
+              <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </div>
         }
       >
         <div className="-mx-4 overflow-x-auto">

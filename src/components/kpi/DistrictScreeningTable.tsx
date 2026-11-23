@@ -13,6 +13,8 @@ import {
 import { ACCENTS } from "./indicator-theme";
 import { DISTRICT_ACCENT, isLabIndicator } from "./district-codes";
 import { DistrictPersonsButton } from "./DistrictPersonsDialog";
+import { ratioExcel } from "./district-excel";
+import { ExcelDownloadButton } from "./overview/ExcelDownloadButton";
 import { ProgressBar } from "./ProgressBar";
 import { formatNumber, formatPercent, formatThaiDate } from "./format";
 
@@ -180,7 +182,11 @@ export function DistrictScreeningTable({
   const { district } = result;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
+    <div className="space-y-2">
+      <div className="flex justify-end">
+        <ExcelDownloadButton data={ratioExcel(result)} />
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800">
       <table className="w-full min-w-176 text-left text-sm">
         <caption className="sr-only">
           {isLabIndicator(result.code) ? "ผลการตรวจ" : "ผลคัดกรอง"} {result.name} รายตำบล อำเภอบางระกำ ปีงบประมาณ{" "}
@@ -316,6 +322,7 @@ export function DistrictScreeningTable({
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   );
 }

@@ -11,6 +11,11 @@ import type {
   DistrictPpVillage,
 } from "@/lib/kpi/district-pp-types";
 import { FiscalYearSelect } from "../FiscalYearSelect";
+import {
+  ExcelDownloadButton,
+  type ExcelCell,
+  type ExcelExport,
+} from "../overview/ExcelDownloadButton";
 import { ProgressBar } from "../ProgressBar";
 import {
   formatBaht,
@@ -376,6 +381,106 @@ export function DistrictPpView({
   ];
   const viewTitle = view === "ppfs" ? "รายการ PPFS" : "P&P Basic Services";
 
+  // Excel: exactly what the tables show under the current filter.
+  const filterText = [
+    unit ? `รพ.สต. ${unitOptions.find(([c]) => c === unit)?.[1] ?? unit}` : "ทุกหน่วยบริการ",
+    tambon ? `ต.${tambonOptions.find(([c]) => c === tambon)?.[1] ?? tambon}` : "ทุกตำบล",
+    moo ? `หมู่ ${moo}` : "ทุกหมู่",
+  ].join(" / ");
+  const excelSubtitle = `ปีงบประมาณ ${summary.fiscalYear} · ข้อมูล ณ วันที่ ${formatThaiDate(summary.dataAsOf)} · แหล่งข้อมูล HDC อำเภอบางระกำ · ${viewTitle} · ตัวกรอง: ${filterText}`;
+  const excelNotes = [
+    "เงินที่ได้แล้ว = ผลงาน × อัตรา เป็นประมาณการ (สปสช. จ่ายให้หน่วยที่ให้บริการและเรียกเก็บ) · เงิน สปสช. รวมเฉพาะรายการอัตรา สปสช. · มูลค่าอ้างอิงไม่ใช่เงิน สปสช.",
+    "ตัวเลขอาจต่างจากหน้าโรงพยาบาล (HOSxP) เพราะนับตามที่อยู่ของประชากรและหน่วยบริการที่รับผิดชอบ",
+  ];
+  const fileTag = `${view}-fy${summary.fiscalYear}`;
+  const compareExcel: ExcelExport | null =
+    compare && compare.rows.length > 0
+      ? {
+          fileName: `district-pp-compare-${fileTag}`,
+          title: `${compare.title} (${viewTitle})`,
+          subtitle: excelSubtitle,
+          sheetName: "เปรียบเทียบ",
+          columns: [
+            { header: "ชื่อ" },
+            { header: "เป้าหมาย สปสช. (บาท)", format: "int" },
+            { header: "ได้แล้ว (บาท)", format: "int" },
+            { header: "ยังไม่ได้ (บาท)", format: "int" },
+            { header: "ร้อยละ", format: "pct" },
+          ],
+          rows: compare.rows.map((r) => [
+            r.label,
+            r.money.nhsoTarget,
+            r.money.nhsoDone,
+            r.money.nhsoTarget - r.money.nhsoDone,
+            percentOf(r.money.nhsoDone, r.money.nhsoTarget),
+          ]),
+          footer: [
+            [
+              "รวม",
+              compare.rows.reduce((n, r) => n + r.money.nhsoTarget, 0),
+              compare.rows.reduce((n, r) => n + r.money.nhsoDone, 0),
+              compare.rows.reduce((n, r) => n + r.money.nhsoTarget - r.money.nhsoDone, 0),
+              percentOf(
+                compare.rows.reduce((n, r) => n + r.money.nhsoDone, 0),
+                compare.rows.reduce((n, r) => n + r.money.nhsoTarget, 0),
+              ),
+            ],
+          ],
+          notes: ["เฉพาะรายการอัตรา สปสช. เรียงตามยอดที่ยังไม่ได้", ...excelNotes],
+        }
+      : null;
+  const itemsExcel: ExcelExport = {
+    fileName: `district-pp-items-${fileTag}`,
+    title: `${viewTitle} ทั้งอำเภอบางระกำ`,
+    subtitle: excelSubtitle,
+    sheetName: viewTitle,
+    columns: [
+      { header: "รายการ" },
+      { header: "กลุ่ม" },
+      { header: "เงื่อนไข" },
+      { header: "ประเภทอัตรา" },
+      { header: "อัตรา (บาท)", format: "int" },
+      { header: "หน่วยอัตรา" },
+      { header: "หน่วยนับ" },
+      { header: "เป้าหมาย", format: "int" },
+      { header: "ทำแล้ว", format: "int" },
+      { header: "เป้าหมาย (บาท)", format: "int" },
+      { header: "ได้แล้ว (บาท)", format: "int" },
+      { header: "ยังไม่ได้ (บาท)", format: "int" },
+      { header: "ร้อยละ", format: "pct" },
+    ],
+    rows: itemRows.map(({ item, sum, targetBaht, doneBaht }): ExcelCell[] => {
+      const err = Boolean(item.error);
+      return [
+        item.name,
+        item.group,
+        item.condition,
+        BASIS_LABEL[item.basis],
+        item.rate,
+        item.rateUnit,
+        countUnit(item.unit),
+        err ? null : sum.target,
+        err ? null : sum.done,
+        targetBaht,
+        doneBaht,
+        targetBaht === null || doneBaht === null ? null : targetBaht - doneBaht,
+        err || sum.target === 0 ? null : percentOf(sum.done, sum.target),
+      ];
+    }),
+    footer: [
+      ["รวมเงิน สปสช. (เฉพาะรายการอัตรา สปสช.)", "", "", "", null, "", "", null, null, total.nhsoTarget, total.nhsoDone, total.nhsoTarget - total.nhsoDone, percentOf(total.nhsoDone, total.nhsoTarget)],
+      ...(hasReference
+        ? [["รวมมูลค่าอ้างอิง (ไม่ใช่เงิน สปสช.)", "", "", "", null, "", "", null, null, total.refTarget, total.refDone, total.refTarget - total.refDone, percentOf(total.refDone, total.refTarget)] as ExcelCell[]]
+        : []),
+    ],
+    notes: [
+      ...excelNotes,
+      ...(extraDoses > 0
+        ? [`รวมวัคซีนเด็กนอกเขตอำเภอ ${formatNumber(extraDoses)} เข็ม (นับเป็นทั้งเป้าหมายและผลงานของหน่วยที่ฉีด)`]
+        : []),
+    ],
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-surface p-3 shadow-sm dark:border-zinc-800">
@@ -528,7 +633,10 @@ export function DistrictPpView({
           aria-label={compare.title}
           className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
         >
-          <h2 className="text-base font-semibold">{compare.title}</h2>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h2 className="text-base font-semibold">{compare.title}</h2>
+            {compareExcel && <ExcelDownloadButton data={compareExcel} />}
+          </div>
           <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
             เรียงตามยอดที่ยังไม่ได้ (เฉพาะอัตรา สปสช.) คลิกที่ชื่อเพื่อกรองลงไปในระดับนั้น
           </p>
@@ -598,7 +706,10 @@ export function DistrictPpView({
         aria-label={viewTitle}
         className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
       >
-        <h2 className="text-base font-semibold">{viewTitle}</h2>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h2 className="text-base font-semibold">{viewTitle}</h2>
+          {itemRows.length > 0 && <ExcelDownloadButton data={itemsExcel} />}
+        </div>
         {itemRows.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
             ไม่พบรายการ

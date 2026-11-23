@@ -1,4 +1,5 @@
-import type { PpfsGrade, PpfsItem } from "@/lib/kpi/ppfs-types";
+import type { PpfsGrade, PpfsItem, PpfsTotals } from "@/lib/kpi/ppfs-types";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import { ProgressBar } from "../ProgressBar";
 import { formatBaht, formatNumber } from "../format";
 import {
@@ -60,22 +61,108 @@ function byGapDesc(a: PpfsItem, b: PpfsItem): number {
 export function PpfsTable({
   items,
   fiscalYear,
+  totals,
+  rateYear,
+  rateLabel = "อัตรา PPFS ปี",
+  notes = [],
+  fileKey = "ppfs",
   ariaLabel = "รายการ PPFS",
   title = "รายการ PPFS เรียงตามยอดที่ยังไม่ได้",
 }: {
   items: PpfsItem[];
   fiscalYear: number;
+  totals?: PpfsTotals;
+  rateYear?: number;
+  rateLabel?: string;
+  notes?: string[];
+  fileKey?: string;
   ariaLabel?: string;
   title?: string;
 }) {
   const rows = [...items].sort(byGapDesc);
+
+  const excel: ExcelExport = {
+    fileName: `${fileKey}-fy${fiscalYear}`,
+    title: `${title} ปีงบประมาณ ${fiscalYear}`,
+    subtitle: `ปีงบประมาณ ${fiscalYear}${rateYear ? ` · ${rateLabel} ${rateYear}` : ""} · แหล่งข้อมูล HOSxP (ยอดเงินเป็นค่าประมาณ ไม่ใช่ยอดโอนจริง)`,
+    sheetName: "รายการ",
+    columns: [
+      { header: "รายการ" },
+      { header: "กลุ่ม" },
+      { header: "เงื่อนไข" },
+      { header: "คุณภาพข้อมูล" },
+      { header: "ประชากร" },
+      { header: "อัตรา (บาท)" },
+      { header: "หน่วยอัตรา" },
+      { header: "เป้าหมาย", format: "int" },
+      { header: "ทำแล้ว", format: "int" },
+      { header: "คิดเงินแล้ว (ครั้ง)", format: "int" },
+      { header: "เป้าหมาย (บาท)", format: "int" },
+      { header: "ได้แล้ว (บาท)", format: "int" },
+      { header: "ยังไม่ได้ (บาท)", format: "int" },
+      { header: "ร้อยละ", format: "pct" },
+      { header: "รอพิจารณา (หน่วย)", format: "int" },
+      { header: "รอพิจารณา (บาท)", format: "int" },
+      { header: "หมายเหตุ" },
+    ],
+    rows: rows.map((it) => {
+      const potential = it.error ? null : it.potential;
+      const percent =
+        it.targetBaht !== null && it.targetBaht > 0
+          ? (it.earnedBaht / it.targetBaht) * 100
+          : null;
+      const remark = [
+        it.caveat,
+        it.ceiling ? "เป้าหมายเป็นเพดาน" : null,
+        it.rateUnconfirmed ? RATE_UNCONFIRMED_HINT : null,
+        it.error ?? null,
+      ]
+        .filter((x): x is string => Boolean(x))
+        .join(" / ");
+      return [
+        it.name,
+        it.group,
+        it.condition,
+        GRADE_INFO[it.grade].label,
+        it.population === "service" ? "ผู้มารับบริการที่ รพ." : "ประชากรในเขต",
+        it.rate,
+        it.unit,
+        it.target,
+        it.error ? null : it.done,
+        it.billed,
+        it.targetBaht,
+        it.error ? null : it.earnedBaht,
+        it.gapBaht,
+        percent,
+        potential ? potential.units : null,
+        potential ? potential.baht : null,
+        remark || null,
+      ];
+    }),
+    footer: totals
+      ? [
+          [
+            "รวม", "", "", "", "", null, "", null, null, null,
+            totals.targetBaht, totals.earnedBaht, totals.gapBaht, totals.coveragePercent,
+            null, null, null,
+          ],
+        ]
+      : undefined,
+    notes: [
+      "\"คิดเงินแล้ว\" = จำนวนครั้ง (visit) ที่ถูกคิดรายการ ADP ของ สปสช. ไม่ใช่สถานะการเบิกจ่ายจริง",
+      ...notes,
+    ],
+  };
 
   return (
     <section
       aria-label={ariaLabel}
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">{title}</h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-base font-semibold">{title}</h2>
+        <ExcelDownloadButton data={excel} />
+      </div>
       <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
         &quot;คิดเงินแล้ว&quot; = จำนวนครั้ง (visit) ที่ถูกคิดรายการ ADP ของ สปสช. ตรงกับรายการใน HOSxP ในปีงบฯ นี้ (ขอบเขตของแต่ละรายการดูหมายเหตุใต้ชื่อ) ไม่ใช่สถานะการเบิกจ่ายจริง
       </p>
@@ -245,6 +332,7 @@ export function PpfsTable({
                         rate={it.rate}
                         countUnit={unit}
                         fiscalYear={fiscalYear}
+                        fileKey={fileKey}
                         hasBilled={it.billed !== null}
                         villages={it.villages}
                       />

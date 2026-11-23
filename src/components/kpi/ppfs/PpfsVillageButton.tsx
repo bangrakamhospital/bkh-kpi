@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { MapPin, X } from "lucide-react";
 import type { PpfsVillageRow } from "@/lib/kpi/ppfs-types";
 import { formatBaht, formatNumber, formatPercent } from "../format";
+import { ExcelDownloadButton, type ExcelCell, type ExcelExport } from "../overview/ExcelDownloadButton";
 import {
   tableClass,
   tdClass,
@@ -21,6 +22,8 @@ interface Props {
   /** Count unit, e.g. "คน". */
   countUnit: string;
   fiscalYear: number;
+  /** File-name prefix of the Excel export. */
+  fileKey: string;
   hasBilled: boolean;
   villages: PpfsVillageRow[];
 }
@@ -45,6 +48,7 @@ export function PpfsVillageButton({
   rate,
   countUnit,
   fiscalYear,
+  fileKey,
   hasBilled,
   villages,
 }: Props) {
@@ -65,6 +69,45 @@ export function PpfsVillageButton({
     setOpen(true);
     if (!dialogRef.current?.open) dialogRef.current?.showModal();
   }
+
+  const excelRow = (
+    label: string,
+    target: number,
+    done: number,
+    billed: number | null,
+  ): ExcelCell[] => {
+    const targetBaht = target * rate;
+    const earnedBaht = done * rate;
+    return [
+      label,
+      target,
+      done,
+      ...(hasBilled ? [billed] : []),
+      target > 0 ? (done / target) * 100 : null,
+      targetBaht,
+      earnedBaht,
+      Math.max(0, targetBaht - earnedBaht),
+    ];
+  };
+
+  const excel: ExcelExport = {
+    fileName: `${fileKey}-${code}-villages-fy${fiscalYear}`,
+    title: `${name} รายหมู่บ้าน ปีงบประมาณ ${fiscalYear}`,
+    subtitle: `ปีงบประมาณ ${fiscalYear} · อัตรา ${formatBaht(rate)} บาท ต่อ${countUnit} · แหล่งข้อมูล HOSxP (ยอดเงินเป็นค่าประมาณ)`,
+    sheetName: "รายหมู่บ้าน",
+    columns: [
+      { header: "หมู่บ้าน" },
+      { header: `เป้าหมาย (${countUnit})`, format: "int" },
+      { header: `ทำแล้ว (${countUnit})`, format: "int" },
+      ...(hasBilled ? [{ header: "คิดเงินแล้ว (ครั้ง)", format: "int" as const }] : []),
+      { header: "ร้อยละ", format: "pct" },
+      { header: "เป้าหมาย (บาท)", format: "int" },
+      { header: "ได้แล้ว (บาท)", format: "int" },
+      { header: "ยังไม่ได้ (บาท)", format: "int" },
+    ],
+    rows: villages.map((v) => excelRow(villageLabel(v), v.target, v.done, v.billed)),
+    footer: [excelRow("รวม", total.target, total.done, hasBilled ? total.billed : null)],
+  };
 
   const row = (
     key: string,
@@ -130,14 +173,17 @@ export function PpfsVillageButton({
                   ต่อ{countUnit} · ยอดรวมเท่านั้น
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => dialogRef.current?.close()}
-                aria-label="ปิด"
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:hover:bg-zinc-800"
-              >
-                <X aria-hidden="true" className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {villages.length > 0 && <ExcelDownloadButton data={excel} />}
+                <button
+                  type="button"
+                  onClick={() => dialogRef.current?.close()}
+                  aria-label="ปิด"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:hover:bg-zinc-800"
+                >
+                  <X aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {villages.length === 0 ? (

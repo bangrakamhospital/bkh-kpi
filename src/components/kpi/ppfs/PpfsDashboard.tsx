@@ -171,6 +171,11 @@ export async function PpfsDashboard({
         <PpfsTable
           items={data.items}
           fiscalYear={data.fiscalYear}
+          totals={data.totals}
+          rateYear={data.rateYear}
+          rateLabel={v.rateLabel}
+          notes={[v.note]}
+          fileKey={kind === "other" ? "pp-other" : "pp-ppfs"}
           ariaLabel={v.tableLabel}
           title={v.tableTitle}
         />

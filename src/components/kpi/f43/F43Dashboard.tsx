@@ -8,6 +8,7 @@ import { todayIsoDate } from "@/lib/kpi/fiscal-year";
 import { ClinicAlert } from "../clinic/FiscalYearBar";
 import { ClinicPanel } from "../clinic/ClinicPanel";
 import { STAT_TONES, StatCard } from "../clinic/StatCard";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
 import { formatNumber, formatThaiDate } from "../format";
 import {
   mutedClass,
@@ -24,7 +25,7 @@ import { F43RangePicker } from "./F43RangePicker";
 import { F43Sidebar } from "./F43Sidebar";
 import { F43UnitSelect } from "./F43UnitSelect";
 import { F43StaffTable, F43UnitTable, STAFF_NOTE } from "./F43UnitTable";
-import { f43Href } from "./f43-ui";
+import { f43Href, FILE_STATUS } from "./f43-ui";
 
 type Param = string | string[] | undefined;
 const one = (v: Param) => (Array.isArray(v) ? v[0] : v);
@@ -71,16 +72,45 @@ function ReadinessCards({ data }: { data: F43Report }) {
 const TOP_N = 15;
 
 /** The most-failed checks across every file (errors first). */
-function TopProblems({ data, hrefFor }: { data: F43Report; hrefFor: (file: string) => string }) {
-  const items: { f: F43FileResult; c: F43CheckResult }[] = data.files
+function TopProblems({
+  data,
+  hrefFor,
+  rangeText,
+}: {
+  data: F43Report;
+  hrefFor: (file: string) => string;
+  rangeText: string;
+}) {
+  const allFailed: { f: F43FileResult; c: F43CheckResult }[] = data.files
     .flatMap((f) => f.checks.filter((c) => c.failed > 0).map((c) => ({ f, c })))
     .sort(
       (a, b) =>
         Number(b.c.severity === "error") - Number(a.c.severity === "error") || b.c.failed - a.c.failed,
-    )
-    .slice(0, TOP_N);
+    );
+  const items = allFailed.slice(0, TOP_N);
+  const excel: ExcelExport = {
+    fileName: "f43-problems",
+    title: "รายการตรวจที่ผิด เรียงผิดร้ายแรงก่อน (ผลตรวจ 43 แฟ้ม)",
+    subtitle: `ช่วงวันที่ ${rangeText} · ${data.unitName} · แหล่งข้อมูล HOSxP ตรวจก่อนส่งออก (จำนวนสรุป ไม่มีข้อมูลผู้ป่วย)`,
+    sheetName: "รายการที่ผิด",
+    columns: [
+      { header: "ชุดแฟ้ม" },
+      { header: "แฟ้ม" },
+      { header: "รายการตรวจ" },
+      { header: "จำนวนผิด", format: "int" },
+      { header: "ระดับ" },
+    ],
+    rows: allFailed.map(({ f, c }) => [
+      f.group === "fdh" ? "FDH OP" : "HDC",
+      f.label,
+      c.label,
+      c.failed,
+      c.severity === "error" ? "ร้ายแรง" : "เตือน",
+    ]),
+    notes: ["ส่งออกทุกรายการที่ผิด (หน้าเว็บแสดง " + TOP_N + " รายการแรก)"],
+  };
   return (
-    <ClinicPanel title="สิ่งที่ต้องแก้มากที่สุด" note={`${TOP_N} รายการแรก เรียงผิดร้ายแรงก่อน แล้วตามจำนวน · กดชื่อแฟ้มเพื่อดูรายละเอียด`}>
+    <ClinicPanel title="สิ่งที่ต้องแก้มากที่สุด" excel={allFailed.length > 0 ? excel : undefined} note={`${TOP_N} รายการแรก เรียงผิดร้ายแรงก่อน แล้วตามจำนวน · กดชื่อแฟ้มเพื่อดูรายละเอียด`}>
       {items.length === 0 ? (
         <p className="mt-3 text-xs">ไม่พบรายการผิดในช่วงวันที่และหน่วยบริการที่เลือก</p>
       ) : (
@@ -198,6 +228,38 @@ export async function F43Dashboard({
   const unitHref = (u: string) => f43Href({ from: range.from, to: range.to, u, file: report.file });
   const keep = `${report.unit === "*" ? "" : `&u=${encodeURIComponent(report.unit)}`}${report.file ? `&file=${encodeURIComponent(report.file)}` : ""}`;
   const selected = report.files.find((f) => f.code === report.file) ?? null;
+  const rangeText = `${formatThaiDate(range.from)} – ${formatThaiDate(range.to)}`;
+  const filesExcel: ExcelExport = {
+    fileName: "f43-files",
+    title: "ผลตรวจรายแฟ้ม (ตรวจ 43 แฟ้ม)",
+    subtitle: `ช่วงวันที่ ${rangeText} (${range.days} วัน) · ${report.unitName} · แหล่งข้อมูล HOSxP ตรวจก่อนส่งออก (จำนวนสรุป ไม่มีข้อมูลผู้ป่วย)`,
+    sheetName: "รายแฟ้ม",
+    columns: [
+      { header: "ชุดแฟ้ม" },
+      { header: "แฟ้ม" },
+      { header: "ชื่อแฟ้ม" },
+      { header: "สถานะ" },
+      { header: "จำนวนตรวจ", format: "int" },
+      { header: "หน่วยนับ" },
+      { header: "ผิดร้ายแรง", format: "int" },
+      { header: "เตือน", format: "int" },
+    ],
+    rows: report.files.map((f) => [
+      f.group === "fdh" ? "FDH OP" : "HDC",
+      f.label,
+      f.name,
+      FILE_STATUS[f.status].label,
+      f.total,
+      f.unitLabel ?? null,
+      f.total !== null ? f.errorFailed : null,
+      f.total !== null ? f.warnFailed : null,
+    ]),
+    footer: [
+      ["HDC รวม", "", "", report.hdc.ready ? "พร้อมส่ง" : "ยังไม่พร้อม", null, null, report.hdc.errorFailed, report.hdc.warnFailed],
+      ["FDH OP รวม", "", "", report.fdh.ready ? "พร้อมส่ง" : "ยังไม่พร้อม", null, null, report.fdh.errorFailed, report.fdh.warnFailed],
+    ],
+    notes: ["ผิดร้ายแรง = HDC/FDH reject ต้องแก้ก่อนส่ง · เตือน = ควรแก้ · แฟ้มที่ไม่แยกหน่วยหรือยังไม่รองรับไม่มีจำนวน"],
+  };
 
   return (
     <div className="space-y-4">
@@ -218,9 +280,12 @@ export async function F43Dashboard({
             value={report.unit}
             baseHref={f43Href({ from: range.from, to: range.to, file: report.file })}
           />
-          <p className="text-xs text-zinc-600 dark:text-zinc-400">
-            {formatThaiDate(range.from)} – {formatThaiDate(range.to)} ({formatNumber(range.days)} วัน) · {report.unitName}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              {rangeText} ({formatNumber(range.days)} วัน) · {report.unitName}
+            </p>
+            <ExcelDownloadButton data={filesExcel} />
+          </div>
         </div>
       </section>
 
@@ -231,7 +296,7 @@ export async function F43Dashboard({
         <div className="min-w-0 space-y-4">
           {selected ? (
             <>
-              <F43FileDetail f={selected} />
+              <F43FileDetail f={selected} rangeText={rangeText} unitName={report.unitName} />
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <F43UnitTable
                   title="แฟ้มนี้ รายหน่วยบริการ"
@@ -239,6 +304,7 @@ export async function F43Dashboard({
                   selected={report.unit}
                   hrefFor={unitHref}
                   groups={[selected.group]}
+                  rangeText={rangeText}
                 />
                 <F43StaffTable rows={report.staffRows} note={STAFF_NOTE} />
               </div>
@@ -246,7 +312,7 @@ export async function F43Dashboard({
           ) : (
             <>
               <ReadinessCards data={report} />
-              <TopProblems data={report} hrefFor={(f) => fileHref(f)} />
+              <TopProblems data={report} hrefFor={(f) => fileHref(f)} rangeText={rangeText} />
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <F43UnitTable
                   title="เปรียบเทียบรายหน่วยบริการ"
@@ -254,6 +320,7 @@ export async function F43Dashboard({
                   selected={report.unit}
                   hrefFor={unitHref}
                   groups={["hdc", "fdh"]}
+                  rangeText={rangeText}
                 />
                 <F43StaffTable rows={report.staffRows} note={`นับเฉพาะแฟ้ม HDC (FDH ใช้ข้อมูลชุดเดียวกัน) · ${STAFF_NOTE}`} />
               </div>

@@ -4,6 +4,8 @@ import type {
   NcdLabPanelRow,
 } from "@/lib/kpi/ncd-clinic-types";
 import { ProgressBar } from "../ProgressBar";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
+import { round2 } from "../overview/export-utils";
 import { formatBaht, formatNumber, formatPercent } from "../format";
 import {
   tableClass,
@@ -31,17 +33,50 @@ export function NcdLabPanel({
   panel,
   hba1c,
   glucose,
+  fiscalYear,
 }: {
   panel: NcdLabPanelRow[];
   hba1c: NcdHba1cUse;
   glucose: NcdGlucoseTests;
+  fiscalYear: number;
 }) {
+  const excel: ExcelExport = {
+    fileName: `ncd-lab-fy${fiscalYear}`,
+    title: `NCD Clinic การตรวจ lab ผู้ป่วยเบาหวาน ปีงบประมาณ ${fiscalYear}`,
+    subtitle: "แหล่งข้อมูล HOSxP",
+    sheetName: "lab เบาหวาน",
+    columns: [{ header: "หมวด" }, { header: "รายการ" }, { header: "ค่า" }, { header: "หน่วย" }],
+    rows: [
+      ...panel.flatMap((r) => [
+        ["ผู้ป่วย DM ที่มีผล lab อย่างน้อย 1 ครั้ง", r.name, r.persons, "คน"],
+        ["ผู้ป่วย DM ที่มีผล lab อย่างน้อย 1 ครั้ง", r.name, round2(r.percent), "ร้อยละ"],
+      ]),
+      ["HbA1c เกินสิทธิ", "สิทธิ สปสช. จ่ายไม่เกิน", hba1c.billableLimit, "ครั้ง/คน/ปี"],
+      ["HbA1c เกินสิทธิ", "คนที่เกินสิทธิ", hba1c.personsOverLimit, "คน"],
+      ["HbA1c เกินสิทธิ", "ครั้งที่เกิน", hba1c.excessTests, "ครั้ง"],
+      ["HbA1c เกินสิทธิ", "HbA1c ทั้งหมด", hba1c.tests, "ครั้ง"],
+      ["HbA1c เกินสิทธิ", "ราคาต่อครั้ง", hba1c.priceBaht, "บาท"],
+      ["HbA1c เกินสิทธิ", "ประมาณการส่วนเกิน", round2(hba1c.excessBaht), "บาท"],
+      ["น้ำตาลในเลือด", "FBS (เจาะเลือด)", glucose.fbsVisits, "visit"],
+      ["น้ำตาลในเลือด", "DTX (ปลายนิ้ว)", glucose.dtxVisits, "visit"],
+      ["น้ำตาลในเลือด", "สัดส่วน FBS", round2(glucose.fbsPercent), "ร้อยละ"],
+    ],
+    notes: [
+      'สัดส่วนผู้ป่วย DM ที่มีผล lab อย่างน้อย 1 ครั้งในปีงบฯ (นับทุก visit) "ครบ 5 รายการ" = HbA1c + LDL + Cr + K + FBS ครบทุกตัว',
+      "HbA1c เกินสิทธิเป็นค่าประมาณจากราคาใน HOSxP เบิก สปสช. ไม่ได้ นับทุกสิทธิ",
+      "FBS/DTX นับ visit ของคลินิกที่มีรายการ lab นั้น",
+    ],
+  };
+
   return (
     <section
       aria-label="การตรวจ lab ของผู้ป่วยเบาหวาน"
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">การตรวจ lab ผู้ป่วยเบาหวาน</h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-base font-semibold">การตรวจ lab ผู้ป่วยเบาหวาน</h2>
+        <ExcelDownloadButton data={excel} />
+      </div>
       <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
         สัดส่วนผู้ป่วย DM ที่มีผล lab อย่างน้อย 1 ครั้งในปีงบฯ (นับทุก visit) &quot;ครบ 5 รายการ&quot; = HbA1c + LDL + Cr + K + FBS ครบทุกตัว
       </p>

@@ -17,3 +17,8 @@ export function periodFileSuffix(range: OverviewRange): string {
 export function pct1(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 1000) / 10 : 0;
 }
+
+/** Number rounded to 2 decimals (for Excel); null stays null. */
+export function round2(value: number | null): number | null {
+  return value === null ? null : Math.round(value * 100) / 100;
+}

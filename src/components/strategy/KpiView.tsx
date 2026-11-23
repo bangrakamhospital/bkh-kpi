@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Maximize2 } from "lucide-react";
 import type { Kpi, StrategyDashboardData } from "@/lib/kpi/strategy-types";
 import { fmtCell, fmtTarget, parseNum } from "@/lib/kpi/strategy-format";
+import { ExcelDownloadButton, type ExcelExport } from "@/components/kpi/overview/ExcelDownloadButton";
 import { KpiQuarterChart, StackedBarList } from "./BarCharts";
 import { KpiDetailDialog } from "./DetailDialog";
 import {
@@ -77,6 +78,20 @@ function matches(k: Kpi, f: KpiFilters, q: string): boolean {
   return hay.includes(q);
 }
 
+/** All owners (no chart limit) for the Excel export. */
+function ownerExcelRows(list: Kpi[]): (string | number)[][] {
+  const byOwner = new Map<string, { pass: number; fail: number }>();
+  for (const k of list) {
+    const row = byOwner.get(k.owner) ?? { pass: 0, fail: 0 };
+    if (k.status === 1) row.pass++;
+    else row.fail++;
+    byOwner.set(k.owner, row);
+  }
+  return [...byOwner.entries()]
+    .sort((a, b) => b[1].pass + b[1].fail - (a[1].pass + a[1].fail))
+    .map(([name, v]) => [name, v.pass + v.fail, v.pass, v.fail, (v.pass / (v.pass + v.fail)) * 100]);
+}
+
 function ownerRows(list: Kpi[]) {
   const byOwner = new Map<string, { pass: number; fail: number }>();
   for (const k of list) {
@@ -127,6 +142,53 @@ export function KpiView({
     null;
 
   const openDetail = (k: Kpi) => setDetail(k);
+
+  const filterNote = `ตามตัวกรองที่เลือก (${filtered.length} จาก ${list.length} ข้อ)`;
+  const ownerExcel: ExcelExport = {
+    fileName: `strategy-kpi-by-owner-${filters.year}`,
+    title: `ผลการดำเนินงานจำแนกตามผู้รับผิดชอบ ปี ${filters.year}`,
+    subtitle: `ปี ${filters.year} · แหล่งข้อมูล ไฟล์ KPI รพ. ติดตาม · ${filterNote}`,
+    sheetName: "ตามผู้รับผิดชอบ",
+    columns: [
+      { header: "ผู้รับผิดชอบ / หน่วยงาน" },
+      { header: "ตัวชี้วัดทั้งหมด (ข้อ)", format: "int" },
+      { header: "ผ่าน (ข้อ)", format: "int" },
+      { header: "ไม่ผ่าน (ข้อ)", format: "int" },
+      { header: "ร้อยละที่ผ่าน", format: "pct" },
+    ],
+    rows: ownerExcelRows(filtered),
+    footer: [["รวม", filtered.length, pass, fail, filtered.length ? (pass / filtered.length) * 100 : null]],
+  };
+  const kpiExcel: ExcelExport = {
+    fileName: `strategy-kpi-${filters.year}`,
+    title: `ตารางติดตามตัวชี้วัดยุทธศาสตร์ ปีงบประมาณ ${filters.year}`,
+    subtitle: `ปี ${filters.year} · แหล่งข้อมูล ไฟล์ KPI รพ. ติดตาม · ${filterNote}`,
+    sheetName: `KPI ปี ${filters.year}`,
+    columns: [
+      { header: "รหัส" },
+      { header: "ตัวชี้วัด" },
+      { header: is69 ? "ยุทธศาสตร์" : "Goal" },
+      ...(is69 ? [] : [{ header: "วัตถุประสงค์" }]),
+      { header: "เกณฑ์เป้าหมาย" },
+      { header: "Q1" },
+      { header: "Q2" },
+      { header: "Q3" },
+      { header: "Q4" },
+      { header: "สรุปผล" },
+      { header: "ผู้รับผิดชอบ" },
+    ],
+    rows: filtered.map((k) => [
+      k.code,
+      k.name,
+      k.groupShort,
+      ...(is69 ? [] : [k.objective ?? null]),
+      fmtTarget(k.target, k.q),
+      ...k.q.map((v) => (v === "" ? null : v)),
+      k.status === 1 ? "ผ่าน" : "ไม่ผ่าน",
+      k.owner,
+    ]),
+    footer: [[`ผ่าน ${pass} / ไม่ผ่าน ${fail} (${pct}%)`]],
+  };
 
   return (
     <div className="space-y-4">
@@ -201,6 +263,7 @@ export function KpiView({
         <Card
           title="ผลการดำเนินงานจำแนกตามผู้รับผิดชอบ"
           subtitle="เปรียบเทียบจำนวนตัวชี้วัดที่ผ่านและไม่ผ่านตามเงื่อนไขที่กรอง"
+          action={filtered.length > 0 ? <ExcelDownloadButton data={ownerExcel} /> : undefined}
         >
           {filtered.length ? (
             <StackedBarList
@@ -231,7 +294,12 @@ export function KpiView({
       <Card
         title={`ตารางติดตามตัวชี้วัดยุทธศาสตร์ ปีงบประมาณ ${filters.year}`}
         subtitle="แสดงข้อมูลจริงจากไฟล์ KPI รพ ติดตาม • คลิกที่แถวเพื่อแสดงกราฟรายไตรมาส ดับเบิลคลิกหรือกดปุ่มขยายเพื่อดูรายละเอียด"
-        action={<Pill>แสดง {filtered.length} รายการ</Pill>}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {filtered.length > 0 && <ExcelDownloadButton data={kpiExcel} />}
+            <Pill>แสดง {filtered.length} รายการ</Pill>
+          </div>
+        }
       >
         {filtered.length === 0 ? (
           <EmptyState

@@ -1,6 +1,8 @@
 import type { PtIpd, PtWait, PtWorkload } from "@/lib/kpi/pt-clinic-types";
 import { formatBaht, formatDecimal, formatNumber, formatPercent } from "../format";
 import { StatTile } from "../clinic/StatTile";
+import { ExcelDownloadButton, type ExcelExport } from "../overview/ExcelDownloadButton";
+import { round2 } from "../overview/export-utils";
 import { mutedClass } from "../overview/table-styles";
 
 const minutes = (v: number | null) => (v === null ? "–" : `${formatDecimal(v)} นาที`);
@@ -9,11 +11,49 @@ export function PtWorkloadCard({
   workload: w,
   wait,
   ipd,
+  fiscalYear,
 }: {
   workload: PtWorkload;
   wait: PtWait;
   ipd: PtIpd;
+  fiscalYear: number;
 }) {
+  const excel: ExcelExport = {
+    fileName: `pt-workload-fy${fiscalYear}`,
+    title: `คลินิกกายภาพ ภาระงาน เวลารอคอย และผู้ป่วยใน ปีงบประมาณ ${fiscalYear}`,
+    subtitle: "แหล่งข้อมูล HOSxP",
+    sheetName: "ภาระงาน",
+    columns: [{ header: "หมวด" }, { header: "รายการ" }, { header: "ค่า" }, { header: "หน่วย" }],
+    rows: [
+      ["ภาระงาน", "วันให้บริการ", w.serviceDays, "วัน"],
+      ["ภาระงาน", "visit ต่อวัน เฉลี่ย", round2(w.avgVisitsPerDay), "visit/วัน"],
+      ["ภาระงาน", "visit ต่อวัน สูงสุด", w.maxVisitsPerDay, "visit/วัน"],
+      ["ภาระงาน", "นักกายภาพต่อวัน เฉลี่ย", round2(w.avgTherapistsPerDay), "คน/วัน"],
+      ["ภาระงาน", "นักกายภาพทั้งปี", w.therapists, "คน"],
+      ["ภาระงาน", "visit ต่อนักกายภาพ-วัน", round2(w.visitsPerTherapistDay), "visit"],
+      ["ภาระงาน", "นัดทั้งหมด", w.appointments, "ราย"],
+      ["ภาระงาน", "มาตามนัด", w.appointmentsKept, "ราย"],
+      ["ภาระงาน", "มาตามนัด", round2(w.appointmentsKeptPercent), "ร้อยละ"],
+      ["เวลารอคอย", "visit ลงทะเบียนห้องกายภาพ", wait.visits, "visit"],
+      ["เวลารอคอย", "visit ที่วัดได้", wait.measured, "visit"],
+      ["เวลารอคอย", "มัธยฐาน", round2(wait.medianMinutes), "นาที"],
+      ["เวลารอคอย", "เฉลี่ย", round2(wait.meanMinutes), "นาที"],
+      ["เวลารอคอย", "เปอร์เซ็นไทล์ที่ 90", round2(wait.p90Minutes), "นาที"],
+      ["เวลารอคอย", "ภายใน 30 นาที", wait.within30, "visit"],
+      ["เวลารอคอย", "ภายใน 60 นาที", wait.within60, "visit"],
+      ["กายภาพผู้ป่วยใน", "admission", ipd.admissions, "admission"],
+      ["กายภาพผู้ป่วยใน", "ผู้ป่วย", ipd.persons, "คน"],
+      ["กายภาพผู้ป่วยใน", "ครั้งที่ทำ", ipd.sessions, "admission-วัน"],
+      ["กายภาพผู้ป่วยใน", "รายการ", ipd.items, "รายการ"],
+      ["กายภาพผู้ป่วยใน", "ค่าบริการที่คิด", round2(ipd.baht), "บาท"],
+    ],
+    notes: [
+      "วันให้บริการ = วันที่มี visit กายภาพอย่างน้อย 1 ราย นัด = oapp ของแผนกกายภาพ (027)",
+      "เวลารอคอย: เฉพาะ visit ที่ลงทะเบียนห้องกายภาพ (027) ช่วง 0–480 นาที ไม่รวมวันนี้",
+      "กายภาพผู้ป่วยใน ไม่รวมในยอด OPD ผู้ป่วยในจ่ายตาม DRG ไม่ใช่รายรายการ",
+    ],
+  };
+
   const within = (n: number) =>
     wait.measured > 0 ? `${formatPercent((n / wait.measured) * 100)}%` : "–";
   return (
@@ -21,7 +61,10 @@ export function PtWorkloadCard({
       aria-label="ภาระงาน เวลารอคอย และผู้ป่วยใน"
       className="min-w-0 rounded-xl border border-zinc-200 bg-surface p-4 shadow-sm dark:border-zinc-800"
     >
-      <h2 className="text-base font-semibold">ภาระงาน</h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-base font-semibold">ภาระงาน</h2>
+        <ExcelDownloadButton data={excel} />
+      </div>
       <p className={`mt-1 text-xs ${mutedClass}`}>
         วันให้บริการ = วันที่มี visit กายภาพอย่างน้อย 1 ราย · นักกายภาพ = ผู้บันทึกรายการกายภาพ (physic_list.doctor) · นัด = oapp ของแผนกกายภาพ (027)
       </p>
