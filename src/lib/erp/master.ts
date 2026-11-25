@@ -173,6 +173,28 @@ async function checkRefs(tx: Queryable, entity: MasterEntity, values: Map<string
   }
 }
 
+/**
+ * A unit / store with open documents (draft, submitted, approved) cannot be
+ * deactivated: nobody could approve / issue them any more. erp_admin
+ * cancels them first (cancel is allowed for erp_admin on pending documents).
+ */
+async function checkNoPendingDocs(tx: Queryable, entity: MasterEntity, rowId: number) {
+  const column = entity === "org-units" ? "org_unit_id" : entity === "stores" ? "store_id" : null;
+  if (!column) return;
+  const [r] = await tx.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM document
+      WHERE ${column} = $1 AND status IN ('draft', 'submitted', 'approved')`,
+    [rowId],
+  );
+  if (r && r.n > 0) {
+    throw new ErpError(
+      409,
+      `ยังมีเอกสารค้าง ${r.n.toLocaleString("th-TH")} ใบ (ร่าง/รออนุมัติ/รอจ่าย) กรุณาดำเนินการหรือยกเลิกก่อนปิดใช้งาน`,
+      "pending_documents",
+    );
+  }
+}
+
 export async function createMaster(a: ErpActor, entity: MasterEntity, values: Map<string, SqlParam>): Promise<MasterRow> {
   const t = TABLES[entity];
   return withErpTransaction(async (tx) => {
@@ -184,7 +206,8 @@ export async function createMaster(a: ErpActor, entity: MasterEntity, values: Ma
        RETURNING ${selectList(entity)}`,
       fields.map((f) => values.get(f) as SqlParam),
     );
-    await erpAudit(tx, a, "master_create", entity, row.id, Object.fromEntries(values));
+    // Field NAMES only: values may be personal data (staff name / sub, vendor phone / address / tax id).
+    await erpAudit(tx, a, "master_create", entity, row.id, { fields });
     return row;
   });
 }
@@ -201,6 +224,12 @@ export async function updateMaster(
       throw new ErpError(400, "ไม่สามารถตั้งหน่วยงานแม่เป็นตัวเองได้");
     }
     await checkRefs(tx, entity, values, rowId);
+    const [old] = await tx.query<MasterRow>(
+      `SELECT ${selectList(entity)} FROM ${t.table} WHERE id = $1 FOR UPDATE`,
+      [rowId],
+    );
+    if (!old) throw new ErpError(404, "ไม่พบข้อมูล");
+    if (values.get("active") === false && old.active === true) await checkNoPendingDocs(tx, entity, rowId);
     const fields = [...values.keys()];
     const [row] = await tx.query<MasterRow>(
       `UPDATE ${t.table}
@@ -210,7 +239,9 @@ export async function updateMaster(
       [rowId, ...fields.map((f) => values.get(f) as SqlParam)],
     );
     if (!row) throw new ErpError(404, "ไม่พบข้อมูล");
-    await erpAudit(tx, a, "master_update", entity, rowId, Object.fromEntries(values));
+    // Names of the fields that actually changed (no values: may be personal data).
+    const changed = fields.filter((f) => String(old[f] ?? "") !== String(row[f] ?? ""));
+    if (changed.length > 0) await erpAudit(tx, a, "master_update", entity, rowId, { fields: changed });
     return row;
   });
 }

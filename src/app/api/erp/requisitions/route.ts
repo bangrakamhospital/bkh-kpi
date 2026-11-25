@@ -34,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!gate.ok) return gate.response;
   return erpHandle(route, async () => {
     const input = parseRequisitionInput(await readJsonBody(request, MAX_BODY), false);
-    const id = await createRequisition(gate.actor, input);
-    return erpJson({ id }, 201);
+    const res = await createRequisition(gate.actor, input);
+    return erpJson(res, res.replayed ? 200 : 201);
   });
 }

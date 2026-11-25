@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FilePlus2, Plus, Save, Send, Trash2 } from "lucide-react";
 import type { ErpLookups, ErpMe, RequisitionDetail, RequisitionInput } from "@/lib/erp/types";
-import { erpFetch, ErpClientError, parseNumberInput, useErpGet } from "./erp-client";
+import { erpFetch, ErpClientError, newIdempotencyKey, parseNumberInput, useErpGet } from "./erp-client";
 import { ItemPicker } from "./ItemPicker";
 import { requisitionHref } from "./RequisitionTable";
 import {
@@ -121,6 +121,8 @@ function RequisitionForm({
   const [lines, setLines] = useState<LineState[]>(init.lines);
   const [busy, setBusy] = useState<"save" | "submit" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One key per form: a retried / double-clicked "create" returns the same draft.
+  const [idempotencyKey] = useState(newIdempotencyKey);
 
   const updateLine = (key: number, patch: Partial<LineState>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -154,7 +156,10 @@ function RequisitionForm({
       let id: number;
       let version: number;
       if (init.id === null) {
-        id = (await erpFetch<{ id: number }>("/api/erp/requisitions", { method: "POST", body: input })).id;
+        id = (await erpFetch<{ id: number }>("/api/erp/requisitions", {
+            method: "POST",
+            body: { ...input, idempotencyKey },
+          })).id;
         version = 1;
       } else {
         const d = await erpFetch<RequisitionDetail>(`/api/erp/requisitions/${init.id}`, {

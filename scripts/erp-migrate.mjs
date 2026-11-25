@@ -56,7 +56,9 @@ async function listFiles() {
     if (!m) throw new Error(`invalid migration file name: ${name} (expected NNN_name.sql)`);
     if (seen.has(m[1])) throw new Error(`duplicate migration number ${m[1]}`);
     seen.add(m[1]);
-    const sql = await readFile(path.join(MIGRATIONS_DIR, name), "utf8");
+    // LF-normalised before hashing: a CRLF checkout (Windows, see
+    // .gitattributes *.sql eol=lf) must not look like an edited migration.
+    const sql = (await readFile(path.join(MIGRATIONS_DIR, name), "utf8")).replace(/\r\n/g, "\n");
     files.push({
       version: m[1],
       name,

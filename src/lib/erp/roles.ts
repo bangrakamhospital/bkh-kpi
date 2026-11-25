@@ -89,6 +89,8 @@ export function parseGrantBody(raw: unknown): GrantInput {
 }
 
 export async function grantRole(a: ErpActor, input: GrantInput): Promise<number> {
+  // Segregation of duties: an admin never grants roles to themself.
+  if (input.sub === a.sub) throw new ErpError(403, "ไม่สามารถกำหนดบทบาทให้ตนเองได้ ให้ผู้ดูแลคนอื่นกำหนดให้", "self_grant");
   const user = (await listUsers()).find((u) => u.sub === input.sub);
   if (!user || user.status !== "approved") {
     throw new ErpError(400, "ผู้ใช้นี้ยังไม่ได้รับอนุมัติให้เข้าระบบ (อนุมัติที่หน้า จัดการผู้ใช้งาน ก่อน)");

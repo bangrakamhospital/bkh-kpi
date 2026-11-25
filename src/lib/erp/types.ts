@@ -175,6 +175,10 @@ export interface RequisitionPermissions {
   canApprove: boolean;
   canIssue: boolean;
   canCancel: boolean;
+  /** unit_head who created this requisition: someone else must approve. */
+  selfApprovalBlocked: boolean;
+  /** store officer who created / approved it: another officer must issue. */
+  selfIssueBlocked: boolean;
 }
 
 export interface RequisitionDetail extends RequisitionSummary {
@@ -202,6 +206,8 @@ export interface RequisitionInput {
   storeId: number;
   purpose: string;
   lines: RequisitionLineInput[];
+  /** POST (create) only: UUID per form submission. */
+  idempotencyKey?: string;
 }
 
 /** POST /api/erp/requisitions/{id}/actions */
@@ -283,27 +289,74 @@ export interface ReceiptInput {
   refDate: string | null;
   note: string;
   lines: ReceiptLineInput[];
+  /** UUID per form submission (crypto.randomUUID()): retries return the first document. */
+  idempotencyKey: string;
 }
 
-/** POST /api/erp/stock/adjustments */
+/**
+ * POST /api/erp/stock/adjustments: creates an ADJUSTMENT request (status
+ * submitted) that posts only after a second person (finance / director,
+ * not the creator) approves it.
+ */
 export interface AdjustmentInput {
   storeId: number;
   itemId: number;
   /** "adjust": qty = +/- change; "count": qty = counted quantity (>= 0). */
   mode: "adjust" | "count";
   qty: number;
-  /** Increases only; default = current average (or the item's last cost). */
-  unitCost?: number | null;
+  /**
+   * Balance the officer saw (system quantity at count time). Checked at
+   * creation AND again when the adjustment posts: a different balance -> 409.
+   */
+  expectedQty: number;
+  /** Empty = FEFO over all lots (decrease) / no-lot bucket (increase). */
   lotNo?: string;
   expiryDate?: string | null;
   note: string;
+  idempotencyKey: string;
+}
+
+export const ADJUSTMENT_ACTIONS = ["approve", "reject", "cancel"] as const;
+export type AdjustmentAction = (typeof ADJUSTMENT_ACTIONS)[number];
+
+/** GET /api/erp/stock/adjustments?status=submitted|all&storeId= */
+export interface AdjustmentRow {
+  id: number;
+  docNo: string;
+  status: DocStatus;
+  version: number;
+  storeId: number;
+  storeName: string;
+  itemId: number;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  mode: "adjust" | "count";
+  /** Signed change requested. */
+  delta: number;
+  expectedQty: number;
+  countedQty: number | null;
+  /** Current balance (to compare with expectedQty). */
+  onHand: number;
+  lotNo: string;
+  expiryDate: string | null;
+  note: string;
+  totalAmount: number | null;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  canApprove: boolean;
+  canCancel: boolean;
 }
 
 export type StockDocType = "RECEIPT" | "ADJUSTMENT";
 
 export interface StockDocumentRow {
   id: number;
-  docNo: string;
+  docNo: string | null;
+  status: DocStatus;
   docType: StockDocType;
   storeId: number;
   vendorName: string | null;
@@ -332,6 +385,8 @@ export interface PostedDocResponse {
   id: number;
   docNo: string;
   movements: number;
+  /** true = same idempotencyKey as an earlier request: nothing new was created. */
+  replayed?: boolean;
 }
 
 // --- lookups (GET /api/erp/lookups) ------------------------------------------
@@ -376,7 +431,9 @@ export interface ErpSummary {
   toApprove: RequisitionSummary[];
   toIssue: RequisitionSummary[];
   mine: RequisitionSummary[];
-  counts: { toApprove: number; toIssue: number; drafts: number };
+  /** finance / director: stock adjustments waiting for a second approval. */
+  adjustmentsToApprove: AdjustmentRow[];
+  counts: { toApprove: number; toIssue: number; drafts: number; adjustmentsToApprove: number };
 }
 
 // --- errors ------------------------------------------------------------------

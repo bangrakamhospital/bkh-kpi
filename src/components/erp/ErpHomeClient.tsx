@@ -10,6 +10,7 @@ import {
   type StockBalanceRow,
 } from "@/lib/erp/types";
 import { fmtDate, fmtQty, todayBangkok, useErpGet } from "./erp-client";
+import { AdjustmentList } from "./AdjustmentList";
 import { RequisitionTable } from "./RequisitionTable";
 import { btnPrimary, cardCls, ErrorCard, iconCls, LoadingCard, SectionTitle } from "./ui";
 
@@ -142,6 +143,7 @@ export function ErpHomeClient() {
   const { me, counts, toApprove, toIssue, mine } = summary.data;
   const isHead = me.roles.some((r) => r.role === "unit_head");
   const isOfficer = me.roles.some((r) => r.role === "store_officer");
+  const isAdjustApprover = me.roles.some((r) => r.role === "finance" || r.role === "director");
   const canCreate = me.roles.some((r) => r.role === "recorder" || r.role === "unit_head");
 
   return (
@@ -159,9 +161,12 @@ export function ErpHomeClient() {
         <RoleChips me={me} lookups={lookups.data} />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {isHead && <CountCard label="ใบเบิกรออนุมัติ" value={counts.toApprove} icon={ClipboardCheck} />}
         {isOfficer && <CountCard label="ใบเบิกรอจ่าย" value={counts.toIssue} icon={PackageCheck} />}
+        {isAdjustApprover && (
+          <CountCard label="ใบปรับยอดคลังรออนุมัติ" value={counts.adjustmentsToApprove} icon={ClipboardCheck} />
+        )}
         <CountCard label="ร่างใบเบิกของหน่วยงาน" value={counts.drafts} icon={ClipboardList} />
       </div>
 
@@ -175,6 +180,10 @@ export function ErpHomeClient() {
             </Link>
           )}
         </section>
+      )}
+
+      {isAdjustApprover && (
+        <AdjustmentList title="ใบปรับยอด/ตรวจนับคลังรออนุมัติ (ต้องเป็นคนละคนกับผู้บันทึก)" onlyActionable onChanged={summary.reload} />
       )}
 
       {isOfficer && <StockAlerts me={me} lookups={lookups.data} />}

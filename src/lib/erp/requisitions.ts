@@ -7,6 +7,7 @@ import {
   ERP_MESSAGES,
   ErpError,
   hasUnitRole,
+  isErpAdmin,
   isStoreOfficer,
   officerStoreIds,
   toErpMe,
@@ -31,7 +32,12 @@ import type {
   RequisitionScope,
   RequisitionSummary,
 } from "./types";
-import { fromUnits, money2, QTY_SCALE, toUnits, unitCostOf, VALUE_SCALE, ZERO } from "./units";
+import { centsStr, fromUnits, QTY_SCALE, toCents, toUnits, unitCostOf, VALUE_SCALE, ZERO } from "./units";
+import { idempotentCreate, parseIdempotencyKey } from "./idempotency";
+import { isAdjustmentApprover, listAdjustments } from "./adjustments";
+
+const SELF_APPROVAL = "ผู้สร้างใบเบิกอนุมัติใบของตนเองไม่ได้ ต้องให้หัวหน้าหน่วยงานคนอื่นอนุมัติ";
+const SELF_ISSUE = "ผู้จ่ายต้องไม่ใช่ผู้สร้างหรือผู้อนุมัติใบเบิกนี้ ให้เจ้าหน้าที่คลังคนอื่นจ่าย";
 import { array, asObject, decimal, id, QTY, text } from "./validate";
 
 /**
@@ -63,6 +69,7 @@ interface DocRow {
   org_unit_id: number;
   store_id: number;
   created_by: string;
+  decided_by: string | null;
   doc_no: string | null;
 }
 
@@ -77,25 +84,47 @@ function canView(a: ErpActor, d: Pick<DocRow, "status" | "org_unit_id" | "store_
   );
 }
 
-function permissionsOf(a: ErpActor, d: Pick<DocRow, "status" | "org_unit_id" | "store_id">): RequisitionPermissions {
+/**
+ * Segregation of duties: the creator never approves their own
+ * requisition, and the store officer who issues is neither the creator
+ * nor the approver. erp_admin may cancel any pending document (e.g. the
+ * unit was closed).
+ */
+function permissionsOf(
+  a: ErpActor,
+  d: Pick<DocRow, "status" | "org_unit_id" | "store_id" | "created_by" | "decided_by">,
+): RequisitionPermissions {
   const member = hasUnitRole(a, UNIT_MEMBER_ROLES, d.org_unit_id);
   const head = hasUnitRole(a, ["unit_head"], d.org_unit_id);
   const officer = isStoreOfficer(a, d.store_id);
+  const isCreator = d.created_by === a.sub;
+  const isApprover = d.decided_by !== null && d.decided_by === a.sub;
+  const selfApprovalBlocked = d.status === "submitted" && head && isCreator;
+  const selfIssueBlocked = d.status === "approved" && officer && (isCreator || isApprover);
   return {
     canEdit: d.status === "draft" && member,
     canSubmit: d.status === "draft" && member,
-    canApprove: d.status === "submitted" && head,
-    canIssue: d.status === "approved" && officer,
+    canApprove: d.status === "submitted" && head && !isCreator,
+    canIssue: d.status === "approved" && officer && !isCreator && !isApprover,
     canCancel:
       ((d.status === "draft" || d.status === "submitted") && member) ||
-      (d.status === "approved" && (head || officer)),
+      (d.status === "approved" && (head || officer)) ||
+      ((d.status === "submitted" || d.status === "approved") && isErpAdmin(a)),
+    selfApprovalBlocked,
+    selfIssueBlocked,
   };
 }
 
 // --- body parsing -------------------------------------------------------------------
 
 export function parseRequisitionInput(raw: unknown, withVersion: boolean): RequisitionInput & { version?: number } {
-  const body = asObject(raw, ["orgUnitId", "storeId", "purpose", "lines", ...(withVersion ? ["version"] : [])]);
+  const body = asObject(raw, [
+    "orgUnitId",
+    "storeId",
+    "purpose",
+    "lines",
+    ...(withVersion ? ["version"] : ["idempotencyKey"]),
+  ]);
   const lines = array(body.lines, "รายการพัสดุ", { min: 1, max: MAX_LINES }).map((l, i) => {
     const line = asObject(l, ["itemId", "qty", "note"], `รายการที่ ${i + 1} `);
     return {
@@ -114,7 +143,9 @@ export function parseRequisitionInput(raw: unknown, withVersion: boolean): Requi
     storeId: id(body.storeId, "คลัง"),
     purpose: text(body.purpose, "วัตถุประสงค์", { max: 500, multiline: true }),
     lines,
-    ...(withVersion ? { version: id(body.version, "version") } : {}),
+    ...(withVersion
+      ? { version: id(body.version, "version") }
+      : { idempotencyKey: parseIdempotencyKey(body.idempotencyKey) }),
   };
 }
 
@@ -199,12 +230,14 @@ function scopeCondition(a: ErpActor, scope: RequisitionScope, params: SqlParam[]
     }
     case "approve": {
       const heads = unitIdsWithRole(a, ["unit_head"]);
-      return `d.status = 'submitted' AND d.org_unit_id = ANY(${p(heads)}::bigint[])`;
+      return `d.status = 'submitted' AND d.org_unit_id = ANY(${p(heads)}::bigint[]) AND d.created_by <> ${p(a.sub)}`;
     }
     case "issue": {
       const stores = officerStoreIds(a);
-      if (stores === null) return `d.status = 'approved'`;
-      return `d.status = 'approved' AND d.store_id = ANY(${p(stores)}::bigint[])`;
+      // segregation of duties: not my own / not approved by me
+      const notMine = `d.created_by <> ${p(a.sub)} AND d.decided_by IS DISTINCT FROM ${p(a.sub)}`;
+      if (stores === null) return `d.status = 'approved' AND ${notMine}`;
+      return `d.status = 'approved' AND d.store_id = ANY(${p(stores)}::bigint[]) AND ${notMine}`;
     }
     case "all": {
       if (canViewAll(a)) return "TRUE";
@@ -258,13 +291,14 @@ export async function getRequisition(a: ErpActor, docId: number): Promise<Requis
       version: number;
       fiscal_year: number | null;
       created_by: string;
+      decided_by: string | null;
       decided_by_name: string | null;
       decided_at: string | null;
       completed_by_name: string | null;
       completed_at: string | null;
     }
   >(
-    `${SUMMARY_SELECT}, d.version, d.fiscal_year, d.created_by, d.decided_by_name, d.decided_at,
+    `${SUMMARY_SELECT}, d.version, d.fiscal_year, d.created_by, d.decided_by, d.decided_by_name, d.decided_at,
             d.completed_by_name, d.completed_at
        FROM document d
        JOIN org_unit u ON u.id = d.org_unit_id
@@ -369,13 +403,29 @@ async function insertLines(tx: Queryable, docId: number, input: RequisitionInput
   }
 }
 
-export async function createRequisition(a: ErpActor, input: RequisitionInput): Promise<number> {
+/** New draft. Same idempotencyKey again -> the first draft's id (replayed). */
+export async function createRequisition(
+  a: ErpActor,
+  input: RequisitionInput,
+): Promise<{ id: number; replayed: boolean }> {
+  const key = input.idempotencyKey;
+  if (!key) throw new ErpError(400, "idempotencyKey ไม่ถูกต้อง (ต้องเป็น UUID)");
+  return idempotentCreate(
+    a,
+    key,
+    "REQUISITION",
+    async () => ({ id: await insertRequisition(a, input, key), replayed: false as boolean }),
+    async (row) => ({ id: row.id, replayed: true as boolean }),
+  );
+}
+
+async function insertRequisition(a: ErpActor, input: RequisitionInput, key: string): Promise<number> {
   return withErpTransaction(async (tx) => {
     await checkUnitAndStore(tx, a, input);
     const [doc] = await tx.query<{ id: number }>(
-      `INSERT INTO document (doc_type, status, org_unit_id, store_id, purpose, created_by, created_by_name)
-       VALUES ('REQUISITION', 'draft', $1, $2, $3, $4, $5) RETURNING id`,
-      [input.orgUnitId, input.storeId, input.purpose, a.sub, a.name.slice(0, 200)],
+      `INSERT INTO document (doc_type, status, org_unit_id, store_id, purpose, created_by, created_by_name, idempotency_key)
+       VALUES ('REQUISITION', 'draft', $1, $2, $3, $4, $5, $6::uuid) RETURNING id`,
+      [input.orgUnitId, input.storeId, input.purpose, a.sub, a.name.slice(0, 200), key],
     );
     await insertLines(tx, doc.id, input);
     await addEvent(tx, a, doc.id, "create", null, "draft");
@@ -390,7 +440,7 @@ export async function createRequisition(a: ErpActor, input: RequisitionInput): P
 
 async function lockDoc(tx: Queryable, a: ErpActor, docId: number, version: number): Promise<DocRow> {
   const [d] = await tx.query<DocRow>(
-    `SELECT id, status, version, org_unit_id, store_id, created_by, doc_no
+    `SELECT id, status, version, org_unit_id, store_id, created_by, decided_by, doc_no
        FROM document WHERE id = $1 AND doc_type = 'REQUISITION' FOR UPDATE`,
     [docId],
   );
@@ -488,6 +538,7 @@ export async function requisitionAction(a: ErpActor, docId: number, input: Requi
         return;
       }
       case "approve": {
+        if (perm.selfApprovalBlocked) throw new ErpError(403, SELF_APPROVAL, "self_approval");
         if (!perm.canApprove) throw new ErpError(409, "อนุมัติได้เฉพาะใบเบิกที่รออนุมัติของหน่วยงานที่คุณเป็นหัวหน้า");
         const lines = await docLines(tx, docId);
         const qty = lineQuantities(lines, input, (l) => toUnits(l.qty, QTY_SCALE), "จำนวนที่ขอ");
@@ -511,6 +562,7 @@ export async function requisitionAction(a: ErpActor, docId: number, input: Requi
         return;
       }
       case "reject": {
+        if (perm.selfApprovalBlocked) throw new ErpError(403, SELF_APPROVAL, "self_approval");
         if (!perm.canApprove) throw new ErpError(409, "ไม่อนุมัติได้เฉพาะใบเบิกที่รออนุมัติของหน่วยงานที่คุณเป็นหัวหน้า");
         if (!note) throw new ErpError(400, "กรุณาระบุเหตุผลที่ไม่อนุมัติ");
         await tx.query(
@@ -529,6 +581,7 @@ export async function requisitionAction(a: ErpActor, docId: number, input: Requi
         return;
       }
       case "issue": {
+        if (perm.selfIssueBlocked) throw new ErpError(403, SELF_ISSUE, "self_issue");
         if (!perm.canIssue) throw new ErpError(409, "จ่ายได้เฉพาะใบเบิกที่อนุมัติแล้วของคลังที่คุณดูแล");
         await activeStore(tx, d.store_id);
         const lines = await docLines(tx, docId);
@@ -538,7 +591,8 @@ export async function requisitionAction(a: ErpActor, docId: number, input: Requi
           (l) => (l.qty_approved === null ? ZERO : toUnits(l.qty_approved, QTY_SCALE)),
           "จำนวนที่อนุมัติ",
         );
-        let total = ZERO;
+        // Header total = sum of the rounded line amounts.
+        let totalCents = ZERO;
         // Lock order: ascending item id (items are unique per requisition).
         for (const l of [...lines].sort((x, y) => x.item_id - y.item_id)) {
           const q = qty.get(l.id) ?? ZERO;
@@ -565,24 +619,27 @@ export async function requisitionAction(a: ErpActor, docId: number, input: Requi
             bal,
             q,
             `${l.code} ${l.name}`,
+            // never hand out expired lots
+            { allowExpired: false },
           );
-          total += valueU;
+          const lineCents = toCents(valueU);
+          totalCents += lineCents;
           await tx.query(
             `UPDATE document_line SET qty_issued = $2, unit_cost = $3, amount = $4 WHERE id = $1`,
-            [l.id, fromUnits(q, QTY_SCALE), fromUnits(unitCostOf(valueU, q), VALUE_SCALE), money2(valueU)],
+            [l.id, fromUnits(q, QTY_SCALE), fromUnits(unitCostOf(valueU, q), VALUE_SCALE), centsStr(lineCents)],
           );
         }
         await tx.query(
           `UPDATE document SET status = 'issued', total_amount = $2, completed_by = $3, completed_by_name = $4,
                   completed_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
-          [docId, money2(total), a.sub, name],
+          [docId, centsStr(totalCents), a.sub, name],
         );
         await addEvent(tx, a, docId, "issue", d.status, "issued", note);
         await erpAudit(tx, a, "requisition_issue", "document", docId, {
           docNo: d.doc_no,
           storeId: d.store_id,
           orgUnitId: d.org_unit_id,
-          total: money2(total),
+          total: centsStr(totalCents),
         });
         return;
       }
@@ -610,21 +667,27 @@ export async function erpSummary(a: ErpActor): Promise<ErpSummary> {
   const opts = { status: null, page: 1, pageSize: 10 };
   const heads = unitIdsWithRole(a, ["unit_head"]);
   const stores = officerStoreIds(a);
-  const [toApprove, toIssue, mine, drafts] = await Promise.all([
+  const approver = isAdjustmentApprover(a);
+  const [toApprove, toIssue, mine, drafts, adjustments] = await Promise.all([
     heads.length > 0 ? listRequisitions(a, "approve", opts) : null,
     stores === null || stores.length > 0 ? listRequisitions(a, "issue", opts) : null,
     listRequisitions(a, "mine", opts),
     listRequisitions(a, "mine", { ...opts, status: "draft", pageSize: 1 }),
+    approver ? listAdjustments(a, { status: "submitted", storeId: null, limit: 10 }) : null,
   ]);
+  // only the ones I may approve (not my own)
+  const pendingAdjustments = (adjustments?.rows ?? []).filter((r) => r.canApprove);
   return {
     me: toErpMe(a),
     toApprove: toApprove?.items ?? [],
     toIssue: toIssue?.items ?? [],
     mine: mine.items,
+    adjustmentsToApprove: pendingAdjustments,
     counts: {
       toApprove: toApprove?.total ?? 0,
       toIssue: toIssue?.total ?? 0,
       drafts: drafts.total,
+      adjustmentsToApprove: pendingAdjustments.length,
     },
   };
 }

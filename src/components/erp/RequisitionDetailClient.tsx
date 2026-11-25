@@ -104,6 +104,7 @@ function Detail({
   }
 
   const showStock = d.status === "submitted" || d.status === "approved";
+  const shortCount = d.status === "issued" ? issuedShortCount(d) : 0;
   const showCost = d.status === "issued";
 
   return (
@@ -129,6 +130,17 @@ function Detail({
           {d.purpose && <Info label="วัตถุประสงค์" value={d.purpose} wide />}
           {d.totalAmount !== null && <Info label="มูลค่าที่จ่าย (บาท)" value={fmtMoney(d.totalAmount)} />}
         </dl>
+        {p.selfApprovalBlocked && (
+          <Notice>คุณเป็นผู้สร้างใบเบิกนี้ จึงอนุมัติเองไม่ได้ ต้องให้หัวหน้าหน่วยงานคนอื่นอนุมัติ (แยกหน้าที่)</Notice>
+        )}
+        {p.selfIssueBlocked && (
+          <Notice>คุณเป็นผู้สร้างหรือผู้อนุมัติใบเบิกนี้ จึงจ่ายเองไม่ได้ ต้องให้เจ้าหน้าที่คลังคนอื่นจ่าย (แยกหน้าที่)</Notice>
+        )}
+        {shortCount > 0 && (
+          <Notice>
+            จ่ายไม่ครบ {shortCount} รายการ ส่วนที่ขาด<strong>ไม่ถูกค้างจ่าย</strong> หากยังต้องการ กรุณาสร้างใบเบิกใหม่
+          </Notice>
+        )}
       </section>
 
       <section className={`${cardCls} space-y-3`}>
@@ -188,7 +200,7 @@ function Detail({
         </div>
         {mode === "issue" && (
           <p className="text-xs text-zinc-600 dark:text-zinc-400">
-            ค่าเริ่มต้นคือจำนวนที่อนุมัติ (ไม่เกินยอดคงคลัง) ต้นทุนคิดแบบถัวเฉลี่ยเคลื่อนที่ ณ เวลาจ่าย และตัดล็อตที่หมดอายุก่อน
+            ค่าเริ่มต้นคือจำนวนที่อนุมัติ (ไม่เกินยอดคงคลัง) ต้นทุนคิดแบบถัวเฉลี่ยเคลื่อนที่ ณ เวลาจ่าย ตัดล็อตที่ใกล้หมดอายุก่อน และไม่จ่ายล็อตที่หมดอายุแล้ว (ต้องตัดยอดล็อตหมดอายุด้วยการปรับยอดก่อน) ส่วนที่จ่ายไม่ครบจะไม่ถูกค้างจ่าย
           </p>
         )}
 
@@ -288,6 +300,19 @@ function Detail({
         </ol>
       </section>
     </div>
+  );
+}
+
+/** Lines issued below the approved quantity (the rest is NOT back-ordered). */
+export function issuedShortCount(d: RequisitionDetail): number {
+  return d.lines.filter((l) => (l.qtyIssued ?? 0) < (l.qtyApproved ?? 0)).length;
+}
+
+function Notice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
+      {children}
+    </p>
   );
 }
 

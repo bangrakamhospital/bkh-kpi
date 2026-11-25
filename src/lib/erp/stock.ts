@@ -3,9 +3,10 @@ import "server-only";
 import { fiscalYearOf, todayIsoDate } from "@/lib/kpi/fiscal-year";
 import { erpAudit } from "./audit";
 import { erpQuery, withErpTransaction, type Queryable } from "./db";
+import { idempotentCreate, type KeyedDoc } from "./idempotency";
 import { ERP_MESSAGES, ErpError, isStoreOfficer, type ErpActor } from "./gate";
 import type {
-  AdjustmentInput,
+  DocStatus,
   MovementType,
   PostedDocResponse,
   ReceiptInput,
@@ -17,7 +18,8 @@ import type {
 import {
   fromUnits,
   lineValue,
-  money2,
+  centsStr,
+  toCents,
   QTY_SCALE,
   roundDiv,
   toUnits,
@@ -144,10 +146,25 @@ export async function increaseStock(
   return after;
 }
 
+export interface DecreaseOptions {
+  /**
+   * false (ISSUE): lots whose expiry_date is before today (Asia/Bangkok)
+   * are never handed out. true (ADJUST / COUNT): expired lots may be
+   * written off.
+   */
+  allowExpired: boolean;
+  /** Take only this lot (lot_no + expiry), not FEFO over every lot. */
+  lot?: { lotNo: string; expiry: string | null } | null;
+}
+
+const fmtQ = (u: bigint) => Number(fromUnits(u, QTY_SCALE)).toLocaleString("th-TH");
+
 /**
  * Decrease (issue / negative adjustment) of a LOCKED balance, FEFO over
  * lots (one movement row per lot touched). Throws 409 when short.
- * Returns the value taken out (scale 4) and the new balance.
+ * Value out = moving average share; per-lot values are floored and the
+ * last lot takes the remainder (the parts never sum to more than the
+ * total). Returns the value taken out (scale 4) and the new balance.
  */
 export async function decreaseStock(
   tx: Queryable,
@@ -155,34 +172,61 @@ export async function decreaseStock(
   bal: Balance,
   qtyU: bigint,
   itemLabel: string,
+  opts: DecreaseOptions,
 ): Promise<{ valueU: bigint; after: Balance; movements: number }> {
   if (qtyU <= ZERO) throw new ErpError(400, ERP_MESSAGES.invalidBody);
   if (qtyU > bal.qty) {
     throw new ErpError(
       409,
-      `${itemLabel} มีคงเหลือในคลังไม่พอ (คงเหลือ ${Number(fromUnits(bal.qty, QTY_SCALE)).toLocaleString("th-TH")} ต้องการ ${Number(fromUnits(qtyU, QTY_SCALE)).toLocaleString("th-TH")})`,
+      `${itemLabel} มีคงเหลือในคลังไม่พอ (คงเหลือ ${fmtQ(bal.qty)} ต้องการ ${fmtQ(qtyU)})`,
       "insufficient_stock",
     );
   }
-  const valueU = qtyU === bal.qty ? bal.value : roundDiv(bal.value * qtyU, bal.qty);
+  const today = todayIsoDate();
   const lots = await tx.query<{ id: number; lot_no: string; expiry_date: string | null; q: string }>(
     `SELECT id, lot_no, expiry_date, qty_on_hand::text AS q
        FROM stock_lot
       WHERE store_id = $1 AND item_id = $2 AND qty_on_hand > 0
+        AND ($3::text IS NULL OR (lot_no = $3 AND expiry_date IS NOT DISTINCT FROM $4::date))
       ORDER BY expiry_date ASC NULLS LAST, received_at, id
       FOR UPDATE`,
-    [ctx.storeId, ctx.itemId],
+    [ctx.storeId, ctx.itemId, opts.lot ? opts.lot.lotNo : null, opts.lot ? opts.lot.expiry : null],
   );
+  const isExpired = (l: { expiry_date: string | null }) => l.expiry_date !== null && l.expiry_date < today;
+  const usable = opts.allowExpired ? lots : lots.filter((l) => !isExpired(l));
+  const usableQty = usable.reduce((sum, l) => sum + toUnits(l.q, QTY_SCALE), ZERO);
+  if (usableQty < qtyU) {
+    if (opts.lot) {
+      throw new ErpError(
+        409,
+        `${itemLabel} ล็อต ${opts.lot.lotNo || "(ไม่ระบุล็อต)"} คงเหลือไม่พอ (คงเหลือ ${fmtQ(usableQty)} ต้องการ ${fmtQ(qtyU)})`,
+        "insufficient_lot",
+      );
+    }
+    if (!opts.allowExpired && usable.length !== lots.length) {
+      const expiredQty = lots.filter(isExpired).reduce((sum, l) => sum + toUnits(l.q, QTY_SCALE), ZERO);
+      throw new ErpError(
+        409,
+        `${itemLabel} ที่ยังไม่หมดอายุมีไม่พอ (ใช้ได้ ${fmtQ(usableQty)} หมดอายุแล้ว ${fmtQ(expiredQty)} ต้องการ ${fmtQ(qtyU)}) กรุณาตัดยอดล็อตที่หมดอายุ (ปรับยอด) ก่อน`,
+        "expired_stock",
+      );
+    }
+    // Lots out of sync with the balance: refuse rather than guess.
+    console.error(`[erp-stock] lot quantities do not cover the balance store=${ctx.storeId} item=${ctx.itemId}`);
+    throw new ErpError(409, `${itemLabel}: ยอดตามล็อตไม่ตรงกับยอดคงเหลือ กรุณาแจ้งผู้ดูแลระบบ`);
+  }
+  const valueU = qtyU === bal.qty ? bal.value : roundDiv(bal.value * qtyU, bal.qty);
   let remainingQty = qtyU;
   let remainingValue = valueU;
   let running: Balance = { ...bal };
   let movements = 0;
-  for (const lot of lots) {
+  for (const lot of usable) {
     if (remainingQty === ZERO) break;
     const lotQty = toUnits(lot.q, QTY_SCALE);
     const take = lotQty < remainingQty ? lotQty : remainingQty;
     const last = take === remainingQty;
-    const takeValue = last ? remainingValue : roundDiv(valueU * take, qtyU);
+    // floor; the last lot takes the remainder
+    const takeValue = last ? remainingValue : (valueU * take) / qtyU;
     remainingQty -= take;
     remainingValue -= takeValue;
     running = { qty: running.qty - take, value: running.value - takeValue };
@@ -198,11 +242,6 @@ export async function decreaseStock(
       expiry: lot.expiry_date,
     });
     movements += 1;
-  }
-  if (remainingQty !== ZERO) {
-    // Lots out of sync with the balance: refuse rather than guess.
-    console.error(`[erp-stock] lot quantities do not cover the balance store=${ctx.storeId} item=${ctx.itemId}`);
-    throw new ErpError(409, `${itemLabel}: ยอดตามล็อตไม่ตรงกับยอดคงเหลือ กรุณาแจ้งผู้ดูแลระบบ`);
   }
   await writeBalance(tx, ctx.storeId, ctx.itemId, running);
   return { valueU, after: running, movements };
@@ -280,8 +319,27 @@ export async function activeItems(tx: Queryable, ids: number[]): Promise<Map<num
 // --- receipts ---------------------------------------------------------------------
 
 /** รับของเข้าคลัง: one RECEIPT document, posted immediately. Store officer of the store. */
-export async function postReceipt(actor: ErpActor, input: ReceiptInput): Promise<PostedDocResponse> {
+export async function postReceipt(
+  actor: ErpActor,
+  input: ReceiptInput & { idempotencyKey: string },
+): Promise<PostedDocResponse> {
   if (!isStoreOfficer(actor, input.storeId)) throw new ErpError(403, ERP_MESSAGES.forbidden);
+  return idempotentCreate(actor, input.idempotencyKey, "RECEIPT", () => insertReceipt(actor, input), replayPosted);
+}
+
+/** PostedDocResponse of an already created document (idempotent replay). */
+export async function replayPosted(row: KeyedDoc): Promise<PostedDocResponse> {
+  const [m] = await erpQuery<{ n: number }>(
+    `SELECT count(*)::int AS n FROM stock_movement WHERE document_id = $1`,
+    [row.id],
+  );
+  return { id: row.id, docNo: row.doc_no ?? "", movements: m?.n ?? 0, replayed: true };
+}
+
+async function insertReceipt(
+  actor: ErpActor,
+  input: ReceiptInput & { idempotencyKey: string },
+): Promise<PostedDocResponse> {
   return withErpTransaction(async (tx) => {
     const store = await activeStore(tx, input.storeId);
     if (input.vendorId !== null) {
@@ -296,13 +354,15 @@ export async function postReceipt(actor: ErpActor, input: ReceiptInput): Promise
       const costU = toUnits(l.unitCost, VALUE_SCALE);
       return { ...l, lineNo: i + 1, qtyU, costU, valueU: lineValue(qtyU, costU) };
     });
-    const total = lines.reduce((s, l) => s + l.valueU, ZERO);
+    // Header total = sum of the rounded line amounts (what the lines show).
+    const total = centsStr(lines.reduce((s, l) => s + toCents(l.valueU), ZERO));
 
     const [doc] = await tx.query<{ id: number }>(
       `INSERT INTO document
          (doc_type, doc_no, fiscal_year, status, org_unit_id, store_id, vendor_id, ref_no, ref_date,
-          purpose, total_amount, created_by, created_by_name, completed_by, completed_by_name, completed_at)
-       VALUES ('RECEIPT', $1, $2, 'posted', $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $10, $11, now())
+          purpose, total_amount, created_by, created_by_name, completed_by, completed_by_name, completed_at,
+          idempotency_key)
+       VALUES ('RECEIPT', $1, $2, 'posted', $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $10, $11, now(), $12::uuid)
        RETURNING id`,
       [
         docNo,
@@ -313,9 +373,10 @@ export async function postReceipt(actor: ErpActor, input: ReceiptInput): Promise
         input.refNo,
         input.refDate,
         input.note,
-        money2(total),
+        total,
         actor.sub,
         actor.name.slice(0, 200),
+        input.idempotencyKey,
       ],
     );
 
@@ -331,7 +392,7 @@ export async function postReceipt(actor: ErpActor, input: ReceiptInput): Promise
           l.itemId,
           fromUnits(l.qtyU, QTY_SCALE),
           fromUnits(l.costU, VALUE_SCALE),
-          money2(l.valueU),
+          centsStr(toCents(l.valueU)),
           l.lotNo ?? "",
           l.expiryDate ?? null,
         ],
@@ -375,80 +436,8 @@ export async function postReceipt(actor: ErpActor, input: ReceiptInput): Promise
       storeId: input.storeId,
       vendorId: input.vendorId,
       lines: lines.length,
-      total: money2(total),
-      items: [...items.keys()].length,
-    });
-    return { id: doc.id, docNo, movements };
-  });
-}
-
-// --- adjustments / stock count ----------------------------------------------------
-
-export async function postAdjustment(actor: ErpActor, input: AdjustmentInput): Promise<PostedDocResponse> {
-  if (!isStoreOfficer(actor, input.storeId)) throw new ErpError(403, ERP_MESSAGES.forbidden);
-  return withErpTransaction(async (tx) => {
-    const store = await activeStore(tx, input.storeId);
-    const item = (await activeItems(tx, [input.itemId])).get(input.itemId)!;
-    const bal = await lockBalance(tx, input.storeId, input.itemId);
-    const inputU = toUnits(input.qty, QTY_SCALE);
-    const deltaU = input.mode === "count" ? inputU - bal.qty : inputU;
-    if (deltaU === ZERO) {
-      throw new ErpError(
-        409,
-        input.mode === "count" ? "ยอดตรวจนับตรงกับยอดคงเหลือในระบบ ไม่ต้องปรับยอด" : "จำนวนที่ปรับต้องไม่เป็นศูนย์",
-      );
-    }
-    const { docNo, fiscalYear } = await nextDocNo(tx, "ADJUSTMENT");
-    const type: MovementType = input.mode === "count" ? "COUNT" : "ADJUST";
-    const [doc] = await tx.query<{ id: number }>(
-      `INSERT INTO document
-         (doc_type, doc_no, fiscal_year, status, org_unit_id, store_id, purpose,
-          created_by, created_by_name, completed_by, completed_by_name, completed_at)
-       VALUES ('ADJUSTMENT', $1, $2, 'posted', $3, $4, $5, $6, $7, $6, $7, now())
-       RETURNING id`,
-      [docNo, fiscalYear, store.org_unit_id, input.storeId, input.note, actor.sub, actor.name.slice(0, 200)],
-    );
-    const ctx: MovementContext = {
-      actor,
-      type,
-      storeId: input.storeId,
-      itemId: input.itemId,
-      documentId: doc.id,
-      note: input.note,
-    };
-    let valueU: bigint;
-    let movements = 1;
-    if (deltaU > ZERO) {
-      const costU =
-        input.unitCost !== undefined && input.unitCost !== null
-          ? toUnits(input.unitCost, VALUE_SCALE)
-          : bal.qty > ZERO
-            ? unitCostOf(bal.value, bal.qty)
-            : toUnits(item.last_unit_cost, VALUE_SCALE);
-      valueU = lineValue(deltaU, costU);
-      await increaseStock(tx, ctx, bal, {
-        qtyU: deltaU,
-        valueU,
-        lotNo: input.lotNo ?? "",
-        expiry: input.expiryDate ?? null,
-      });
-    } else {
-      const res = await decreaseStock(tx, ctx, bal, -deltaU, `${item.code} ${item.name}`);
-      valueU = -res.valueU;
-      movements = res.movements;
-    }
-    await tx.query(`UPDATE document SET total_amount = $2 WHERE id = $1`, [
-      doc.id,
-      money2(valueU < ZERO ? -valueU : valueU),
-    ]);
-    await addEvent(tx, actor, doc.id, input.mode, null, "posted", input.note);
-    await erpAudit(tx, actor, input.mode === "count" ? "stock_count" : "stock_adjust", "document", doc.id, {
-      docNo,
-      storeId: input.storeId,
-      itemId: input.itemId,
-      qtyBefore: fromUnits(bal.qty, QTY_SCALE),
-      qtyChange: fromUnits(deltaU, QTY_SCALE),
-      value: fromUnits(valueU, VALUE_SCALE),
+      total,
+      items: items.size,
     });
     return { id: doc.id, docNo, movements };
   });
@@ -590,7 +579,8 @@ export async function listStockDocuments(f: {
 }): Promise<{ rows: StockDocumentRow[]; truncated: boolean }> {
   const rows = await erpQuery<{
     id: number;
-    doc_no: string;
+    doc_no: string | null;
+    status: DocStatus;
     doc_type: StockDocType;
     store_id: number;
     vendor_name: string | null;
@@ -601,7 +591,7 @@ export async function listStockDocuments(f: {
     created_by_name: string;
     created_at: string;
   }>(
-    `SELECT d.id, d.doc_no, d.doc_type, d.store_id, v.name AS vendor_name, d.ref_no, d.purpose,
+    `SELECT d.id, d.doc_no, d.status, d.doc_type, d.store_id, v.name AS vendor_name, d.ref_no, d.purpose,
             (SELECT count(*)::int FROM document_line l WHERE l.document_id = d.id) AS line_count,
             d.total_amount, d.created_by_name, d.created_at
        FROM document d
@@ -618,6 +608,7 @@ export async function listStockDocuments(f: {
     rows: rows.slice(0, STOCK_DOC_LIMIT).map((r) => ({
       id: r.id,
       docNo: r.doc_no,
+      status: r.status,
       docType: r.doc_type,
       storeId: r.store_id,
       vendorName: r.vendor_name,

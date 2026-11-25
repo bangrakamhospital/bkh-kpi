@@ -55,3 +55,13 @@ export function money2(valueU: bigint): string {
 }
 
 export const ZERO = BigInt(0);
+
+/** Value (scale 4) rounded half up to satang (scale 2) units. */
+export function toCents(valueU: bigint): bigint {
+  return roundDiv(valueU, BigInt(100));
+}
+
+/** Satang units -> "123.45". */
+export function centsStr(cents: bigint): string {
+  return fromUnits(cents, 2);
+}

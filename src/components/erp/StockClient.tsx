@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownToLine, ClipboardPen, FileText, History, PackagePlus, Plus, Save, Trash2, Warehouse } from "lucide-react";
+import { ArrowDownToLine, ClipboardCheck, ClipboardPen, FileText, History, PackagePlus, Plus, Save, Trash2, Warehouse } from "lucide-react";
 import { ExcelDownloadButton, type ExcelExport } from "@/components/kpi/overview/ExcelDownloadButton";
 import {
+  DOC_STATUS_LABELS,
   MOVEMENT_TYPE_LABELS,
   MOVEMENT_TYPES,
   type ErpLookups,
@@ -28,8 +29,10 @@ import {
   fmtQty,
   parseNumberInput,
   todayBangkok,
+  newIdempotencyKey,
   useErpGet,
 } from "./erp-client";
+import { AdjustmentList } from "./AdjustmentList";
 import { ItemPicker } from "./ItemPicker";
 import {
   btnOutline,
@@ -49,6 +52,7 @@ import {
   tdCls,
   theadCls,
   thCls,
+  StatusBadge,
 } from "./ui";
 
 const TABS = [
@@ -57,6 +61,8 @@ const TABS = [
   { key: "movements", label: "ประวัติเคลื่อนไหว", Icon: History, officerOnly: false },
   { key: "adjust", label: "ปรับปรุงยอด / ตรวจนับ", Icon: ClipboardPen, officerOnly: true },
   { key: "documents", label: "ใบรับ/ปรับยอด", Icon: FileText, officerOnly: false },
+  // finance / director: second approval of adjustments (officers see them under "adjust")
+  { key: "pending", label: "รออนุมัติปรับยอด", Icon: ClipboardCheck, officerOnly: false },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -91,7 +97,8 @@ export function StockClient() {
   const storeId = Number(params.get("store")) || stores[0].id;
   const store = stores.find((s) => s.id === storeId) ?? stores[0];
   const tabRaw = params.get("tab");
-  const tabs = TABS.filter((t) => !t.officerOnly || store.officer);
+  const approver = lookups.data.me.roles.some((r) => r.role === "finance" || r.role === "director");
+  const tabs = TABS.filter((t) => (t.key === "pending" ? approver : !t.officerOnly || store.officer));
   const tab: TabKey = tabs.some((t) => t.key === tabRaw) ? (tabRaw as TabKey) : "balances";
 
   const go = (next: { tab?: TabKey; store?: number }) => {
@@ -135,6 +142,7 @@ export function StockClient() {
       {tab === "movements" && <Movements key={store.id} storeId={store.id} storeName={store.name} lookups={lookups.data} />}
       {tab === "receive" && <ReceiveForm key={store.id} storeId={store.id} lookups={lookups.data} onDone={() => go({ tab: "balances" })} />}
       {tab === "adjust" && <AdjustForm key={store.id} storeId={store.id} lookups={lookups.data} />}
+      {tab === "pending" && <AdjustmentList key={store.id} storeId={store.id} title={`ใบปรับยอดรออนุมัติ ${store.name}`} />}
       {tab === "documents" && <StockDocuments key={store.id} storeId={store.id} storeName={store.name} />}
     </div>
   );
@@ -442,7 +450,8 @@ function StockDocuments({ storeId, storeName }: { storeId: number; storeName: st
     from && to ? `/api/erp/stock/documents?${new URLSearchParams({ storeId: String(storeId), type, from, to }).toString()}` : null,
   );
   const rows = data.data?.rows ?? [];
-  const total = rows.reduce((s, r) => s + r.totalAmount, 0);
+  // Only posted documents changed the stock.
+  const total = rows.reduce((s, r) => s + (r.status === "posted" ? r.totalAmount : 0), 0);
   const truncNote = "แสดงเฉพาะ 2,000 รายการล่าสุด กรุณาเลือกช่วงวันที่ให้แคบลง";
 
   const excel: ExcelExport = {
@@ -461,7 +470,7 @@ function StockDocuments({ storeId, storeName }: { storeId: number; storeName: st
       { header: "ผู้บันทึก" },
     ],
     rows: rows.map((r) => [
-      r.docNo,
+      `${r.docNo ?? "-"} (${DOC_STATUS_LABELS[r.status]})`,
       fmtDateTime(r.createdAt),
       DOC_TYPE_LABELS[r.docType],
       r.docType === "RECEIPT" ? r.vendorName : r.note || null,
@@ -523,7 +532,12 @@ function StockDocuments({ storeId, storeName }: { storeId: number; storeName: st
                 ) : (
                   rows.map((r) => (
                     <tr key={r.id}>
-                      <td className={`${tdCls} whitespace-nowrap font-medium`}>{r.docNo}</td>
+                      <td className={`${tdCls} whitespace-nowrap font-medium`}>
+                        {r.docNo ?? "-"}
+                        <span className="ml-1">
+                          <StatusBadge status={r.status} />
+                        </span>
+                      </td>
                       <td className={`${tdCls} whitespace-nowrap`}>{fmtDateTime(r.createdAt)}</td>
                       <td className={tdCls}>{DOC_TYPE_LABELS[r.docType]}</td>
                       <td className={tdCls}>
@@ -577,6 +591,8 @@ function ReceiveForm({ storeId, lookups, onDone }: { storeId: number; lookups: E
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<PostedDocResponse | null>(null);
+  // One key per submission: a retry of the same submission cannot receive twice.
+  const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
 
   const update = (key: number, patch: Partial<ReceiveLine>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -602,8 +618,17 @@ function ReceiveForm({ storeId, lookups, onDone }: { storeId: number; lookups: E
     setBusy(true);
     setError(null);
     try {
-      const body: ReceiptInput = { storeId, vendorId, refNo: refNo.trim(), refDate: refDate || null, note: note.trim(), lines: out };
+      const body: ReceiptInput = {
+        storeId,
+        vendorId,
+        refNo: refNo.trim(),
+        refDate: refDate || null,
+        note: note.trim(),
+        lines: out,
+        idempotencyKey,
+      };
       setDone(await erpFetch<PostedDocResponse>("/api/erp/stock/receipts", { method: "POST", body }));
+      setIdempotencyKey(newIdempotencyKey());
       setLines([newReceiveLine()]);
       setRefNo("");
       setNote("");
@@ -770,102 +795,134 @@ function AdjustForm({ storeId, lookups }: { storeId: number; lookups: ErpLookups
   const [mode, setMode] = useState<"count" | "adjust">("count");
   const [itemId, setItemId] = useState<number | null>(null);
   const [qty, setQty] = useState("");
-  const [unitCost, setUnitCost] = useState("");
   const [lotNo, setLotNo] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
+  // System balance shown to the officer = expectedQty sent with the request.
+  const balances = useErpGet<{ rows: StockBalanceRow[] }>(`/api/erp/stock?storeId=${storeId}&includeZero=1`);
+  const balance = itemId === null ? null : (balances.data?.rows.find((r) => r.itemId === itemId) ?? null);
+  const systemQty = itemId === null || !balances.data ? null : (balance?.qtyOnHand ?? 0);
 
   async function submit() {
     const q = parseNumberInput(qty);
     if (itemId === null) return setError("กรุณาเลือกพัสดุ");
+    if (systemQty === null) return setError("กำลังโหลดยอดในระบบ กรุณารอสักครู่");
     if (q === null || (mode === "count" && q < 0) || (mode === "adjust" && q === 0)) {
       return setError(mode === "count" ? "จำนวนที่นับได้ไม่ถูกต้อง" : "จำนวนที่ปรับต้องไม่เป็น 0 (ติดลบ = ลดยอด)");
     }
     if (!note.trim()) return setError("กรุณาระบุเหตุผล");
-    const cost = unitCost.trim() ? parseNumberInput(unitCost) : null;
-    if (unitCost.trim() && (cost === null || cost < 0)) return setError("ราคาต่อหน่วยไม่ถูกต้อง");
     setBusy(true);
     setError(null);
     setDone(null);
     try {
       const res = await erpFetch<PostedDocResponse>("/api/erp/stock/adjustments", {
         method: "POST",
-        body: { storeId, itemId, mode, qty: q, unitCost: cost, lotNo: lotNo.trim(), expiryDate: expiryDate || null, note: note.trim() },
+        body: {
+          storeId,
+          itemId,
+          mode,
+          qty: q,
+          expectedQty: systemQty,
+          lotNo: lotNo.trim(),
+          expiryDate: expiryDate || null,
+          note: note.trim(),
+          idempotencyKey,
+        },
       });
-      setDone(`บันทึกเลขที่ ${res.docNo} แล้ว`);
+      setDone(`ส่งใบปรับยอดเลขที่ ${res.docNo} แล้ว รอการเงิน/ผู้บริหารอนุมัติก่อนจึงจะปรับยอดคลัง`);
       setQty("");
       setNote("");
+      setIdempotencyKey(newIdempotencyKey());
     } catch (err) {
       setError(err instanceof ErpClientError ? err.message : "บันทึกไม่สำเร็จ");
+      // Stock moved since the count: show the new balance; a new count is needed.
+      if (err instanceof ErpClientError && err.code === "stale_count") {
+        balances.reload();
+        setIdempotencyKey(newIdempotencyKey());
+      }
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form
-      className={`${cardCls} space-y-4`}
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!busy) void submit();
-      }}
-    >
-      <SectionTitle icon={ClipboardPen}>ปรับปรุงยอด / บันทึกผลตรวจนับ</SectionTitle>
-      <fieldset className="flex flex-wrap gap-4 text-xs">
-        <legend className="sr-only">ประเภท</legend>
-        <label className="inline-flex items-center gap-1.5">
-          <input type="radio" name="adjust-mode" className="accent-brand-700" checked={mode === "count"} onChange={() => setMode("count")} />
-          ตรวจนับ (กรอกจำนวนที่นับได้จริง ระบบคำนวณส่วนต่าง)
-        </label>
-        <label className="inline-flex items-center gap-1.5">
-          <input type="radio" name="adjust-mode" className="accent-brand-700" checked={mode === "adjust"} onChange={() => setMode("adjust")} />
-          ปรับยอด (+ เพิ่ม / - ลด เช่น ชำรุด หมดอายุ)
-        </label>
-      </fieldset>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className={labelCls}>
-          <span className="font-medium">พัสดุ</span>
-          <ItemPicker items={lookups.items} value={itemId} onChange={setItemId} label="พัสดุที่ปรับยอด" />
-        </div>
-        <label className={labelCls}>
-          <span className="font-medium">{mode === "count" ? "จำนวนที่นับได้" : "จำนวนที่ปรับ (+/-)"}</span>
-          <input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value)} />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium">ราคาต่อหน่วยกรณีเพิ่มยอด (ว่าง = ต้นทุนเฉลี่ยปัจจุบัน)</span>
-          <input type="text" inputMode="decimal" className={inputCls} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className={labelCls}>
-            <span className="font-medium">Lot (กรณีเพิ่มยอด)</span>
-            <input type="text" className={inputCls} maxLength={50} value={lotNo} onChange={(e) => setLotNo(e.target.value)} />
+    <div className="space-y-4">
+      <form
+        className={`${cardCls} space-y-4`}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!busy) void submit();
+        }}
+      >
+        <SectionTitle icon={ClipboardPen}>ขอปรับปรุงยอด / บันทึกผลตรวจนับ</SectionTitle>
+        <fieldset className="flex flex-wrap gap-4 text-xs">
+          <legend className="sr-only">ประเภท</legend>
+          <label className="inline-flex items-center gap-1.5">
+            <input type="radio" name="adjust-mode" className="accent-brand-700" checked={mode === "count"} onChange={() => setMode("count")} />
+            ตรวจนับ (กรอกจำนวนที่นับได้จริง ระบบคำนวณส่วนต่าง)
           </label>
+          <label className="inline-flex items-center gap-1.5">
+            <input type="radio" name="adjust-mode" className="accent-brand-700" checked={mode === "adjust"} onChange={() => setMode("adjust")} />
+            ปรับยอด (+ เพิ่ม / - ลด เช่น ชำรุด หมดอายุ)
+          </label>
+        </fieldset>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className={labelCls}>
+            <span className="font-medium">พัสดุ</span>
+            <ItemPicker items={lookups.items} value={itemId} onChange={setItemId} label="พัสดุที่ปรับยอด" />
+          </div>
+          <div className="space-y-1 text-xs">
+            <span className="font-medium">ยอดในระบบขณะนี้</span>
+            <p className="flex items-center gap-2">
+              <span className="text-sm font-semibold tabular-nums">
+                {systemQty === null ? "-" : `${fmtQty(systemQty)} ${balance?.unit ?? ""}`}
+              </span>
+              <button type="button" className={btnOutline} onClick={balances.reload}>
+                โหลดยอดใหม่
+              </button>
+            </p>
+          </div>
           <label className={labelCls}>
-            <span className="font-medium">วันหมดอายุ</span>
-            <input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+            <span className="font-medium">{mode === "count" ? "จำนวนที่นับได้" : "จำนวนที่ปรับ (+/-)"}</span>
+            <input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value)} />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className={labelCls}>
+              <span className="font-medium">Lot (ไม่บังคับ)</span>
+              <input type="text" className={inputCls} maxLength={50} value={lotNo} onChange={(e) => setLotNo(e.target.value)} />
+            </label>
+            <label className={labelCls}>
+              <span className="font-medium">วันหมดอายุของล็อต</span>
+              <input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+            </label>
+          </div>
+          <label className={`${labelCls} sm:col-span-2`}>
+            <span className="font-medium">เหตุผล (จำเป็น)</span>
+            <textarea className={inputCls} rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
         </div>
-        <label className={`${labelCls} sm:col-span-2`}>
-          <span className="font-medium">เหตุผล (จำเป็น)</span>
-          <textarea className={inputCls} rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-      </div>
-      <p className="text-xs text-zinc-600 dark:text-zinc-400">
-        การลดยอดตัดล็อตที่หมดอายุก่อน (FEFO) และคิดมูลค่าตามต้นทุนถัวเฉลี่ย ทุกรายการบันทึกประวัติและแก้ไขย้อนหลังไม่ได้
-      </p>
-      <InlineError message={error} />
-      {done && (
-        <p role="status" className="text-xs text-emerald-800 dark:text-emerald-200">
-          {done}
-        </p>
-      )}
-      <button type="submit" className={btnPrimary} disabled={busy}>
-        <BusyIcon busy={busy} icon={Save} />
-        บันทึก
-      </button>
-    </form>
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-600 dark:text-zinc-400">
+          <li>ใบปรับยอดต้องให้การเงินหรือผู้บริหาร (ไม่ใช่ผู้บันทึก) อนุมัติก่อน ยอดคลังจึงเปลี่ยน</li>
+          <li>ตรวจนับ: ถ้ายอดในระบบเปลี่ยนระหว่างรออนุมัติ ระบบจะไม่ลงบัญชี ต้องตรวจนับใหม่</li>
+          <li>เพิ่มยอดใช้ต้นทุนถัวเฉลี่ยปัจจุบัน (ถ้ายอดเป็น 0 ใช้ราคารับเข้าล่าสุด) กำหนดราคาเองไม่ได้</li>
+          <li>ระบุ Lot = ปรับเฉพาะล็อตนั้น (ใช้ตัดยอดล็อตหมดอายุ) ไม่ระบุ = ตัดล็อตที่หมดอายุก่อน (FEFO)</li>
+        </ul>
+        <InlineError message={error} />
+        {done && (
+          <p role="status" className="text-xs text-emerald-800 dark:text-emerald-200">
+            {done}
+          </p>
+        )}
+        <button type="submit" className={btnPrimary} disabled={busy}>
+          <BusyIcon busy={busy} icon={Save} />
+          ส่งขออนุมัติ
+        </button>
+      </form>
+      <AdjustmentList storeId={storeId} title="ใบปรับยอดรออนุมัติของคลังนี้" />
+    </div>
   );
 }

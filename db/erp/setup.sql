@@ -1,13 +1,11 @@
 -- One-time setup of the ERP database on the deploy server (PostgreSQL 14+).
--- Run as the postgres superuser:
 --
---   sudo -u postgres psql -v ON_ERROR_STOP=1 \
---        -v owner_pw='<owner password>' -v app_pw='<app password>' \
---        -f db/erp/setup.sql
+-- Do NOT run this file by hand with passwords on the command line (they
+-- would stay in shell history / ps). Use the wrapper, which generates the
+-- passwords, feeds them to psql on stdin (psql variables owner_pw / app_pw)
+-- and writes ERP_DATABASE_URL / ERP_MIGRATE_DATABASE_URL into .env (0600):
 --
--- (generate passwords with: openssl rand -base64 32 | tr -d '/+=' )
--- Then put the app account into /var/www/kpi/.env (ERP_DATABASE_URL) and the
--- owner account into ERP_MIGRATE_DATABASE_URL, and run `npm run erp:migrate`.
+--   bash scripts/erp-db-setup.sh
 --
 -- Roles (least privilege):
 --   bkh_erp_owner  owns database + schema erp; used ONLY by the migration

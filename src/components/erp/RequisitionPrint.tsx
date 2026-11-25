@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import type { DocEvent, RequisitionDetail } from "@/lib/erp/types";
 import { fmtCost, fmtDateTime, fmtMoney, fmtQty, useErpGet } from "./erp-client";
+import { issuedShortCount } from "./RequisitionDetailClient";
 import { btnOutline, btnPrimary, cardCls, ErrorCard, iconCls, LoadingCard } from "./ui";
 
 const HOSPITAL_NAME = "โรงพยาบาลบางระกำ";
@@ -125,6 +126,11 @@ function Sheet({ d }: { d: RequisitionDetail }) {
             </tr>
           </tfoot>
         </table>
+        {d.status === "issued" && issuedShortCount(d) > 0 && (
+          <p className="text-xs">
+            หมายเหตุ: จ่ายไม่ครบ {issuedShortCount(d)} รายการ ส่วนที่ขาดไม่ถูกค้างจ่าย หากยังต้องการให้เบิกใหม่
+          </p>
+        )}
 
         <div className="grid grid-cols-3 gap-4 pt-6 text-center text-xs break-inside-avoid">
           <Signature role="ผู้เบิก" who={requester} />

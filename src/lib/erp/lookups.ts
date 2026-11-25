@@ -3,8 +3,8 @@ import "server-only";
 import { erpQuery } from "./db";
 import type { ErpLookups } from "./types";
 import { array, asObject, COST, decimal, id, isoDate, optionalId, QTY, text } from "./validate";
-import type { AdjustmentInput, ReceiptInput } from "./types";
-import { ErpError } from "./gate";
+import type { ReceiptInput } from "./types";
+import { parseIdempotencyKey } from "./idempotency";
 
 /** Active master data for dropdowns (any ERP user; no personal data). */
 export async function getLookups(): Promise<ErpLookups> {
@@ -44,7 +44,7 @@ export async function getLookups(): Promise<ErpLookups> {
 // --- stock request bodies ----------------------------------------------------------
 
 export function parseReceiptBody(raw: unknown): ReceiptInput {
-  const body = asObject(raw, ["storeId", "vendorId", "refNo", "refDate", "note", "lines"]);
+  const body = asObject(raw, ["storeId", "vendorId", "refNo", "refDate", "note", "lines", "idempotencyKey"]);
   const lines = array(body.lines, "รายการรับเข้า", { min: 1, max: 200 }).map((l, i) => {
     const n = i + 1;
     const line = asObject(l, ["itemId", "qty", "unitCost", "lotNo", "expiryDate"], `รายการที่ ${n} `);
@@ -63,26 +63,6 @@ export function parseReceiptBody(raw: unknown): ReceiptInput {
     refDate: isoDate(body.refDate, "วันที่ใบส่งของ"),
     note: text(body.note, "หมายเหตุ", { max: 500, multiline: true }),
     lines,
-  };
-}
-
-export function parseAdjustmentBody(raw: unknown): AdjustmentInput {
-  const body = asObject(raw, ["storeId", "itemId", "mode", "qty", "unitCost", "lotNo", "expiryDate", "note"]);
-  if (body.mode !== "adjust" && body.mode !== "count") throw new ErpError(400, "ประเภทการปรับยอดไม่ถูกต้อง");
-  const mode = body.mode;
-  const qty =
-    mode === "count"
-      ? decimal(body.qty, "จำนวนที่นับได้", QTY).value
-      : decimal(body.qty, "จำนวนที่ปรับ", { scale: 3, min: -999_999_999, max: 999_999_999 }).value;
-  return {
-    storeId: id(body.storeId, "คลัง"),
-    itemId: id(body.itemId, "พัสดุ"),
-    mode,
-    qty,
-    unitCost:
-      body.unitCost === undefined || body.unitCost === null ? null : decimal(body.unitCost, "ราคาต่อหน่วย", COST).value,
-    lotNo: text(body.lotNo, "Lot", { max: 50 }),
-    expiryDate: isoDate(body.expiryDate, "วันหมดอายุ"),
-    note: text(body.note, "เหตุผลการปรับยอด", { max: 500, required: true, multiline: true }),
+    idempotencyKey: parseIdempotencyKey(body.idempotencyKey),
   };
 }
