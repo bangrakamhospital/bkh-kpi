@@ -9,6 +9,7 @@
 | --- | --- |
 | `/` (ผู้รับบริการ), `/district` (ตัวชี้วัดทั้งอำเภอ) | สาธารณะ |
 | `/hospital` (ตัวชี้วัดในโรงพยาบาล), `/pp` (PP / รายได้ สปสช. รวม `/pp/basic`, `/pp/other`), `/delivery` (ค่าส่งยาที่บ้าน), `/clinic` (ประมาณการรายได้แยกคลินิก รวม `/clinic/ncd`), `/district/pp` (PP รายได้อำเภอ), `/strategy` (ยุทธศาสตร์ & HA) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ไม่ผ่าน -> 307 `/login?callbackUrl=<path?query>` |
+| `/erp/*` (ระบบ ERP) และ `/api/erp/*` | ต้องล็อกอิน (`approved`) เหมือนบรรทัดบน + บทบาท ERP ใน `erp_user_role` ตรวจที่ API ทุก request (ผู้ดูแลระบบเว็บ = `erp_admin`, ผู้ตรวจภายนอกเข้าไม่ได้) ดู `docs/erp/README.md` |
 | `GET /api/kpi/screening/villages` (ตัวเลขรายหมู่ ของหน้า `/hospital`) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) ทุกรหัสตัวชี้วัด |
 | `GET /api/kpi/screening/persons` (รายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
 | `GET /api/kpi/screening/export` (Excel มีชีตรายชื่อ) | ต้องล็อกอิน และบัญชีได้รับอนุมัติ (`approved`) |
