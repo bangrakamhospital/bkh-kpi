@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   BadgeCheck,
+  Boxes,
   Loader2,
   LogIn,
   LogOut,
@@ -105,6 +106,12 @@ export function HeaderAuth() {
           ผู้ตรวจภายนอก
           {auditorExpiry && ` · ใช้ได้ถึง ${auditorExpiry}`}
         </span>
+      )}
+      {!isAuditor && (
+        <Link href="/erp" className={pillClass}>
+          <Boxes aria-hidden="true" className={iconCls} />
+          ระบบ ERP
+        </Link>
       )}
       {isAdmin && (
         <Link href="/admin/users" className={pillClass}>

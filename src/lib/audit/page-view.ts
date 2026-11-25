@@ -34,6 +34,9 @@ const QUERY_ALLOW: Record<string, RegExp> = {
   preset: /^[a-z0-9]{1,10}$/,
   from: /^\d{4}-\d{2}-\d{2}$/,
   to: /^\d{4}-\d{2}-\d{2}$/,
+  // /erp pages: document id / tab (no personal data)
+  id: /^\d{1,12}$/,
+  tab: /^[a-z-]{1,20}$/,
 };
 
 type SearchParams = Record<string, string | string[] | undefined>;

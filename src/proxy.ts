@@ -6,7 +6,7 @@ import { isAuthConfigured } from "@/lib/auth/settings";
 
 /**
  * Login gate for the pages in LOGIN_REQUIRED_PAGES (/hospital, /pp, /delivery, /clinic, /district/pp, /f43,
- * /strategy):
+ * /strategy, /erp):
  * no APPROVED session -> 307 /login?callbackUrl=<path?query>.
  *
  * Runs Auth.js' session read (Node.js runtime, the proxy default): the
@@ -62,5 +62,5 @@ export async function proxy(request: NextRequest): Promise<Response> {
 
 export const config = {
   // Keep in sync with LOGIN_REQUIRED_PAGES (matcher must be static).
-  matcher: ["/hospital/:path*", "/pp/:path*", "/delivery/:path*", "/clinic/:path*", "/district/pp/:path*", "/strategy/:path*", "/f43/:path*"],
+  matcher: ["/hospital/:path*", "/pp/:path*", "/delivery/:path*", "/clinic/:path*", "/district/pp/:path*", "/strategy/:path*", "/f43/:path*", "/erp/:path*"],
 };
