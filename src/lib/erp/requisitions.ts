@@ -219,7 +219,7 @@ function scopeCondition(a: ErpActor, scope: RequisitionScope, params: SqlParam[]
 export async function listRequisitions(
   a: ErpActor,
   scope: RequisitionScope,
-  opts: { status: DocStatus | null; page: number; pageSize?: number },
+  opts: { status: DocStatus | null; page: number; pageSize?: number; q?: string },
 ): Promise<{ items: RequisitionSummary[]; total: number; page: number; pageSize: number }> {
   const params: SqlParam[] = [];
   const cond = scopeCondition(a, scope, params);
@@ -227,6 +227,10 @@ export async function listRequisitions(
   const pageSize = opts.pageSize ?? PAGE_SIZE;
   params.push(opts.status);
   const statusParam = `$${params.length}`;
+  // Doc-no prefix search: validated, LIKE wildcards escaped, always parameterized.
+  const docNoQuery = text(opts.q, "คำค้นหา", { max: 30 });
+  params.push(docNoQuery.replace(/[\\%_]/g, "\\$&"));
+  const qParam = `$${params.length}`;
   params.push(pageSize, (opts.page - 1) * pageSize);
   const rows = await erpQuery<SummaryRow & { total: number }>(
     `${SUMMARY_SELECT}, count(*) OVER () AS total
@@ -235,6 +239,7 @@ export async function listRequisitions(
        JOIN store s ON s.id = d.store_id
       WHERE d.doc_type = 'REQUISITION' AND ${cond}
         AND (${statusParam}::text IS NULL OR d.status = ${statusParam})
+        AND (${qParam}::text = '' OR d.doc_no ILIKE ${qParam}::text || '%')
       ORDER BY d.updated_at DESC, d.id DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,

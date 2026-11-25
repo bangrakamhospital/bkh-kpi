@@ -10,6 +10,8 @@ import type {
   PostedDocResponse,
   ReceiptInput,
   StockBalanceRow,
+  StockDocType,
+  StockDocumentRow,
   StockMovementRow,
 } from "./types";
 import {
@@ -571,6 +573,58 @@ export async function listMovements(f: MovementFilter): Promise<{ rows: StockMov
       orgUnitName: r.org_unit_name,
       vendorName: r.vendor_name,
       note: r.note,
+      createdByName: r.created_by_name,
+      createdAt: r.created_at,
+    })),
+  };
+}
+
+export const STOCK_DOC_LIMIT = 2000;
+
+/** Receipt / adjustment documents of a store (newest first). Dates "YYYY-MM-DD" inclusive. */
+export async function listStockDocuments(f: {
+  storeId: number;
+  type: StockDocType;
+  from: string;
+  to: string;
+}): Promise<{ rows: StockDocumentRow[]; truncated: boolean }> {
+  const rows = await erpQuery<{
+    id: number;
+    doc_no: string;
+    doc_type: StockDocType;
+    store_id: number;
+    vendor_name: string | null;
+    ref_no: string;
+    purpose: string;
+    line_count: number;
+    total_amount: number | null;
+    created_by_name: string;
+    created_at: string;
+  }>(
+    `SELECT d.id, d.doc_no, d.doc_type, d.store_id, v.name AS vendor_name, d.ref_no, d.purpose,
+            (SELECT count(*)::int FROM document_line l WHERE l.document_id = d.id) AS line_count,
+            d.total_amount, d.created_by_name, d.created_at
+       FROM document d
+       LEFT JOIN vendor v ON v.id = d.vendor_id
+      WHERE d.doc_type = $2 AND d.store_id = $1
+        AND d.created_at >= $3::date
+        AND d.created_at < $4::date + 1
+      ORDER BY d.created_at DESC, d.id DESC
+      LIMIT ${STOCK_DOC_LIMIT + 1}`,
+    [f.storeId, f.type, f.from, f.to],
+  );
+  return {
+    truncated: rows.length > STOCK_DOC_LIMIT,
+    rows: rows.slice(0, STOCK_DOC_LIMIT).map((r) => ({
+      id: r.id,
+      docNo: r.doc_no,
+      docType: r.doc_type,
+      storeId: r.store_id,
+      vendorName: r.vendor_name,
+      refNo: r.ref_no,
+      note: r.purpose,
+      lineCount: r.line_count,
+      totalAmount: r.total_amount ?? 0,
       createdByName: r.created_by_name,
       createdAt: r.created_at,
     })),

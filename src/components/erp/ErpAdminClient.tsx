@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Check, Database, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Database, History, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ExcelDownloadButton, type ExcelExport } from "@/components/kpi/overview/ExcelDownloadButton";
 import {
   MASTER_ENTITIES,
   MASTER_SPECS,
@@ -16,10 +17,11 @@ import {
   ERP_ROLE_LABELS,
   ERP_ROLES,
   UNIT_SCOPED_ROLES,
+  type AuditLogRow,
   type ErpRole,
   type RolesResponse,
 } from "@/lib/erp/types";
-import { erpFetch, ErpClientError, fmtDateTime, parseNumberInput, useErpGet } from "./erp-client";
+import { erpFetch, ErpClientError, fmtDate, fmtDateTime, parseNumberInput, todayBangkok, useErpGet } from "./erp-client";
 import {
   btnDanger,
   btnOutline,
@@ -42,8 +44,8 @@ import {
   thCls,
 } from "./ui";
 
-type TabKey = MasterEntity | "roles";
-const TAB_KEYS: readonly TabKey[] = [...MASTER_ENTITIES, "roles"];
+type TabKey = MasterEntity | "roles" | "audit";
+const TAB_KEYS: readonly TabKey[] = [...MASTER_ENTITIES, "roles", "audit"];
 
 /** /erp/admin?tab= : master data + ERP role grants (erp_admin / web admin; the API enforces it). */
 export function ErpAdminClient() {
@@ -68,12 +70,12 @@ export function ErpAdminClient() {
                 : "bg-surface text-brand-800 hover:bg-brand-50 dark:text-brand-100 dark:hover:bg-brand-900/30"
             }`}
           >
-            {k === "roles" ? <KeyRound aria-hidden="true" className={iconCls} /> : <Database aria-hidden="true" className={iconCls} />}
-            {k === "roles" ? "บทบาทผู้ใช้" : MASTER_SPECS[k].label}
+            {k === "roles" ? <KeyRound aria-hidden="true" className={iconCls} /> : k === "audit" ? <History aria-hidden="true" className={iconCls} /> : <Database aria-hidden="true" className={iconCls} />}
+            {k === "roles" ? "บทบาทผู้ใช้" : k === "audit" ? "ประวัติการใช้งาน" : MASTER_SPECS[k].label}
           </button>
         ))}
       </nav>
-      {tab === "roles" ? <RoleEditor /> : <MasterEditor key={tab} entity={tab} />}
+      {tab === "roles" ? <RoleEditor /> : tab === "audit" ? <AuditViewer /> : <MasterEditor key={tab} entity={tab} />}
     </div>
   );
 }
@@ -576,6 +578,122 @@ function RoleEditor() {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// --- audit log ------------------------------------------------------------------------------------
+
+const AUDIT_ENTITIES = [
+  { value: "", label: "ทุกชนิด" },
+  { value: "document", label: "เอกสาร (ใบเบิก/ใบรับ/ใบปรับยอด)" },
+  { value: "erp_user_role", label: "บทบาทผู้ใช้" },
+  ...MASTER_ENTITIES.map((e) => ({ value: e, label: MASTER_SPECS[e].label })),
+] as const;
+
+function auditDaysAgo(n: number): string {
+  const d = new Date(`${todayBangkok()}T00:00:00Z`);
+  return new Date(d.getTime() - n * 86_400_000).toISOString().slice(0, 10);
+}
+
+function AuditViewer() {
+  const [from, setFrom] = useState(auditDaysAgo(7));
+  const [to, setTo] = useState(todayBangkok());
+  const [entity, setEntity] = useState("");
+  const qs = new URLSearchParams({ from, to });
+  if (entity) qs.set("entity", entity);
+  const data = useErpGet<{ rows: AuditLogRow[]; truncated: boolean }>(
+    from && to ? `/api/erp/admin/audit?${qs.toString()}` : null,
+  );
+  const rows = data.data?.rows ?? [];
+  const truncNote = "แสดงเฉพาะ 2,000 รายการล่าสุด กรุณาเลือกช่วงวันที่ให้แคบลง";
+
+  const excel: ExcelExport = {
+    fileName: `erp-audit-${from}_${to}`,
+    title: "ประวัติการใช้งานระบบ ERP",
+    subtitle: `ช่วงวันที่ ${fmtDate(from)} - ${fmtDate(to)}`,
+    sheetName: "ประวัติการใช้งาน",
+    columns: [
+      { header: "วันเวลา" },
+      { header: "ผู้ใช้" },
+      { header: "การกระทำ" },
+      { header: "ชนิดข้อมูล" },
+      { header: "รหัสอ้างอิง" },
+      { header: "รายละเอียด" },
+      { header: "IP" },
+    ],
+    rows: rows.map((r) => [fmtDateTime(r.occurredAt), r.actorName, r.action, r.entity, r.entityId, r.detail, r.ip]),
+    notes: data.data?.truncated ? [truncNote] : undefined,
+  };
+
+  return (
+    <section className={`${cardCls} space-y-3`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionTitle icon={History}>ประวัติการใช้งาน</SectionTitle>
+        {data.data && <ExcelDownloadButton data={excel} />}
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className={labelCls}>
+          <span className="font-medium">ตั้งแต่</span>
+          <input type="date" className={`${inputCls} w-40`} value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className={labelCls}>
+          <span className="font-medium">ถึง</span>
+          <input type="date" className={`${inputCls} w-40`} value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <label className={labelCls}>
+          <span className="font-medium">ชนิดข้อมูล</span>
+          <select className={`${inputCls} w-64`} value={entity} onChange={(e) => setEntity(e.target.value)}>
+            {AUDIT_ENTITIES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {data.error ? (
+        <ErrorCard error={data.error} onRetry={data.reload} />
+      ) : !data.data ? (
+        <LoadingCard />
+      ) : (
+        <>
+          {data.data.truncated && <p className="text-xs text-amber-800 dark:text-amber-200">{truncNote}</p>}
+          <div className={tableWrapCls}>
+            <table className={tableCls}>
+              <thead className={theadCls}>
+                <tr>
+                  <th scope="col" className={thCls}>วันเวลา</th>
+                  <th scope="col" className={thCls}>ผู้ใช้</th>
+                  <th scope="col" className={thCls}>การกระทำ</th>
+                  <th scope="col" className={thCls}>ชนิดข้อมูล</th>
+                  <th scope="col" className={thCls}>รายละเอียด</th>
+                  <th scope="col" className={thCls}>IP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                {rows.length === 0 ? (
+                  <EmptyRow colSpan={6}>ไม่มีประวัติในช่วงนี้</EmptyRow>
+                ) : (
+                  rows.map((r) => (
+                    <tr key={r.id}>
+                      <td className={`${tdCls} whitespace-nowrap`}>{fmtDateTime(r.occurredAt)}</td>
+                      <td className={tdCls}>{r.actorName || "-"}</td>
+                      <td className={tdCls}>{r.action}</td>
+                      <td className={tdCls}>
+                        {r.entity}
+                        {r.entityId ? ` #${r.entityId}` : ""}
+                      </td>
+                      <td className={`${tdCls} break-all text-zinc-600 dark:text-zinc-400`}>{r.detail}</td>
+                      <td className={`${tdCls} whitespace-nowrap`}>{r.ip ?? "-"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </section>
   );
 }

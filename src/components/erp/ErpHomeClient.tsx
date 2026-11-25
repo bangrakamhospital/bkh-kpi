@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ClipboardCheck, ClipboardList, FilePlus2, PackageCheck, ShieldCheck } from "lucide-react";
+import { BellRing, ClipboardCheck, ClipboardList, FilePlus2, PackageCheck, ShieldCheck } from "lucide-react";
 import {
   ERP_ROLE_LABELS,
   type ErpLookups,
   type ErpMe,
   type ErpSummary,
+  type StockBalanceRow,
 } from "@/lib/erp/types";
-import { useErpGet } from "./erp-client";
+import { fmtDate, fmtQty, todayBangkok, useErpGet } from "./erp-client";
 import { RequisitionTable } from "./RequisitionTable";
 import { btnPrimary, cardCls, ErrorCard, iconCls, LoadingCard, SectionTitle } from "./ui";
 
@@ -54,6 +55,78 @@ function CountCard({ label, value, icon: Icon }: { label: string; value: number;
         <p className="text-base font-bold tabular-nums">{value.toLocaleString("th-TH")}</p>
       </div>
     </div>
+  );
+}
+
+const EXPIRY_DAYS = 90;
+
+function StoreAlerts({ storeId, storeName }: { storeId: number; storeName: string }) {
+  const data = useErpGet<{ rows: StockBalanceRow[] }>(`/api/erp/stock?storeId=${storeId}`);
+  if (data.error) return <ErrorCard error={data.error} onRetry={data.reload} />;
+  if (!data.data) return <LoadingCard />;
+  const limit = new Date(`${todayBangkok()}T00:00:00Z`).getTime() + EXPIRY_DAYS * 86_400_000;
+  const low = data.data.rows.filter((r) => r.reorderPoint > 0 && r.qtyOnHand <= r.reorderPoint);
+  const expiring = data.data.rows
+    .filter((r) => r.qtyOnHand > 0 && r.nearestExpiry !== null && new Date(`${r.nearestExpiry}T00:00:00Z`).getTime() <= limit)
+    .sort((a, b) => (a.nearestExpiry ?? "").localeCompare(b.nearestExpiry ?? ""));
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-semibold">{storeName}</p>
+      {low.length === 0 && expiring.length === 0 && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">ไม่มีรายการที่ต้องแจ้งเตือน</p>
+      )}
+      {low.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-red-700 dark:text-red-300">
+            พัสดุคงเหลือต่ำกว่าจุดสั่งซื้อ ({low.length.toLocaleString("th-TH")} รายการ)
+          </p>
+          <ul className="list-disc space-y-0.5 pl-5 text-xs">
+            {low.slice(0, 10).map((r) => (
+              <li key={r.itemId}>
+                {r.itemCode} {r.itemName} — คงเหลือ {fmtQty(r.qtyOnHand)} {r.unit} (จุดสั่งซื้อ {fmtQty(r.reorderPoint)})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {expiring.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+            ล็อตใกล้หมดอายุภายใน {EXPIRY_DAYS} วัน ({expiring.length.toLocaleString("th-TH")} รายการ)
+          </p>
+          <ul className="list-disc space-y-0.5 pl-5 text-xs">
+            {expiring.slice(0, 10).map((r) => (
+              <li key={r.itemId}>
+                {r.itemCode} {r.itemName} — หมดอายุ {fmtDate(r.nearestExpiry)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(low.length > 10 || expiring.length > 10) && (
+        <Link href={`/erp/stock?store=${storeId}&tab=balances`} className="text-xs text-brand-700 underline dark:text-brand-300">
+          ดูคงคลังทั้งหมด
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function StockAlerts({ me, lookups }: { me: ErpMe; lookups: ErpLookups | undefined }) {
+  const grants = me.roles.filter((r) => r.role === "store_officer");
+  const all = grants.some((r) => r.storeId === null);
+  const stores = (lookups?.stores ?? []).filter((s) => all || grants.some((g) => g.storeId === s.id));
+  return (
+    <section className={`${cardCls} space-y-3`}>
+      <SectionTitle icon={BellRing}>แจ้งเตือนคลังพัสดุ</SectionTitle>
+      {!lookups ? (
+        <LoadingCard />
+      ) : stores.length === 0 ? (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">ไม่พบคลังที่รับผิดชอบ</p>
+      ) : (
+        stores.map((s) => <StoreAlerts key={s.id} storeId={s.id} storeName={s.name} />)
+      )}
+    </section>
   );
 }
 
@@ -103,6 +176,8 @@ export function ErpHomeClient() {
           )}
         </section>
       )}
+
+      {isOfficer && <StockAlerts me={me} lookups={lookups.data} />}
 
       {isOfficer && (
         <section className={`${cardCls} space-y-3`}>

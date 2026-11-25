@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownToLine, ClipboardPen, History, PackagePlus, Plus, Save, Trash2, Warehouse } from "lucide-react";
+import { ArrowDownToLine, ClipboardPen, FileText, History, PackagePlus, Plus, Save, Trash2, Warehouse } from "lucide-react";
 import { ExcelDownloadButton, type ExcelExport } from "@/components/kpi/overview/ExcelDownloadButton";
 import {
   MOVEMENT_TYPE_LABELS,
@@ -14,6 +14,8 @@ import {
   type PostedDocResponse,
   type ReceiptInput,
   type StockBalanceRow,
+  type StockDocType,
+  type StockDocumentRow,
   type StockMovementRow,
 } from "@/lib/erp/types";
 import {
@@ -54,6 +56,7 @@ const TABS = [
   { key: "receive", label: "รับเข้าคลัง", Icon: PackagePlus, officerOnly: true },
   { key: "movements", label: "ประวัติเคลื่อนไหว", Icon: History, officerOnly: false },
   { key: "adjust", label: "ปรับปรุงยอด / ตรวจนับ", Icon: ClipboardPen, officerOnly: true },
+  { key: "documents", label: "ใบรับ/ปรับยอด", Icon: FileText, officerOnly: false },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -132,6 +135,7 @@ export function StockClient() {
       {tab === "movements" && <Movements key={store.id} storeId={store.id} storeName={store.name} lookups={lookups.data} />}
       {tab === "receive" && <ReceiveForm key={store.id} storeId={store.id} lookups={lookups.data} onDone={() => go({ tab: "balances" })} />}
       {tab === "adjust" && <AdjustForm key={store.id} storeId={store.id} lookups={lookups.data} />}
+      {tab === "documents" && <StockDocuments key={store.id} storeId={store.id} storeName={store.name} />}
     </div>
   );
 }
@@ -417,6 +421,131 @@ function Movements({ storeId, storeName, lookups }: { storeId: number; storeName
                   ))
                 )}
               </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+
+// --- receipt / adjustment documents ----------------------------------------------------
+
+const DOC_TYPE_LABELS: Record<StockDocType, string> = { RECEIPT: "ใบรับ", ADJUSTMENT: "ใบปรับยอด" };
+
+function StockDocuments({ storeId, storeName }: { storeId: number; storeName: string }) {
+  const [from, setFrom] = useState(daysAgo(30));
+  const [to, setTo] = useState(todayBangkok());
+  const [type, setType] = useState<StockDocType>("RECEIPT");
+  const data = useErpGet<{ rows: StockDocumentRow[]; truncated: boolean }>(
+    from && to ? `/api/erp/stock/documents?${new URLSearchParams({ storeId: String(storeId), type, from, to }).toString()}` : null,
+  );
+  const rows = data.data?.rows ?? [];
+  const total = rows.reduce((s, r) => s + r.totalAmount, 0);
+  const truncNote = "แสดงเฉพาะ 2,000 รายการล่าสุด กรุณาเลือกช่วงวันที่ให้แคบลง";
+
+  const excel: ExcelExport = {
+    fileName: `erp-documents-${storeId}-${type.toLowerCase()}-${from}_${to}`,
+    title: `${DOC_TYPE_LABELS[type]} ${storeName}`,
+    subtitle: `ช่วงวันที่ ${fmtDate(from)} - ${fmtDate(to)}`,
+    sheetName: DOC_TYPE_LABELS[type],
+    columns: [
+      { header: "เลขที่" },
+      { header: "วันเวลา" },
+      { header: "ชนิด" },
+      { header: type === "RECEIPT" ? "ผู้ขาย" : "เหตุผล" },
+      { header: "เลขที่ใบส่งของ" },
+      { header: "จำนวนรายการ" },
+      { header: "มูลค่ารวม (บาท)" },
+      { header: "ผู้บันทึก" },
+    ],
+    rows: rows.map((r) => [
+      r.docNo,
+      fmtDateTime(r.createdAt),
+      DOC_TYPE_LABELS[r.docType],
+      r.docType === "RECEIPT" ? r.vendorName : r.note || null,
+      r.refNo || null,
+      r.lineCount,
+      Math.round(r.totalAmount * 100) / 100,
+      r.createdByName,
+    ]),
+    footer: [["รวม", null, null, null, null, null, Math.round(total * 100) / 100, null]],
+    notes: data.data?.truncated ? [truncNote] : undefined,
+  };
+
+  return (
+    <section className={`${cardCls} space-y-3`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionTitle icon={FileText}>ใบรับ / ใบปรับยอด {storeName}</SectionTitle>
+        {data.data && <ExcelDownloadButton data={excel} />}
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className={labelCls}>
+          <span className="font-medium">ชนิดเอกสาร</span>
+          <select className={`${inputCls} w-40`} value={type} onChange={(e) => setType(e.target.value as StockDocType)}>
+            <option value="RECEIPT">{DOC_TYPE_LABELS.RECEIPT}</option>
+            <option value="ADJUSTMENT">{DOC_TYPE_LABELS.ADJUSTMENT}</option>
+          </select>
+        </label>
+        <label className={labelCls}>
+          <span className="font-medium">ตั้งแต่</span>
+          <input type="date" className={`${inputCls} w-40`} value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className={labelCls}>
+          <span className="font-medium">ถึง</span>
+          <input type="date" className={`${inputCls} w-40`} value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+        </label>
+      </div>
+      {data.error ? (
+        <ErrorCard error={data.error} onRetry={data.reload} />
+      ) : !data.data ? (
+        <LoadingCard />
+      ) : (
+        <>
+          {data.data.truncated && <p className="text-xs text-amber-800 dark:text-amber-200">{truncNote}</p>}
+          <div className={tableWrapCls}>
+            <table className={tableCls}>
+              <thead className={theadCls}>
+                <tr>
+                  <th scope="col" className={thCls}>เลขที่</th>
+                  <th scope="col" className={thCls}>วันที่</th>
+                  <th scope="col" className={thCls}>ชนิด</th>
+                  <th scope="col" className={thCls}>{type === "RECEIPT" ? "ผู้ขาย" : "เหตุผล"}</th>
+                  <th scope="col" className={`${thCls} text-right`}>จำนวนรายการ</th>
+                  <th scope="col" className={`${thCls} text-right`}>มูลค่ารวม (บาท)</th>
+                  <th scope="col" className={thCls}>ผู้บันทึก</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                {rows.length === 0 ? (
+                  <EmptyRow colSpan={7}>ไม่มีเอกสารในช่วงนี้</EmptyRow>
+                ) : (
+                  rows.map((r) => (
+                    <tr key={r.id}>
+                      <td className={`${tdCls} whitespace-nowrap font-medium`}>{r.docNo}</td>
+                      <td className={`${tdCls} whitespace-nowrap`}>{fmtDateTime(r.createdAt)}</td>
+                      <td className={tdCls}>{DOC_TYPE_LABELS[r.docType]}</td>
+                      <td className={tdCls}>
+                        {r.docType === "RECEIPT" ? (r.vendorName ?? "-") : r.note || "-"}
+                        {r.refNo && <p className="text-zinc-500">ใบส่งของ {r.refNo}</p>}
+                      </td>
+                      <td className={`${tdCls} text-right tabular-nums`}>{r.lineCount.toLocaleString("th-TH")}</td>
+                      <td className={`${tdCls} text-right tabular-nums`}>{fmtMoney(r.totalAmount)}</td>
+                      <td className={tdCls}>{r.createdByName}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              <tfoot className="bg-zinc-50 font-semibold dark:bg-zinc-900">
+                <tr>
+                  <td className={tdCls} colSpan={5}>
+                    รวม {rows.length.toLocaleString("th-TH")} ฉบับ
+                  </td>
+                  <td className={`${tdCls} text-right tabular-nums`}>{fmtMoney(total)}</td>
+                  <td className={tdCls} />
+                </tr>
+              </tfoot>
             </table>
           </div>
         </>

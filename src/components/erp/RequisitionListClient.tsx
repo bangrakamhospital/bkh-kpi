@@ -1,8 +1,9 @@
 "use client";
 
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, ClipboardList, FilePlus2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, FilePlus2, Search } from "lucide-react";
 import {
   DOC_STATUS_LABELS,
   isDocStatus,
@@ -55,19 +56,31 @@ export function RequisitionListClient() {
   const statusRaw = params.get("status");
   const status = isDocStatus(statusRaw) ? statusRaw : "";
   const page = Math.max(1, Number(params.get("page")) || 1);
+  const docQ = (params.get("q") ?? "").slice(0, 30);
+  const [qInput, setQInput] = useState(docQ);
+  const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const qs = new URLSearchParams({ scope, page: String(page) });
   if (status) qs.set("status", status);
+  if (docQ) qs.set("q", docQ);
   const list = useErpGet<ListResponse>(`/api/erp/requisitions?${qs.toString()}`);
 
-  const go = (next: { scope?: RequisitionScope; status?: string; page?: number }) => {
+  const go = (next: { scope?: RequisitionScope; status?: string; page?: number; q?: string }) => {
     const q = new URLSearchParams();
     q.set("scope", next.scope ?? scope);
     const st = next.status ?? status;
     if (st) q.set("status", st);
+    const dq = next.q ?? docQ;
+    if (dq) q.set("q", dq);
     const pg = next.page ?? 1;
     if (pg > 1) q.set("page", String(pg));
     router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  };
+
+  const onSearch = (value: string) => {
+    setQInput(value);
+    if (qTimer.current) clearTimeout(qTimer.current);
+    qTimer.current = setTimeout(() => go({ q: value.trim() }), 400);
   };
 
   if (lookups.error) return <ErrorCard error={lookups.error} onRetry={lookups.reload} />;
@@ -117,6 +130,20 @@ export function RequisitionListClient() {
               </option>
             ))}
           </select>
+        </label>
+        <label className="space-y-1 text-xs">
+          <span className="font-medium">เลขที่เอกสาร</span>
+          <span className="relative block">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="search"
+              maxLength={30}
+              placeholder="ค้นหาเลขที่ใบเบิก"
+              className={`${inputCls} w-48 pl-8`}
+              value={qInput}
+              onChange={(e) => onSearch(e.target.value)}
+            />
+          </span>
         </label>
       </div>
 

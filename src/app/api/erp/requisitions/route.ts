@@ -6,7 +6,7 @@ import { isDocStatus, REQUISITION_SCOPES, type RequisitionScope } from "@/lib/er
 const MAX_BODY = 32 * 1024;
 
 /**
- * GET  /api/erp/requisitions?scope=mine|approve|issue|all&status=&page=
+ * GET  /api/erp/requisitions?scope=mine|approve|issue|all&status=&page=&q=(doc no prefix, <= 30 chars)
  *   -> 200 { items: RequisitionSummary[], total, page, pageSize }   (403 scope not allowed)
  * POST /api/erp/requisitions  body RequisitionInput -> 201 { id }  (draft)
  *   recorder / unit_head of body.orgUnitId only; same-origin JSON <= 32 KB.
@@ -24,7 +24,8 @@ export async function GET(request: Request): Promise<Response> {
   const status = isDocStatus(statusRaw) ? statusRaw : null;
   const pageRaw = Number(q.get("page") ?? "1");
   const page = Number.isInteger(pageRaw) && pageRaw >= 1 && pageRaw <= 10_000 ? pageRaw : 1;
-  return erpHandle(route, async () => erpJson(await listRequisitions(gate.actor, scope, { status, page })));
+  const docQuery = q.get("q") ?? undefined;
+  return erpHandle(route, async () => erpJson(await listRequisitions(gate.actor, scope, { status, page, q: docQuery })));
 }
 
 export async function POST(request: Request): Promise<Response> {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Ban, Check, ClipboardList, History, PackageCheck, Pencil, Send, X } from "lucide-react";
+import { Ban, Check, ClipboardList, History, PackageCheck, Pencil, Printer, Send, X } from "lucide-react";
 import {
   DOC_EVENT_LABELS,
   DOC_STATUS_LABELS,
@@ -111,7 +111,13 @@ function Detail({
       <section className={`${cardCls} space-y-3`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SectionTitle icon={ClipboardList}>ใบเบิก {d.docNo ?? `ร่าง #${d.id}`}</SectionTitle>
-          <StatusBadge status={d.status} />
+          <div className="flex items-center gap-2">
+            <Link href={`/erp/requisitions/print?id=${d.id}`} className={btnOutline}>
+              <Printer aria-hidden="true" className={iconCls} />
+              พิมพ์
+            </Link>
+            <StatusBadge status={d.status} />
+          </div>
         </div>
         <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
           <Info label="หน่วยงานที่เบิก" value={d.orgUnitName} />

@@ -299,6 +299,35 @@ export interface AdjustmentInput {
   note: string;
 }
 
+export type StockDocType = "RECEIPT" | "ADJUSTMENT";
+
+export interface StockDocumentRow {
+  id: number;
+  docNo: string;
+  docType: StockDocType;
+  storeId: number;
+  vendorName: string | null;
+  refNo: string;
+  /** Receipt: note; adjustment: reason. */
+  note: string;
+  lineCount: number;
+  totalAmount: number;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface AuditLogRow {
+  id: number;
+  occurredAt: string;
+  actorName: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  /** JSON text of the detail column (ids / codes / quantities only). */
+  detail: string;
+  ip: string | null;
+}
+
 export interface PostedDocResponse {
   id: number;
   docNo: string;
